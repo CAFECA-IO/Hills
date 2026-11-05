@@ -2110,6 +2110,13 @@ version = "0.1.0"
 [[package]]
 name = "hills-sync"
 version = "0.1.0"
+dependencies = [
+ "automerge",
+ "hills-identity",
+ "hills-proto",
+ "proptest",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "hills-tsa"

@@ -1,6 +1,6 @@
 # M0 PoC 報告
 
-> 版本：v0.4 · 2026-11-05 · 對應 technical-design §12、§15.8；Issue「[M0][PoC] …」各項
+> 版本：v0.5 · 2026-11-05 · 對應 technical-design §12、§15.8；Issue「[M0][PoC] …」各項
 > 狀態：**部分完成**。雲端 Linux 已測項目有結果；NAT 矩陣、macOS / Windows WebView、安裝檔需在實機上測試（§5）。
 
 ## 1. 結論摘要
@@ -9,6 +9,7 @@
 |------|---------|---------|------|
 | iroh 穿透 | 各網路組合皆可連線 | 本機雙行程直連成功；NAT 矩陣待測 | ⏳ 待實測 |
 | Automerge 同步 | 一致、無遺失、合併 < 1 秒 | 一致；100 次 / 副本合併 3.4 ms | ✅ 通過 |
+| 多節點同步（hills-node） | 即時 ≤ 2 秒、離線補同步 ≤ 5 秒 | 本機：gossip + 直連 120 ms、離線補同步 209 ms；加入、presence、綁定、停用輪替、復原皆通過 | ✅ 本機通過，⏳ Mac + Windows 跨網路待 §5.4 |
 | 加密 bundle + mailbox | 補同步 ≤ 5 秒 | 3 份 bundle 補同步 77–90 ms（debug）、6 ms（release），本機直連 | ✅ 通過（跨網路待 §5.1 一併實測） |
 | RS 與 SwarmStorage 相容 | 逐位元組一致 | 5 組向量全部一致 | ✅ 通過 |
 | 前端加密 / 編碼效能 | 每平台 ≥ 50 MB/s、記憶體 < 200 MB | **macOS WKWebView 366–401 MB/s、WebContent 行程 78.5 MB**；Node 192 MB/s、Chromium Worker 123 MB/s | ✅ macOS 通過，⏳ Windows WebView2 待測 |
@@ -89,6 +90,22 @@
 
 同一組測試也驗證：未 Hello、陌生組織、憑證與連線 NodeId 不符的裝置被拒；一般成員不能推送 roster；撤銷成員後其**既有連線**立即失效；bundle_hash 不符被拒；mailbox 重啟後 roster 與 bundle 仍在。
 
+### 3.6.1 多節點整合（`crates/hills-node/tests/multi_node.rs`）
+
+一個 mailbox（未綁定模式）+ 多個 node，停用 relay、本機直連，debug build：
+
+| 情境 | 結果 |
+|------|------|
+| 管理者離線時送出加入申請，上線後自動核准 | ✅ |
+| org 文件變更經 gossip + 直連到達 | ✅ 120 ms（標準 ≤ 2 秒） |
+| 離線期間的變更上線後經 mailbox 補同步 | ✅ 209 ms（標準 ≤ 5 秒） |
+| presence ≤ 2 秒到達、關閉後逾時判定離線 | ✅ |
+| 新裝置綁定（SAS 一致後取得身分並同步） | ✅ |
+| 停用成員：金鑰輪替，被停用者遭 mailbox 拒絕、讀不到新資料 | ✅ |
+| 刪除本機資料後以繁中復原詞 + 組織連線碼還原 | ✅ |
+
+連續執行 3 次皆通過。
+
 ### 3.7 桌機 app
 
 - Tauri 2.12.5 + React 19 + Vite 8 + Tailwind 4；Linux（WebKitGTK）可建置並啟動。
@@ -100,6 +117,7 @@
 |------|------|------|
 | TypeScript 7 尚未被 typescript-eslint 支援 | 無 | 暫時固定 TypeScript 6.0 |
 | `paste`、`proc-macro-error` 停止維護通知（RUSTSEC-2024-0436、0370） | 無安全漏洞，皆為上游編譯期 macro | `deny.toml` 記錄後忽略，上游更新後移除 |
+| `zbus_names`、`zvariant`、`zvariant_derive` 停止維護通知（RUSTSEC-2026-0370–0372） | 只在 Linux 經 keyring → Secret Service 引入；無安全漏洞 | `deny.toml` 記錄後忽略，keyring 升級 zbus 6 後移除 |
 | ESLint 依賴的 minimatch 有 moderate 等級 advisory | 只影響開發工具 | CI 以 high 為門檻；待 ESLint 更新 |
 
 ## 5. 待實測（需在實機執行）
@@ -158,3 +176,15 @@ WebContent 行程 78.5 MB < 200 MB，通過。四個行程合計約 203 MB，為
 ### 5.3 安裝檔
 
 push 後 CI 的「Desktop bundle」job 會產生未簽章的 `.dmg`、`.exe`、`.msi`（Actions 頁面的 artifacts）。在 Mac 與 Windows 各安裝一次並確認可開啟。未簽章的 macOS 安裝檔需在「系統設定 → 隱私權與安全性」允許開啟。
+
+### 5.4 M0 驗收：Mac + Windows 跨網路
+
+依 [deploy.md](./deploy.md) 在雲端主機部署 relay + mailbox，再依 deploy.md §6 執行。記錄：
+
+| 項目 | 結果 |
+|------|------|
+| Mac 建立組織、Windows 以邀請碼加入（不同網路） | |
+| 狀態文字同步時間 | |
+| 組織名稱即時同步時間 | |
+| Windows 關閉期間的變更，重新開啟後補同步 | |
+| 綁定第二台裝置 | |

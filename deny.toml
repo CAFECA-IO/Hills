@@ -37,4 +37,7 @@ ignore = [
   # 皆為「停止維護」通知、非安全漏洞，且只是上游的編譯期 proc-macro；上游更新後移除。
   { id = "RUSTSEC-2024-0436", reason = "paste：經 iroh → netwatch → netlink-packet-core 引入" },
   { id = "RUSTSEC-2024-0370", reason = "proc-macro-error：經 tauri → gtk 0.18（Linux）引入" },
+  { id = "RUSTSEC-2026-0371", reason = "zbus_names：經 keyring → Linux Secret Service（zbus 5）引入；已併入 zbus 6，上游升級後移除" },
+  { id = "RUSTSEC-2026-0370", reason = "zvariant：同上" },
+  { id = "RUSTSEC-2026-0372", reason = "zvariant_derive：同上" },
 ]

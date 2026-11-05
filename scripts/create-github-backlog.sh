@@ -8,7 +8,7 @@ set -euo pipefail
 REPO="${1:-CAFECA-IO/hills.cafeca.io}"; shift || true
 DRY=""; if [[ "${1:-}" == "--dry-run" ]]; then DRY="--dry-run"; shift; fi
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
-if [[ $# -gt 0 ]]; then FILES=("$@"); else FILES=("$DIR"/docs/backlog/*.json); fi
+if [[ $# -gt 0 ]]; then FILES=("$@"); else FILES=(); for f in "$DIR"/docs/backlog/*.json; do [[ "$(basename "$f")" == renames* ]] || FILES+=("$f"); done; fi
 command -v gh >/dev/null || { echo "需要 gh：https://cli.github.com"; exit 1; }
 command -v jq >/dev/null || { echo "需要 jq"; exit 1; }
 run() { if [[ "$DRY" == "--dry-run" ]]; then echo "[dry-run] $1 $2 $3" >&2; else "$@"; fi; }

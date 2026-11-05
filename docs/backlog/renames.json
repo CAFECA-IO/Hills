@@ -1,0 +1,18 @@
+{
+  "_comment": "規劃變更造成的改名與移除紀錄，供 scripts/sync-github-backlog.py 對齊 GitHub。只新增，不刪除舊紀錄。",
+  "milestones": {
+    "M1 計劃與 Scrum（MVP）": "M1 計劃、Scrum、對話與檔案（MVP）",
+    "M2 通訊 + 行動端": "M2 通訊進階 + 行動端"
+  },
+  "issues": {
+    "[M1] 桌機 Wi-Fi 識別（macOS / Windows / Linux）": "[M1] 桌機 Wi-Fi 識別（macOS / Windows）",
+    "[M2] 決策：確認提案 P1（聊天金鑰機制）與 P2（推播內容）": "[M2] 決策：確認提案 P2（推播內容）",
+    "[M2] 聊天 UI：對話列表、訊息、討論串、Markdown": "[M2] 聊天進階：小組頻道、討論串、表情回應、編輯撤回、釘選"
+  },
+  "removed": {
+    "[M2] 對話模型與對話金鑰": "已移至 M1（D34）：[M1] 對話模型與對話金鑰（一對一 / 群組）",
+    "[M2] 訊息儲存：月份分片 log 與投影": "已移至 M1（D34）：[M1] 訊息文件與傳遞",
+    "[M2] 檔案傳遞：iroh-blobs + 分塊加密": "已由 D35（SwarmStorage 原理）取代，見 M1 檔案分享相關 Issue",
+    "[M2] mailbox blob 儲存與保留政策": "已由 D35 取代：[M1] 儲存節點部署（storage-0…7）、保留與配額"
+  }
+}

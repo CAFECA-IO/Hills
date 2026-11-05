@@ -22,7 +22,7 @@
 2. 若涉及方針，於決策表新增 D 編號（只新增、不覆寫；被取代者加註）。
 3. 更新受影響的文件章節與各文件開頭的版本號、日期。
 4. 在 feature-plan「文件版本紀錄」加一行。
-5. 若工作項目有變，更新 `backlog/*.json` 並以 `python3 scripts/render-backlog.py` 重新產生 `.md`，再以 `scripts/create-github-backlog.sh` 同步到 GitHub。
+5. 若工作項目有變，更新 `backlog/*.json` 並以 `python3 scripts/render-backlog.py` 重新產生 `.md`。milestone 或 Issue **改名或移除**時，必須在 `backlog/renames.json` 記錄舊名 → 新名（或移除原因），再以 `python3 scripts/sync-github-backlog.py --apply` 同步到 GitHub（`create-github-backlog.sh` 只會新增，不會處理改名）。
 6. 文件 commit 在前，程式碼 commit 在後。
 
 ## 標記慣例

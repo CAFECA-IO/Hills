@@ -57,7 +57,7 @@ Hills（山丘上的卡菲卡）是 CAFECA 的 P2P 工作協作工具：出勤�
 2. **專案調整一律先改規劃文件**：範圍、優先順序、里程碑、技術選型、資料模型、協定、UI 流程有任何變更，先修改文件，文件修改與程式碼修改可在同一個 PR，但文件 commit 在前。
 3. **決策表只新增不覆寫**：新決策用下一個 D 編號；取代舊決策時，在舊列加註「由 Dxx 取代」。
 4. **〔提案〕不得實作**：technical-design-m2-m5 §9 的 P1…等提案，在轉為決策前不能寫進程式碼。
-5. **更新文件時同步**：文件開頭版本號與日期、feature-plan「文件版本紀錄」、受影響的 backlog JSON（並以 `python3 scripts/render-backlog.py` 重新產生 .md）。
+5. **更新文件時同步**：文件開頭版本號與日期、feature-plan「文件版本紀錄」、受影響的 backlog JSON（並以 `python3 scripts/render-backlog.py` 重新產生 .md）；milestone 或 Issue 改名、移除時，同時記錄在 `docs/backlog/renames.json`。
 6. **不確定就問**：文件有兩種以上合理解讀時，向使用者確認，不要自行選擇後默默實作。
 
 ## 5. 禁止事項
@@ -90,8 +90,9 @@ Hills（山丘上的卡菲卡）是 CAFECA 的 P2P 工作協作工具：出勤�
 # 修改 docs/backlog/*.json 後重新產生總覽
 python3 scripts/render-backlog.py
 
-# 建立 GitHub Milestones / Labels / Issues
-scripts/create-github-backlog.sh CAFECA-IO/hills.cafeca.io --dry-run
+# 讓 GitHub Milestones / Labels / Issues 與 backlog 一致（處理改名、移除；預設 dry-run）
+python3 scripts/sync-github-backlog.py
+python3 scripts/sync-github-backlog.py --apply
 ```
 
 ## 8. 回報格式

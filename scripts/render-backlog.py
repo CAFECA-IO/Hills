@@ -7,7 +7,8 @@
 import glob, json, os, sys
 
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-files = sys.argv[1:] or sorted(glob.glob(os.path.join(root, "docs", "backlog", "*.json")))
+files = sys.argv[1:] or sorted(f for f in glob.glob(os.path.join(root, "docs", "backlog", "*.json"))
+                              if not os.path.basename(f).startswith("renames"))
 for path in files:
     data = json.load(open(path, encoding="utf-8"))
     name = os.path.basename(path)

@@ -1,5 +1,20 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { api, errorMessage, type AppInfo } from './api';
+import { useNodeEvents } from './hooks';
 import { t } from './i18n';
+import {
+  BackupStep,
+  CreateOrgForm,
+  JoinForm,
+  LinkNewDevice,
+  Pending,
+  PhraseFlow,
+  RecoverForm,
+  Welcome,
+  type Start,
+} from './onboarding';
+import { Shell } from './shell';
+import { Centered, ErrorText } from './ui';
 
 // 開發用頁面只在 dev build 載入
 const SwarmBench = import.meta.env.DEV ? lazy(() => import('./dev/SwarmBench')) : null;
@@ -14,8 +29,30 @@ function useHash(): string {
   return hash;
 }
 
+/** 建立 / 加入後依序經過的步驟（ui-spec「初次啟動與加入」）。 */
+type Step = 'phrase' | 'backup' | null;
+
 export function App() {
   const hash = useHash();
+  const [info, setInfo] = useState<AppInfo | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [start, setStart] = useState<Start | null>(null);
+  const [steps, setSteps] = useState<Step[]>([]);
+
+  const refresh = useCallback(() => {
+    api
+      .appInfo()
+      .then((i) => {
+        setInfo(i);
+        setError(null);
+      })
+      .catch((e: unknown) => setError(errorMessage(e)));
+  }, []);
+  useEffect(refresh, [refresh]);
+  useNodeEvents((name) => {
+    if (name === 'activated' || name === 'all' || name === 'roster') refresh();
+  });
+
   if (SwarmBench && hash === '#/dev/swarm-bench') {
     return (
       <Suspense>
@@ -23,18 +60,46 @@ export function App() {
       </Suspense>
     );
   }
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-3 p-8">
-      <h1 className="text-3xl font-semibold text-primary">{t('app.name')}</h1>
-      <p className="text-muted">{t('app.tagline')}</p>
-      <p className="rounded border border-line bg-surface px-3 py-2 text-sm">
-        {t('app.status.m0')}
-      </p>
-      {SwarmBench && (
-        <a className="text-sm text-primary underline" href="#/dev/swarm-bench">
-          {t('nav.devBench')}
-        </a>
-      )}
-    </main>
-  );
+  if (error) {
+    return (
+      <Centered title={t('app.name')}>
+        <ErrorText message={error} />
+      </Centered>
+    );
+  }
+  if (!info) {
+    return (
+      <Centered title={t('app.name')}>
+        <p className="text-muted">{t('common.loading')}</p>
+      </Centered>
+    );
+  }
+
+  const step = steps[0];
+  const nextStep = () => setSteps((s) => s.slice(1));
+  if (step === 'phrase') return <PhraseFlow onDone={nextStep} />;
+  if (step === 'backup') return <BackupStep onDone={nextStep} />;
+
+  if (info.phase === 'welcome') {
+    const back = () => setStart(null);
+    const finished = (next: Step[]) => () => {
+      setSteps(next);
+      setStart(null);
+      refresh();
+    };
+    switch (start) {
+      case 'create':
+        return <CreateOrgForm onBack={back} onDone={finished(['phrase', 'backup'])} />;
+      case 'join':
+        return <JoinForm onBack={back} onDone={finished(['phrase'])} />;
+      case 'recover':
+        return <RecoverForm onBack={back} onDone={finished([])} />;
+      case 'link':
+        return <LinkNewDevice onBack={back} onDone={finished([])} />;
+      default:
+        return <Welcome onPick={setStart} />;
+    }
+  }
+  if (info.phase === 'pending') return <Pending />;
+  return <Shell info={info} />;
 }

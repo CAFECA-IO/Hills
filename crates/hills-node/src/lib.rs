@@ -16,7 +16,7 @@ mod syncproto;
 
 pub use config::MemberStatus;
 pub use hills_identity::PhraseLanguage;
-pub use hills_identity::secret_store::{MemoryStore, SecretStore};
+pub use hills_identity::secret_store::{MemoryStore, SecretStore, SecretStoreError};
 pub use hills_proto::gossip::{Presence, PresenceState};
 pub use hills_proto::{MemberId, Pub32, Role};
 pub use lifecycle::{CreateOrg, DEFAULT_TEAM, DeviceView};

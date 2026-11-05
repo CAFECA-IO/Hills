@@ -11,6 +11,11 @@
   --hills-text: oklch(25% 0.02 160);
   --hills-muted: oklch(50% 0.02 160);
   --hills-border: oklch(90% 0.01 160);
+  --hills-on-primary: oklch(100% 0 0);
+  --hills-danger: oklch(55% 0.18 25);
+  --hills-warning: oklch(70% 0.14 75);
+  /* QR Code 一律白底，確保可掃描 */
+  --hills-qr-bg: oklch(100% 0 0);
   color-scheme: light dark;
 }
 
@@ -21,6 +26,7 @@
     --hills-text: oklch(94% 0.01 160);
     --hills-muted: oklch(70% 0.015 160);
     --hills-border: oklch(35% 0.015 160);
+    --hills-danger: oklch(68% 0.16 25);
   }
 }
 
@@ -31,6 +37,10 @@
   --color-fg: var(--hills-text);
   --color-muted: var(--hills-muted);
   --color-line: var(--hills-border);
+  --color-on-primary: var(--hills-on-primary);
+  --color-danger: var(--hills-danger);
+  --color-warning: var(--hills-warning);
+  --color-qr: var(--hills-qr-bg);
   --font-sans: 'Noto Sans TC', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 

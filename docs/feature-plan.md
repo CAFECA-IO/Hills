@@ -366,5 +366,6 @@ Hills 是 CAFECA 團隊的工作通訊與協作工具，安裝於桌機、筆電
 |------|------|------|
 | v0.1–v0.8 | 2026-11-05 | 五輪問答確認 D1–D32 |
 | v0.9 | 2026-11-05 | 新增 D33 文件優先；加入 AGENTS.md、M2–M5 技術設計、介面規格、開發規範、M2–M5 backlog |
+| v1.0.2 | 2026-11-05 | technical-design v0.4：身分金鑰推導細節（熵 + HKDF、英 / 繁中字表）、檔案 AAD 編碼；development-guidelines：授權允許清單與 GitHub 機密掃描設定 |
 | v1.0.1 | 2026-11-05 | technical-design v0.3：Monorepo 結構加入 packages/、poc/ 與工具鏈（M0 開工） |
 | v1.0 | 2026-11-05 | 新增 D34–D37：M1 納入 Mac / Windows 對話與 SwarmStorage 檔案分享、資料夾快照、確認 P1；Linux 移至 M2；調整時程與驗收指標 |

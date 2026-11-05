@@ -78,7 +78,8 @@ scripts/     開發與維運腳本
 - repo 為公開（D25）：禁止提交金鑰、token、憑證、`.env`、內部網址、真實個人資料。測試資料使用假資料。
 - 日誌禁止記錄：私鑰、對稱金鑰、復原詞、訊息內容、計劃 / 出勤內容。可記錄 ID 與中繼資料。
 - 錯誤訊息不得洩漏金鑰或明文資料。
-- 新增依賴前確認授權與 MIT 相容（MIT、Apache-2.0、BSD、ISC、MPL-2.0 可；GPL / AGPL 需先討論），並檢查維護狀態。`cargo deny` 與 `pnpm audit` 於 CI 執行。
+- 新增依賴前確認授權與 MIT 相容，並檢查維護狀態。允許清單以 `deny.toml` 為準：MIT、MIT-0、Apache-2.0、BSD-2/3-Clause、ISC、MPL-2.0、Zlib、Unicode-3.0、CC0-1.0、0BSD、BSL-1.0、CDLA-Permissive-2.0、Unlicense；GPL / AGPL / LGPL 需先討論。`cargo deny` 與 `pnpm audit`（high 以上視為失敗）於 CI 執行；忽略任何 advisory 都必須在 `deny.toml` 寫明原因。
+- GitHub repo 設定須開啟 **Secret scanning** 與 **Push protection**（Settings → Code security），此項無法由程式碼設定。CI 另以 gitleaks 掃描（`.gitleaks.toml`）。
 - 修改加密、金鑰流程、驗證層的 PR 至少需一位人類審查者核准。
 
 ## 7. 隱私

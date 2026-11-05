@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.3 草案 · 2026-11-05 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.4 草案 · 2026-11-05 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15。
 
 ## 1. 元件總覽
@@ -82,6 +82,7 @@ deploy/
 成員憑證 MemberCert = Sign_admin(memberId, IK.pub, EK.pub, roles, issuedAt)
 ```
 
+- **推導細節**（`hills-identity`，有固定測試向量）：IKM = BIP39 **熵**（32 bytes，不使用 BIP39 PBKDF2 seed），HKDF-SHA256 salt = `hills/v1/identity`，info = `hills/v1/ik` / `hills/v1/ek`，各輸出 32 bytes 作為 Ed25519 / X25519 私鑰。因為由熵推導，同一組復原詞以**英文或繁體中文字表**顯示都對應同一個身分；UI 預設顯示語言於 M0「組織建立」Issue 決定。變更 salt / info 等同變更所有身分，屬協定變更。
 - IK / EK 私鑰存於每台已綁定裝置的系統安全儲存區，可由復原詞重建。
 - DK 私鑰永不離開裝置。
 - OK 只用來簽發第一張管理者憑證，之後的管理操作由任一管理者 IK 簽章。OK 是信任根與災難復原用途，建立後匯出離線備份。
@@ -468,7 +469,7 @@ Reed-Solomon 實作直接移植 SwarmStorage 的 `src/lib/reed_solomon_erasure.t
                  2. Worker：AES-256-GCM 加密
                       key = fileKey（每檔隨機 256-bit）
                       IV  = fileNonce(8 B 隨機) ‖ uint32_be(k)
-                      AAD = fileId ‖ uint32_be(k) ‖ uint32_be(stripeCount)
+                      AAD = utf8(fileId) ‖ uint32_be(k) ‖ uint32_be(stripeCount)
                       payload = ciphertext ‖ tag(16 B)
                  3. Worker：payload 以 0 補齊到 5 的倍數 → 切 5 個資料分片 → RS 計算 3 個同位分片
                  4. Worker：每個分片計算 SHA-256（物件 ID）

@@ -29,7 +29,8 @@ services:
       RUST_LOG: info,iroh=warn
     ports:
       - "${HILLS_UDP_PORT:-7843}:${HILLS_UDP_PORT:-7843}/udp"
-      - "127.0.0.1:8080:8080" # 健康檢查只對本機開放
+      # 健康檢查只對本機開放；主機埠可用 HILLS_HEALTH_PORT 修改（避免與主機上其他服務衝突）
+      - "127.0.0.1:${HILLS_HEALTH_PORT:-18080}:8080"
     volumes:
       - mailbox-data:/data
 

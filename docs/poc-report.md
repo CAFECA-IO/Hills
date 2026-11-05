@@ -1,0 +1,132 @@
+# M0 PoC 報告
+
+> 版本：v0.1 初稿 · 2026-11-05 · 對應 technical-design §12、§15.8；Issue「[M0][PoC] …」各項
+> 狀態：**部分完成**。雲端 Linux 已測項目有結果；NAT 矩陣、macOS / Windows WebView、安裝檔需在實機上測試（§5）。
+
+## 1. 結論摘要
+
+| 項目 | 通過標準 | 目前結果 | 狀態 |
+|------|---------|---------|------|
+| iroh 穿透 | 各網路組合皆可連線 | 本機雙行程直連成功；NAT 矩陣待測 | ⏳ 待實測 |
+| Automerge 同步 | 一致、無遺失、合併 < 1 秒 | 一致；100 次 / 副本合併 3.4 ms | ✅ 通過 |
+| 加密 bundle + mailbox | 補同步 ≤ 5 秒 | 尚未實作（M0 下一批） | ⏳ |
+| RS 與 SwarmStorage 相容 | 逐位元組一致 | 5 組向量全部一致 | ✅ 通過 |
+| 前端加密 / 編碼效能 | 每平台 ≥ 50 MB/s、記憶體 < 200 MB | Node 192 MB/s、Chromium Worker 123 MB/s；存活記憶體 100 MB | ✅ 代理環境通過，⏳ WKWebView / WebView2 待測 |
+| 桌機打包 | macOS、Windows 可安裝啟動 | Linux 可建置並啟動；CI 已設定 macOS / Windows 打包 | ⏳ 待 CI / 實機 |
+
+**go / no-go**：待 §5 實測完成後填寫。目前沒有任何項目顯示需要更換 iroh 或 Automerge。
+
+## 2. 測試環境（雲端）
+
+- Linux x86_64，2 vCPU（Intel Xeon 2.30GHz），7 GB RAM
+- Rust 1.97、Node 22.23、Chromium 153（headless）、WebKitGTK 2.52
+- 套件：iroh 1.4.1、automerge 0.12.0、tauri 2.12.5
+
+## 3. 已完成的測試
+
+### 3.1 Automerge 離線合併（`poc/automerge-sync`）
+
+兩個副本由同一份計劃文件 fork，各自離線編輯（新增項目、改標題、勾選完成、兩人同時修改同一個 KR），再以 Automerge sync protocol 交換**編碼後**的訊息。
+
+| 每副本編輯次數 | 一致 | 同步耗時 | 往返 | 傳輸 | 儲存大小 | 項目數 |
+|---:|:---:|---:|---:|---:|---:|---:|
+| 100 | ✅ | 3.4 ms | 2 | 4.2 KB | 2.1 KB | 51 |
+| 1,000 | ✅ | 28.5 ms | 2 | 14.8 KB | 6.9 KB | 501 |
+
+- 同時修改同一個 KR 數值時，雙方得到相同結果（Automerge 以確定性規則選出勝者）。
+- 存檔後重新載入，內容一致。
+- 測試：`cargo test -p automerge-sync`（含「合併 < 1 秒」斷言）。
+
+### 3.2 iroh 連線（`poc/net-echo`）
+
+| 情境 | 路徑 | 建立連線 | 往返中位數（64 KB × 20） |
+|------|------|---:|---:|
+| 同一台主機、兩個行程、停用 relay | direct | 2.0 ms | 0.45 ms |
+
+只驗證工具本身與 API 用法；跨 NAT 才是此 PoC 的重點，見 §5.1。
+
+### 3.3 Reed-Solomon 相容性（`packages/swarm`）
+
+- `src/rs.ts` 移植自 SwarmStorage `src/lib/reed_solomon_erasure.ts`（commit `5a073e7`，MIT）。
+- 以 SwarmStorage **原始程式**產生 5 組向量（分片大小 1 B、7 B、4 KB、64 KB+1、4 MiB+4），本專案實作的同位分片 SHA-256 全部一致（`test/rs.compat.test.ts`）。
+- 8 片中任選 3 片遺失的全部 56 種組合皆可還原；遺失 4 片時正確拒絕。
+
+### 3.4 逐條帶加密管線（`packages/swarm`）
+
+依 technical-design §15.2–15.4 實作，測試涵蓋：
+
+- 多條帶與最後一個較短的條帶、空檔案
+- 任 3 個節點離線、單一分片損壞（以 SHA-256 偵測並改用同位分片）
+- 可用分片少於 5 → `UNRECOVERABLE`；金鑰錯誤 → `DECRYPT_FAILED`
+- 條帶重排、截斷（stripeCount 不同）、混用其他檔案（fileId 不同）皆解密失敗
+- 同時最多 1 個條帶上傳中（記憶體上限）
+- manifest 不含檔案金鑰
+
+### 3.5 前端效能
+
+| 執行環境 | 大小 | 加密 + 編碼 | 解碼 + 解密 | 記憶體 |
+|---------|---:|---:|---:|---|
+| Node 22（主執行緒） | 1 GB | 191.8 MB/s | 731.4 MB/s | 存活 100 MB（含基準本身 20 MB 資料）；RSS 峰值 391 MB |
+| Chromium 153 Web Worker（WebView2 代理） | 256 MB | 122.6 MB/s | 326.2 MB/s | Worker 內無法量測 |
+
+- **存活記憶體**（每個條帶後強制 GC 的 heap + ArrayBuffer）約 100 MB，符合 < 200 MB；**RSS** 偏高是因為 V8 不會立即把釋放的記憶體還給作業系統，實機量測時請以作業系統的工作管理員 / 活動監視器觀察 Hills 行程的記憶體。
+- 已做的最佳化：資料分片 0–3 直接引用密文 buffer，每條帶少複製 20 MB。
+- 若 WebView 實測不足 50 MB/s：RS 改用 WASM（`reed-solomon-erasure` crate），或改由 Rust 核心處理（需更新 D35）。
+
+### 3.6 桌機 app
+
+- Tauri 2.12.5 + React 19 + Vite 8 + Tailwind 4；Linux（WebKitGTK）可建置並啟動。
+- 開發模式提供 `#/dev/swarm-bench` 頁面，在 Web Worker 中執行 §3.5 的基準（正式版不包含）。
+
+## 4. 已知問題
+
+| 問題 | 影響 | 處理 |
+|------|------|------|
+| TypeScript 7 尚未被 typescript-eslint 支援 | 無 | 暫時固定 TypeScript 6.0 |
+| `paste`、`proc-macro-error` 停止維護通知（RUSTSEC-2024-0436、0370） | 無安全漏洞，皆為上游編譯期 macro | `deny.toml` 記錄後忽略，上游更新後移除 |
+| ESLint 依賴的 minimatch 有 moderate 等級 advisory | 只影響開發工具 | CI 以 high 為門檻；待 ESLint 更新 |
+
+## 5. 待實測（需在實機執行）
+
+### 5.1 iroh NAT 矩陣
+
+兩台電腦（Mac 與 Windows 筆電）都需要 Rust 工具鏈（見 README「開發環境」）。
+
+```bash
+# 電腦 A
+cargo run --release -p net-echo -- listen
+# 電腦 B（貼上 A 印出的 ticket）
+cargo run --release -p net-echo -- dial <ticket> --count 20 --size 65536
+```
+
+每個組合記錄 dial 輸出的 JSON。先用官方 relay 測，再以 `deploy/poc/` 架好自架 relay 後加上 `--relay https://<網域>` 重測。
+
+| A 網路 | B 網路 | relay | path | connect_ms | rtt_median_ms |
+|--------|--------|-------|------|---:|---:|
+| 公司 Wi-Fi | 家用寬頻 | 官方 | | | |
+| 公司 Wi-Fi | 手機熱點（CGNAT） | 官方 | | | |
+| 家用寬頻 | 手機熱點（CGNAT） | 官方 | | | |
+| 企業防火牆 | 家用寬頻 | 官方 | | | |
+| （以上重複） | | 自架 | | | |
+
+### 5.2 WebView 檔案管線效能
+
+在 Mac 與 Windows 筆電各執行：
+
+```bash
+pnpm install
+pnpm --filter @hills/desktop tauri dev
+```
+
+在開啟的視窗中前往「開發工具：檔案管線效能測試」，以 256 MB 與 1024 MB 各測一次，並在測試期間用活動監視器 / 工作管理員記錄 Hills 行程的記憶體峰值。把畫面上的 JSON 與記憶體峰值填入下表：
+
+| 平台 | WebView | 大小 | encodeMBps | decodeMBps | 記憶體峰值 |
+|------|---------|---:|---:|---:|---:|
+| macOS | WKWebView | 256 MB | | | |
+| macOS | WKWebView | 1024 MB | | | |
+| Windows | WebView2 | 256 MB | | | |
+| Windows | WebView2 | 1024 MB | | | |
+
+### 5.3 安裝檔
+
+push 後 CI 的「Desktop bundle」job 會產生未簽章的 `.dmg`、`.exe`、`.msi`（Actions 頁面的 artifacts）。在 Mac 與 Windows 各安裝一次並確認可開啟。未簽章的 macOS 安裝檔需在「系統設定 → 隱私權與安全性」允許開啟。

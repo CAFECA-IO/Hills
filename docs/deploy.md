@@ -43,6 +43,8 @@ docker compose exec mailbox cat /data/mailbox-code.txt
 
 連線碼以 `hills-mbx1-` 開頭，只含 mailbox 的位址（NodeId、relay URL、公網 IP 與埠），**不是機密**。
 
+要讓自己組織建置的桌機 app 預先填入此連線碼，在建置環境設定 `VITE_HILLS_DEFAULT_MAILBOX`（例如寫入 `apps/desktop/.env.local`，已列入 `.gitignore`；或設為 CI secret）。不要提交到 repo（D20）。
+
 ## 4. 建立組織（立即執行）
 
 1. 在第一台電腦安裝 Hills 桌機 app，選「建立組織」。

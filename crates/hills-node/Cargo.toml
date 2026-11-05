@@ -1,0 +1,41 @@
+[package]
+name = "hills-node"
+description = "app 核心：組織生命週期、同步引擎、gossip、presence（technical-design §16）。"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+automerge.workspace = true
+blake3.workspace = true
+bytes.workspace = true
+data-encoding.workspace = true
+getrandom.workspace = true
+hills-crypto.workspace = true
+hills-identity.workspace = true
+hills-net.workspace = true
+hills-proto.workspace = true
+hills-store.workspace = true
+hills-sync.workspace = true
+iroh.workspace = true
+iroh-gossip.workspace = true
+n0-future.workspace = true
+postcard.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+hills-mailbox = { path = "../../apps/mailbox" }
+tempfile.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

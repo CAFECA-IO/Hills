@@ -27,6 +27,7 @@ hills-store = { path = "crates/hills-store" }
 hills-sync = { path = "crates/hills-sync" }
 hills-net = { path = "crates/hills-net" }
 hills-domain = { path = "crates/hills-domain" }
+hills-node = { path = "crates/hills-node" }
 
 # 通用
 anyhow = "1"
@@ -35,7 +36,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 postcard = { version = "1", default-features = false, features = ["alloc"] }
 serde_bytes = "0.11"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time", "sync"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive"] }
@@ -56,6 +57,9 @@ getrandom = "0.4"
 
 # 網路與同步
 iroh = "1"
+iroh-gossip = "0.102"
+n0-future = "0.3"
+bytes = "1"
 automerge = "0.12"
 axum = "0.8"
 rusqlite = { version = "0.41", features = ["bundled"] }

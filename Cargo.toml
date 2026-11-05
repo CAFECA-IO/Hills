@@ -57,11 +57,13 @@ getrandom = "0.4"
 iroh = "1"
 automerge = "0.12"
 axum = "0.8"
+rusqlite = { version = "0.41", features = ["bundled"] }
 
 # 測試
 proptest = "1"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+tempfile = "3"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -2086,9 +2086,20 @@ name = "hills-mailbox"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "automerge",
  "axum",
+ "blake3",
+ "data-encoding",
+ "hills-crypto",
+ "hills-identity",
+ "hills-net",
+ "hills-proto",
+ "hills-sync",
  "http-body-util",
+ "iroh",
+ "rusqlite",
  "serde_json",
+ "tempfile",
  "tokio",
  "tower",
  "tracing",
@@ -2098,6 +2109,13 @@ dependencies = [
 [[package]]
 name = "hills-net"
 version = "0.1.0"
+dependencies = [
+ "hills-proto",
+ "iroh",
+ "postcard",
+ "serde",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "hills-proto"

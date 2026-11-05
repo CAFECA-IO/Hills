@@ -13,6 +13,7 @@ blake3.workspace = true
 data-encoding.workspace = true
 ed25519-dalek.workspace = true
 getrandom.workspace = true
+hills-proto.workspace = true
 hkdf.workspace = true
 sha2.workspace = true
 thiserror.workspace = true

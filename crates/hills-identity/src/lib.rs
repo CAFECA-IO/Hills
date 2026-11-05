@@ -9,10 +9,14 @@
 //! 金鑰由 BIP39 **熵** 推導，而不是由 BIP39 seed（PBKDF2）推導，因此同一組復原詞以英文或
 //! 繁體中文字表顯示都對應同一個身分。
 //!
+//! 憑證、裝置金鑰、組織根金鑰與信任鏈見 [`cert`]、[`trust`]；私密資料存放介面見 [`secret_store`]。
+//!
 //! 私鑰型別在 drop 時清除記憶體，且 `Debug` 不會輸出任何私密內容
 //! （development-guidelines §6）。
 
 use std::fmt;
+
+pub use hills_proto::MemberId;
 
 use bip39::{Language, Mnemonic};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
@@ -20,6 +24,10 @@ use hkdf::Hkdf;
 use sha2::Sha256;
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret};
 use zeroize::{Zeroize, Zeroizing};
+
+pub mod cert;
+pub mod secret_store;
+pub mod trust;
 
 /// 推導用的 HKDF salt。變更此值等同變更所有成員身分，屬於協定變更。
 const HKDF_SALT: &[u8] = b"hills/v1/identity";
@@ -40,8 +48,20 @@ pub enum IdentityError {
     Randomness,
     #[error("簽章驗證失敗")]
     BadSignature,
-    #[error("成員 ID 格式錯誤")]
-    InvalidMemberId,
+    #[error("簽署者不明或無權簽發")]
+    UnauthorizedSigner,
+    #[error("組織不符")]
+    OrgMismatch,
+    #[error("憑證內容不一致")]
+    InconsistentCert,
+    #[error("找不到成員")]
+    UnknownMember,
+    #[error("找不到裝置")]
+    UnknownDevice,
+    #[error("已被撤銷")]
+    Revoked,
+    #[error("訊息格式錯誤")]
+    Proto(#[from] hills_proto::ProtoError),
 }
 
 /// 復原詞顯示語言。兩種語言對應同一個熵，因此對應同一個身分。
@@ -113,48 +133,12 @@ impl fmt::Debug for RecoveryPhrase {
     }
 }
 
-/// 成員 ID：blake3(IK.pub) 前 16 bytes。
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct MemberId([u8; 16]);
-
-impl MemberId {
-    pub fn from_identity_key(ik: &VerifyingKey) -> Self {
-        let hash = blake3::hash(ik.as_bytes());
-        let mut id = [0u8; 16];
-        id.copy_from_slice(&hash.as_bytes()[..16]);
-        Self(id)
-    }
-
-    pub fn as_bytes(&self) -> &[u8; 16] {
-        &self.0
-    }
-
-    /// 解析顯示用的 base32 字串。
-    pub fn parse(s: &str) -> Result<Self, IdentityError> {
-        let bytes = data_encoding::BASE32_NOPAD
-            .decode(s.to_ascii_uppercase().as_bytes())
-            .map_err(|_| IdentityError::InvalidMemberId)?;
-        let arr: [u8; 16] = bytes
-            .try_into()
-            .map_err(|_| IdentityError::InvalidMemberId)?;
-        Ok(Self(arr))
-    }
-}
-
-impl fmt::Display for MemberId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(
-            &data_encoding::BASE32_NOPAD
-                .encode(&self.0)
-                .to_ascii_lowercase(),
-        )
-    }
-}
-
-impl fmt::Debug for MemberId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "MemberId({self})")
-    }
+/// 由 IK 公鑰計算成員 ID：blake3(IK.pub) 前 16 bytes（technical-design §3.1）。
+pub fn member_id_for(ik: &VerifyingKey) -> MemberId {
+    let hash = blake3::hash(ik.as_bytes());
+    let mut id = [0u8; 16];
+    id.copy_from_slice(&hash.as_bytes()[..16]);
+    MemberId(id)
 }
 
 /// 成員的身分金鑰 IK 與協商金鑰 EK。私鑰在 drop 時清除。
@@ -181,7 +165,7 @@ impl MemberKeys {
     }
 
     pub fn member_id(&self) -> MemberId {
-        MemberId::from_identity_key(&self.ik.verifying_key())
+        member_id_for(&self.ik.verifying_key())
     }
 
     /// IK 公鑰。
@@ -197,6 +181,19 @@ impl MemberKeys {
     /// 以 IK 簽章。
     pub fn sign(&self, message: &[u8]) -> Signature {
         self.ik.sign(message)
+    }
+
+    /// 以 IK 簽署協定訊息（technical-design §2 簽章輸入格式）。
+    pub fn sign_body<T: hills_proto::Signable>(
+        &self,
+        body: T,
+    ) -> Result<hills_proto::Signed<T>, IdentityError> {
+        cert::sign_with(&self.ik, body)
+    }
+
+    /// EK 私鑰位元組，只供 HPKE 解封裝使用（hills-crypto）。
+    pub fn exchange_secret_bytes(&self) -> Zeroizing<[u8; 32]> {
+        Zeroizing::new(self.ek.to_bytes())
     }
 
     /// X25519 金鑰協商（供 HPKE 等上層使用）。

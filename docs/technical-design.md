@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.6 草案 · 2026-11-05 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.7 草案 · 2026-11-05 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15。
 
 ## 1. 元件總覽
@@ -13,7 +13,8 @@
 │                                  ├ hills-store     Automerge 文件庫 + SQLite 投影 │
 │                                  ├ hills-sync      文件同步、驗證層          │
 │                                  ├ hills-net       iroh endpoint、ALPN、gossip │
-│                                  └ hills-domain    假勤 / 計劃 / Scrum 規則  │
+│                                  ├ hills-domain    假勤 / 計劃 / Scrum 規則  │
+│                                  └ hills-node      app 核心：組合以上元件（§16）│
 └────────────────────────────────────────────────────────────────────────────┘
             │  iroh（QUIC + TLS 1.3，端對端加密；直連優先，失敗走 relay）
             ▼
@@ -33,6 +34,7 @@ crates/
   hills-proto/     # 共用訊息型別（serde + postcard），帶版本號
   hills-identity/  hills-crypto/  hills-store/
   hills-sync/      hills-net/     hills-domain/
+  hills-node/      # app 核心：組織生命週期、同步引擎（§16）
 apps/
   desktop/         # Tauri 2 app（src-tauri + React 前端）
   mailbox/         # hills-mailbox 服務
@@ -62,6 +64,8 @@ deploy/
 | 雜湊 / ID | BLAKE3 | `blake3` |
 | 復原詞 | BIP39 24 字（256-bit entropy） | `bip39` |
 | 安全儲存 | macOS Keychain / Windows Credential Manager / Linux Secret Service | `keyring` |
+| 密碼金鑰推導 | Argon2id（組織根金鑰備份檔） | `argon2` |
+| 訊息鑑別（MAC） | BLAKE3 keyed hash（邀請加入申請） | `blake3` |
 
 原則：不自行設計密碼學原語；所有訊息格式帶版本號 `v`，以便日後升級（例如 M2 群組聊天改用 OpenMLS）。
 
@@ -114,6 +118,8 @@ type ∈ { device-cert, member-cert, revocation, change, roster, … }
 
 ### 3.4 邀請與加入
 
+> v0.7：邀請碼內容、MAC 與處理者以 §16.2 為準。
+
 邀請碼：`hills1-<base32(orgId[0..8] ‖ inviteId(8B) ‖ secret(16B))>`。QR Code 另含 relay URL 與 mailbox NodeId；文字邀請碼需另輸入伺服器網址。
 
 ```
@@ -138,12 +144,16 @@ type ∈ { device-cert, member-cert, revocation, change, roster, … }
 
 ### 3.5 新裝置綁定
 
+> v0.7：協定細節以 §16.3 為準。
+
 1. 新裝置產生 DK 與臨時 X25519 金鑰，顯示 QR（含 DK.pub、臨時公鑰、relay 位址）。
 2. 既有裝置掃碼，經 ALPN `hills/link/1` 連線。
 3. 雙方顯示 6 位數 SAS（由雙方公鑰雜湊得出），使用者確認一致。
 4. 既有裝置以臨時金鑰加密傳送 IK / EK 私鑰，並寫入新的 `DeviceCert`。
 
 ### 3.6 金鑰復原（遺失所有裝置）
+
+> v0.7：不需要 `RecoveryAnnounce`，以 §16.4 為準。
 
 1. 新裝置輸入復原詞 → 重建 IK / EK，產生新 DK 並自簽 `DeviceCert`。
 2. 經 mailbox 廣播 `RecoveryAnnounce`；其他成員裝置確認 IK 對應既有 MemberCert 後，將其有權取得的金鑰（含歷史 epoch）重新封裝給 EK。
@@ -171,6 +181,7 @@ type ∈ { device-cert, member-cert, revocation, change, roster, … }
 | `member/<id>/scrum/<yyyy-mm>` | 本人 | 小組成員 | `TK_team` | 每日 Scrum |
 | `member/<id>/attendance/<yyyy-mm>` | 本人 | 本人、負責人、管理者 | `AK_member` | 打卡紀錄 |
 | `member/<id>/requests` | 本人 | 本人、核准者 | `AK_member` | 請假、加班、補打卡申請 |
+| `member/<id>/secrets` | 本人 | 本人 | `PK_member` | 本人的邀請 secret 等私密設定（§16.2） |
 | `approvals/<approverId>` | 核准者本人 | 申請者、管理者 | 申請者的 `AK_member` | 核准 / 退回決定 |
 | `member/<id>/reports` | 本人 | 依發佈範圍 | `TK_team` | 日 / 週報 |
 
@@ -218,6 +229,8 @@ AAD = utf8(docId) ‖ 0x00 ‖ utf8(keyId)
 
 ### 4.5 同步流程
 
+> v0.7：簽章保存、直連協定與 gossip 以 §16.5–16.6 為準。
+
 1. 啟動：連上 iroh relay → 加入組織 gossip 主題 → 廣播 `HeadsAnnounce{docId, heads}`。
 2. 發現他人 heads 較新 → 直連該節點跑 Automerge sync。
 3. 相關成員都不在線 → 向 mailbox `LIST since=<cursor>` 取得 bundle 補同步。
@@ -243,6 +256,8 @@ AAD = utf8(docId) ‖ 0x00 ‖ utf8(keyId)
 - 本機閒置 10 分鐘（可設定）→ 自動「離開」。
 
 ### 5.2 Mailbox 服務 API
+
+> v0.7：完整請求清單以 §16.7 為準。
 
 ```
 PUT   { orgId, bundle }                              → { cursor }
@@ -386,6 +401,8 @@ ApprovalDecision { requestId, requesterId, step, decision: approve|reject, comme
 - 前端只讀投影（Tauri command 查詢 + event 推送變更）；寫入一律經 Rust 核心產生簽章 change。
 
 ## 10. 部署（docker-compose）
+
+> v0.7：M0 部署內容以 §16.9 與 [deploy.md](./deploy.md) 為準。
 
 ```yaml
 services:
@@ -605,3 +622,125 @@ GET    /v1/health
 | WebView 加密與編碼效能 | 在 macOS（WKWebView）與 Windows（WebView2）的 Web Worker 中，對 1 GB 檔案執行讀取 → AES-GCM → RS(8,5) | 每平台 ≥ 50 MB/s；記憶體 < 200 MB |
 | RS 相容性 | 以 SwarmStorage 產生的分片比對移植後的實作 | 輸出逐位元組一致 |
 | Mac ↔ Windows 檔案往返 | Mac 上傳含中文檔名、多層目錄的資料夾，Windows 下載；反向亦同 | 雜湊一致；關閉任 3 個節點仍可下載 |
+
+## 16. M0 組織生命週期與同步細節（v0.7）
+
+本節補足實作所需的細節；與 §3.4–3.6、§4.5、§5、§10 衝突時以本節為準。
+
+### 16.1 hills-node
+
+`crates/hills-node` 是 app 核心，組合 identity / crypto / store / sync / net，桌機 app 只透過它操作：
+
+- `create_org`、`create_invite`、`join`、`link_new_device` / `link_existing_device`、`recover`、`revoke_member`、`revoke_device`
+- `doc(id)` / `change(id, |doc| …)`：讀寫文件，寫入時自動簽章、保存、推送
+- `events()`：同步狀態、roster、presence 變化
+
+本機資料：
+
+| 位置 | 內容 | 保護 |
+|------|------|------|
+| `SecretStore`（系統 keychain） | 復原詞熵、DK、本機儲存金鑰 | OS |
+| `node.json` | OK.pub、mailbox 位址、本人 memberId、介面設定 | 非機密 |
+| `docs/*.am` | Automerge 文件 + 每筆 change 的簽章（§16.5） | 儲存金鑰（§9） |
+| `keyring.enc`、`trust.enc` | KeyRing、TrustStore 快照 | 儲存金鑰 |
+
+### 16.2 邀請與加入
+
+**邀請碼**：`hills1-` + base32（小寫、無補齊）of postcard：
+
+```
+InviteTicket { v, org_root: OK.pub, invite_id: [u8; 8], secret: [u8; 16], mailbox: EndpointAddr }
+```
+
+加入者需要完整 OK.pub 才能驗證憑證，也需要 mailbox 位址；QR Code 內容與文字相同。
+
+**流程**：
+
+1. 管理者建立邀請：org 文件 `invites[id] = {secretHash: blake3(secret), role, teamIds, expiresAt, createdBy}`；`secret` 只存在建立者本人的私密文件（`member/<id>/plans/private` 以外的專用文件 `member/<id>/secrets`，PK 加密）；向 mailbox `RegisterInvite{inviteId, expiresAt}`。
+2. 加入者產生復原詞（D38）→ IK / EK → DK → 自簽 DeviceCert，送出 `Join{orgId, inviteId, JoinRequest}`（不需 Hello）：
+   ```
+   JoinRequest { v, ik_pub, ek_pub, device_cert, name, mac }
+   mac = blake3::keyed_hash(K_inv, postcard(以上欄位))
+   K_inv = HKDF-SHA256(ikm = secret, info = "hills/v1/join" ‖ inviteId)
+   ```
+3. **建立邀請的管理者**的任一裝置（共用同一份 secret）定期 `FetchJoins`，驗證 MAC、邀請未過期未使用後：簽發 MemberCert → `PutRoster` → org 文件加入成員、標記邀請已使用 → 封裝 GK、所屬小組 TK、新成員的 AK（給本人、小組負責人、管理者）→ `PutKeys` → `CloseInvite`。
+4. 加入者每 5 秒嘗試 Hello，roster 中出現自己後成功 → `GetRoster`、`FetchKeys`、LIST 補同步。
+
+secret 不放在 org 文件，因為所有成員都能讀 org 文件；代價是只有建立者能處理該邀請（M0 接受）。
+
+### 16.3 新裝置綁定
+
+1. 新裝置產生 DK 與臨時 X25519 `e_new`，顯示 `LinkTicket{v, device addr, e_new.pub}`（文字碼 + QR）。
+2. 舊裝置以 ALPN `hills/link/1` 連線，送出臨時公鑰 `e_old.pub`。
+3. 雙方計算 `shared = X25519(e_old, e_new)`，`SAS = 6 位數(blake3("hills/v1/sas" ‖ shared ‖ e_old.pub ‖ e_new.pub))`，`K_link = HKDF(shared, "hills/v1/link")`。
+4. 兩邊顯示 SAS，使用者在**舊裝置**確認一致後，舊裝置以 `K_link`（XChaCha20-Poly1305）送出 `{復原詞熵, OK.pub, mailbox 位址}`，並以 IK 簽發新裝置的 DeviceCert、`PutDevice`。
+5. 新裝置由熵重建 IK / EK，之後與一般啟動相同（`FetchKeys` 取回所有封裝給本人 EK 的金鑰）。
+
+### 16.4 金鑰復原
+
+所有封裝金鑰都封裝給**成員的 EK**（不是裝置），且 mailbox 永久保存，因此：
+
+1. 新裝置輸入復原詞 + **組織連線碼**（`OrgTicket{v, org_root, mailbox}`，`hills-org1-` + base32；任何成員可在設定中匯出）。
+2. 重建 IK / EK，產生新 DK，以 IK 自簽 DeviceCert → `PutDevice`（mailbox 由 roster 確認此成員有效）。
+3. `FetchKeys`（since 0）取回全部封裝 → `GetRoster` → LIST 補同步。
+4. 在設定中撤銷舊裝置。
+
+### 16.5 簽章保存與直連同步
+
+- 本地文件檔除 Automerge 存檔外，另保存每筆 change 的 `(changeHash, signer, sig)`；change 內容從 Automerge 取，不重複儲存。需要轉送時組回 `SignedChange`。
+- ALPN `hills/sync/1`，請求 / 回應同 §5（一個串流一個請求）：
+  ```
+  SyncRequest::Pull { doc_id, heads }   →   SyncResponse::Changes(Vec<SignedChange>)  // 對方有、我沒有的
+  SyncRequest::Push { doc_id, changes } →   SyncResponse::Ok
+  ```
+- 回應前依 §4.1 **讀取者**欄位檢查請求者（連線 NodeId → TrustStore → Directory）；無權讀取回 `Forbidden`。收到的 change 一律經 §4.2 驗證層。
+
+### 16.6 Gossip 與 Presence
+
+- iroh-gossip topic = `blake3("hills/v1/gossip" ‖ orgId)`；bootstrap 節點來自 mailbox 位址簿（§16.7 `Peers`）。
+- 訊息 = GK 加密（AAD = `"hills/v1/gossip" ‖ keyId`）的 `Signed<GossipMsg>`（以 DK 簽章）：
+  ```
+  GossipMsg::Presence { member, state, note, current_task, at }
+  GossipMsg::Heads    { doc_id, heads }
+  ```
+- Presence 每 30 秒一次、90 秒未收到視為離線（§5.1）；Heads 在本機文件變更後送出，收到比自己新的 heads 時向該裝置 `Pull`。
+- Heads 會讓組織成員知道某文件有更新（不含內容），M0 接受。
+
+### 16.7 mailbox 請求（完整）
+
+| 請求 | 需 Hello | 權限 | 說明 |
+|------|:---:|------|------|
+| `Hello` | — | 有效裝置 | §5.2 |
+| `GetRoster` | ✓ | 成員 | 回傳 MemberCert、DeviceCert、Revocation；每筆可獨立驗證，mailbox 只能扣留、不能偽造 |
+| `PutRoster` | ✓ | 管理者 | 成員憑證與撤銷 |
+| `PutDevice` | ✓ | 本人 | 上傳自己的 DeviceCert（綁定、復原） |
+| `PutRevocation` | ✓ | 管理者（成員）/ 本人或管理者（裝置） | |
+| `RegisterInvite` / `CloseInvite` | ✓ | 管理者 | |
+| `Join` | ✗ | 已登記、未過期的邀請 | 每邀請最多 5 筆待處理 |
+| `FetchJoins` | ✓ | 管理者 | |
+| `PutKeys` | ✓ | 管理者（org、team、attendance）/ 本人（private） | `Signed<WrappedKey>`，由簽署裝置的權限決定 |
+| `FetchKeys{since}` | ✓ | 收件者本人 | 只回傳 `recipient == 本人` 的封裝 |
+| `Announce{addr}` / `Peers` | ✓ | 成員 | 自架位址簿：裝置的 iroh 位址與最後上線時間，取代 n0 DNS 探索（D1、D26 全自架） |
+| `Put` / `List` / `Get` | ✓ | 成員 | §5.2 |
+
+`Roster` 增加 `device_certs`。
+
+### 16.8 org 文件
+
+```
+org = {
+  name, timezone, locale,
+  members: { <memberId>: { name, joinedAt } },
+  teams:   { <teamId>: { name, leadIds: [..], memberIds: [..] } },
+  invites: { <inviteId>: { secretHash, role, teamIds, expiresAt, createdBy, usedBy?, revoked } },
+}
+```
+
+`Directory`（§4.2）由 org 文件投影提供。M0 建立組織時自動建立一個預設小組。
+
+### 16.9 部署（M0）
+
+- `deploy/docker-compose.yml`：`relay`（iroh-relay，自帶 LetsEncrypt；TCP 80 / 443、UDP 7842）與 `mailbox`（固定 UDP 埠、`HILLS_RELAY` 指向自架 relay）；tsa、storage 隨 M1 加入。
+- mailbox 啟動時印出 **mailbox 連線碼**（`hills-mbx1-` + base32(EndpointAddr)），建立組織時貼上。
+- 步驟見 [deploy.md](./deploy.md)。
+

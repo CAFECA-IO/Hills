@@ -62,7 +62,10 @@ function Actions({
 }
 
 export function CreateOrgForm({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
-  const [mailboxCode, setMailbox] = useState('');
+  // 自架組織可在建置時設定預設值（ui-spec「初次啟動與加入」；repo 不內建，D20）
+  const [mailboxCode, setMailbox] = useState(
+    import.meta.env.VITE_HILLS_DEFAULT_MAILBOX?.trim() ?? '',
+  );
   const [orgName, setOrg] = useState('');
   const [myName, setMe] = useState('');
   const [deviceName, setDevice] = useState(defaultDeviceName());

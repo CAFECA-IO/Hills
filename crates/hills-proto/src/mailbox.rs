@@ -20,7 +20,8 @@ pub const MAX_LIST: u32 = 500;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Hello {
     pub device_cert: Signed<DeviceCert>,
-    pub member_cert: Signed<MemberCert>,
+    /// 省略時 mailbox 使用已知的成員憑證（technical-design §16.7）
+    pub member_cert: Option<Signed<MemberCert>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

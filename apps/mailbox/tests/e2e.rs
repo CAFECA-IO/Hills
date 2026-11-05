@@ -73,12 +73,13 @@ fn hello(o: &Org, p: &Person) -> Hello {
             .keys
             .issue_device_cert(&p.device.public(), "laptop", 2)
             .unwrap(),
-        member_cert: o
-            .trust
-            .member_certs()
-            .into_iter()
-            .find(|c| c.body.member_id == p.keys.member_id())
-            .unwrap(),
+        member_cert: Some(
+            o.trust
+                .member_certs()
+                .into_iter()
+                .find(|c| c.body.member_id == p.keys.member_id())
+                .unwrap(),
+        ),
     }
 }
 
@@ -133,7 +134,7 @@ async fn server(o: &Org) -> (Server, Arc<Mailbox>) {
 
 async fn connect(s: &Server, o: &Org, p: &Person) -> Result<(MailboxClient, Endpoint), NetError> {
     let ep = endpoint_for(&p.device, vec![]).await;
-    let c = MailboxClient::connect(&ep, s.addr.clone(), hello(o, p)).await?;
+    let c = MailboxClient::connect(&ep, s.addr.clone(), o.trust.org_id(), hello(o, p)).await?;
     Ok((c, ep))
 }
 
@@ -271,7 +272,7 @@ async fn authentication_and_authorization() {
     let stranger = DeviceKey::generate().unwrap();
     let ep = endpoint_for(&stranger, vec![]).await;
     assert!(
-        MailboxClient::connect(&ep, srv.addr.clone(), hello(&o, &o.alice))
+        MailboxClient::connect(&ep, srv.addr.clone(), o.trust.org_id(), hello(&o, &o.alice))
             .await
             .is_err()
     );
@@ -280,9 +281,14 @@ async fn authentication_and_authorization() {
     let other = org();
     let ep = endpoint_for(&other.admin.device, vec![]).await;
     assert!(
-        MailboxClient::connect(&ep, srv.addr.clone(), hello(&other, &other.admin))
-            .await
-            .is_err()
+        MailboxClient::connect(
+            &ep,
+            srv.addr.clone(),
+            other.trust.org_id(),
+            hello(&other, &other.admin)
+        )
+        .await
+        .is_err()
     );
 
     // 撤銷 bob 後，bob 既有的連線也失效

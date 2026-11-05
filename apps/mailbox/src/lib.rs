@@ -162,14 +162,23 @@ impl Mailbox {
     fn hello(&self, h: &Hello, node: &Pub32) -> Result<Verified, Response> {
         let mut verified = None;
         self.update_trust(|trust| {
-            if trust.member(&h.member_cert.body.member_id).is_none() {
-                // bootstrap：尚未收到 roster 時，接受由 OK 或已知管理者簽發的有效憑證
-                trust
-                    .add_member_cert(h.member_cert.clone())
-                    .map_err(|_| err(ErrorCode::Unauthorized, "成員憑證無效"))?;
-            }
+            let member_cert = match &h.member_cert {
+                Some(mc) => {
+                    if trust.member(&mc.body.member_id).is_none() {
+                        // bootstrap：尚未收到 roster 時，接受由 OK 或已知管理者簽發的有效憑證
+                        trust
+                            .add_member_cert(mc.clone())
+                            .map_err(|_| err(ErrorCode::Unauthorized, "成員憑證無效"))?;
+                    }
+                    mc.clone()
+                }
+                None => trust
+                    .member_cert(&h.device_cert.body.member_id)
+                    .cloned()
+                    .ok_or_else(|| err(ErrorCode::Unauthorized, "未知的成員"))?,
+            };
             trust
-                .verify_hello(&h.device_cert, &h.member_cert, node)
+                .verify_hello(&h.device_cert, &member_cert, node)
                 .map_err(|e| err(ErrorCode::Unauthorized, &e.to_string()))?;
             trust
                 .add_device_cert(h.device_cert.clone())

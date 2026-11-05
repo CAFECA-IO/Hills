@@ -33,9 +33,9 @@ impl MailboxClient {
     pub async fn connect(
         endpoint: &Endpoint,
         addr: EndpointAddr,
+        org_id: OrgId,
         hello: Hello,
     ) -> Result<Self, NetError> {
-        let org_id = hello.member_cert.body.org_id;
         let conn = endpoint
             .connect(addr, ALPN)
             .await

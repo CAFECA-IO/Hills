@@ -1,6 +1,6 @@
 # Hills 自架部署（M0）
 
-> 版本：v0.1 · 2026-11-05 · 對應 [technical-design.md](./technical-design.md) §10、§16.9
+> 版本：v0.2 · 2026-11-05 · 對應 [technical-design.md](./technical-design.md) §10、§16.9
 > M0 部署 **relay**（iroh-relay，NAT 穿透與中繼）與 **mailbox**（離線信箱、roster 分發、邀請、封裝金鑰、位址簿）。tsa、storage 隨 M1 加入。
 
 伺服器只看得到加密後的資料與技術中繼資料（technical-design §5.2、§16.7），看不到訊息或文件內容。
@@ -27,6 +27,7 @@ cp .env.example .env               # 填入 HILLS_RELAY_HOST、HILLS_PUBLIC_IP
 
 docker compose up -d --build       # 第一次建置約 10–20 分鐘
 docker compose ps                  # relay 與 mailbox 皆為 running / healthy
+curl -s http://127.0.0.1:18080/v1/health   # mailbox 健康檢查（埠為 HILLS_HEALTH_PORT）
 ```
 
 `relay.toml` 與 `.env` 已列入 `.gitignore`，不要提交。
@@ -95,4 +96,5 @@ docker compose up -d --build
 | app 一直顯示「離線」 | 防火牆 UDP 7843 是否開放；`.env` 的 `HILLS_PUBLIC_IP` 是否正確；`docker compose logs mailbox` |
 | relay 無法取得憑證 | DNS 是否已生效（`dig relay.example.com`）；TCP 80 是否開放 |
 | 建立組織後一直「離線」，mailbox 日誌出現拒絕連線 | mailbox 已被其他組織綁定，或 `HILLS_ORG_ROOT_PUB` 與你的組織不同；重新部署時需清除 `mailbox-data` volume |
+| 啟動時 `Bind for …:8080 failed: port is already allocated` 之類的埠衝突 | 主機上已有服務占用該埠；在 `.env` 修改 `HILLS_HEALTH_PORT`（健康檢查，預設 18080）或 `HILLS_UDP_PORT` |
 | 加入後一直「等待核准」 | 建立該邀請的管理者裝置需上線一次 |

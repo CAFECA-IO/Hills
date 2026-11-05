@@ -1,6 +1,6 @@
 [package]
 name = "hills-proto"
-description = "共用網路訊息型別（serde + postcard），所有訊息帶版本號。見 technical-design §5。"
+description = "共用網路訊息型別（serde + postcard），所有訊息帶版本號。見 technical-design §2、§5。"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,6 +8,11 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+data-encoding.workspace = true
+postcard.workspace = true
+serde.workspace = true
+serde_bytes.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true

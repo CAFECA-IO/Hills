@@ -1,6 +1,6 @@
 [package]
 name = "hills-net"
-description = "iroh endpoint、ALPN 路由、gossip。見 technical-design §5。"
+description = "iroh endpoint、ALPN 路由與各協定的客戶端。見 technical-design §5。"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,6 +9,11 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+hills-proto.workspace = true
+iroh.workspace = true
+postcard.workspace = true
+serde.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true

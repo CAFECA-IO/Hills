@@ -67,7 +67,7 @@ pub enum Response {
         items: Vec<ListItem>,
         next: u64,
     },
-    Bundle(EncryptedBundle),
+    Bundle(Box<EncryptedBundle>),
     Error {
         code: ErrorCode,
         message: String,

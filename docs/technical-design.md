@@ -644,6 +644,8 @@ GET    /v1/health
 | `docs/*.am` | Automerge 文件 + 每筆 change 的簽章（§16.5） | 儲存金鑰（§9） |
 | `keyring.enc`、`trust.enc` | KeyRing、TrustStore 快照 | 儲存金鑰 |
 
+網路：node 的 iroh 金鑰就是 DK；relay 使用 mailbox 連線碼中的 relay URL（自架，D1），連線碼沒有 relay 時只用直連（測試用）。M0 只支援 `org`、`team/<id>`、`member/<id>/secrets` 三種文件，其他文件類型隨 M1 功能加入。
+
 ### 16.2 邀請與加入
 
 **邀請碼**：`hills1-` + base32（小寫、無補齊）of postcard：
@@ -710,7 +712,7 @@ secret 不放在 org 文件，因為所有成員都能讀 org 文件；代價是
 
 | 請求 | 需 Hello | 權限 | 說明 |
 |------|:---:|------|------|
-| `Hello` | — | 有效裝置 | §5.2 |
+| `Hello` | — | 有效裝置 | §5.2；`member_cert` 可省略（復原、剛加入時本機尚無自己的成員憑證），省略時 mailbox 使用已知的成員憑證 |
 | `GetRoster` | ✓ | 成員 | 回傳 MemberCert、DeviceCert、Revocation；每筆可獨立驗證，mailbox 只能扣留、不能偽造 |
 | `PutRoster` | ✓ | 管理者 | 成員憑證與撤銷 |
 | `PutDevice` | ✓ | 本人 | 上傳自己的 DeviceCert（綁定、復原） |

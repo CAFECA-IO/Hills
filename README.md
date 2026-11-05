@@ -87,7 +87,20 @@ cargo test --workspace && pnpm -r test      # 全部測試
 cargo run --release -p net-echo -- listen   # PoC：iroh 連線測試（見 docs/poc-report.md §5）
 ```
 
-檔案管線效能測試：以開發模式開啟 app，點「開發工具：檔案管線效能測試」。其他指令見 [AGENTS.md §7](AGENTS.md#7-常用指令)。
+檔案管線效能測試：以開發模式開啟 app，點右下角「開發工具：檔案管線效能測試」。其他指令見 [AGENTS.md §7](AGENTS.md#7-常用指令)。
+
+### 本機試用（不需雲端主機）
+
+```bash
+# 終端機 1：本機 mailbox（停用 relay，只適合同一台或同一區網）
+HILLS_NO_RELAY=1 cargo run -p hills-mailbox      # 印出「mailbox 連線碼」
+# 終端機 2：桌機 app，選「建立組織」並貼上連線碼
+pnpm --filter @hills/desktop tauri dev
+```
+
+跨網路使用（M0 驗收）需先依 [docs/deploy.md](docs/deploy.md) 在雲端主機部署 relay 與 mailbox。
+
+只想看畫面時，`pnpm --filter @hills/desktop dev` 後以瀏覽器開啟 `http://localhost:1420/`，會使用假資料（`?phase=ready` 直接進入主畫面）。
 
 ### 常見問題
 
@@ -103,7 +116,7 @@ crates/     Rust 核心函式庫（身分、加密、同步、網路、領域規
 apps/       desktop（Tauri 2）、mailbox、tsa、storage 服務
 packages/   前端共用套件（swarm：SwarmStorage 檔案管線）
 poc/        M0 技術驗證工具
-deploy/     部署設定
+deploy/     部署設定（docker-compose，見 docs/deploy.md）
 docs/       規劃與設計文件
 ```
 

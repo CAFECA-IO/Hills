@@ -29,10 +29,32 @@ function useHash(): string {
   return hash;
 }
 
+/** 開發模式才顯示的工具入口（poc-report §5.2）。 */
+function DevLink() {
+  if (!SwarmBench) return null;
+  return (
+    <a
+      className="fixed right-3 bottom-3 rounded border border-line bg-surface px-2 py-1 text-xs text-primary underline"
+      href="#/dev/swarm-bench"
+    >
+      {t('nav.devBench')}
+    </a>
+  );
+}
+
 /** 建立 / 加入後依序經過的步驟（ui-spec「初次啟動與加入」）。 */
 type Step = 'phrase' | 'backup' | null;
 
 export function App() {
+  return (
+    <>
+      <Main />
+      <DevLink />
+    </>
+  );
+}
+
+function Main() {
   const hash = useHash();
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [error, setError] = useState<string | null>(null);

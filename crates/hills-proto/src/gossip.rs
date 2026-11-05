@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{KeyId, MemberId, Signable, Timestamp};
+use crate::{KeyId, MemberId, Signable, Timestamp, Versioned};
 
 pub const TOPIC_PREFIX: &[u8] = b"hills/v1/gossip";
 pub const AAD_PREFIX: &[u8] = b"hills/v1/gossip";
@@ -55,4 +55,10 @@ pub struct GossipEnvelope {
     pub nonce: [u8; 24],
     #[serde(with = "serde_bytes")]
     pub ciphertext: Vec<u8>,
+}
+
+impl Versioned for GossipEnvelope {
+    fn version(&self) -> u8 {
+        self.v
+    }
 }

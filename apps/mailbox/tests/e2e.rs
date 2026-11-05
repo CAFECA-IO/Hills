@@ -118,7 +118,7 @@ struct Server {
 
 async fn server(o: &Org) -> (Server, Arc<Mailbox>) {
     let dir = tempfile::tempdir().unwrap();
-    let mailbox = Mailbox::open(dir.path(), o.ok.public()).unwrap();
+    let mailbox = Mailbox::open(dir.path(), Some(o.ok.public())).unwrap();
     let ep = endpoint_for(&DeviceKey::generate().unwrap(), vec![MAILBOX_ALPN.to_vec()]).await;
     let addr = ep.addr();
     let router = serve(ep, mailbox.clone());
@@ -317,7 +317,7 @@ async fn bad_bundles_rejected_and_state_persists() {
     let o = org();
     let dir = tempfile::tempdir().unwrap();
     {
-        let mailbox = Mailbox::open(dir.path(), o.ok.public()).unwrap();
+        let mailbox = Mailbox::open(dir.path(), Some(o.ok.public())).unwrap();
         let ep = endpoint_for(&DeviceKey::generate().unwrap(), vec![MAILBOX_ALPN.to_vec()]).await;
         let srv = Server {
             addr: ep.addr(),
@@ -336,7 +336,7 @@ async fn bad_bundles_rejected_and_state_persists() {
         srv.router.shutdown().await.unwrap();
     }
     // 重新開啟：roster 與 bundle 仍在，alice 可直接連線
-    let mailbox = Mailbox::open(dir.path(), o.ok.public()).unwrap();
+    let mailbox = Mailbox::open(dir.path(), Some(o.ok.public())).unwrap();
     let ep = endpoint_for(&DeviceKey::generate().unwrap(), vec![MAILBOX_ALPN.to_vec()]).await;
     let srv = Server {
         addr: ep.addr(),
@@ -649,4 +649,39 @@ async fn address_book() {
     admin.put_revocation(rev).await.unwrap();
     assert!(admin.peers().await.unwrap().is_empty());
     srv.router.shutdown().await.unwrap();
+}
+
+/// 未綁定的 mailbox：非管理者被拒；第一位 OK 簽發的管理者完成綁定，重啟後保留，之後他組織被拒。
+#[tokio::test]
+async fn unclaimed_mailbox_is_claimed_by_first_admin() {
+    let o = org();
+    let other = org();
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let mailbox = Mailbox::open(dir.path(), None).unwrap();
+        assert!(!mailbox.is_claimed());
+        let ep = endpoint_for(&DeviceKey::generate().unwrap(), vec![MAILBOX_ALPN.to_vec()]).await;
+        let addr = ep.addr();
+        let s = Server {
+            router: serve(ep, mailbox.clone()),
+            addr: addr.clone(),
+            _dir: tempfile::tempdir().unwrap(),
+        };
+        // 一般成員不能綁定
+        assert!(connect(&s, &o, &o.alice).await.is_err());
+        assert!(!mailbox.is_claimed());
+        // 第一位管理者綁定
+        let (c, _ep) = connect(&s, &o, &o.admin).await.unwrap();
+        assert!(mailbox.is_claimed());
+        assert_eq!(mailbox.org_id(), o.trust.org_id());
+        c.get_roster().await.unwrap();
+        // 另一個組織的管理者被拒
+        assert!(connect(&s, &other, &other.admin).await.is_err());
+        s.router.shutdown().await.unwrap();
+    }
+    // 重啟後仍綁定在原組織；指定不同 OK 拒絕啟動
+    let reopened = Mailbox::open(dir.path(), None).unwrap();
+    assert_eq!(reopened.org_id(), o.trust.org_id());
+    drop(reopened);
+    assert!(Mailbox::open(dir.path(), Some(other.ok.public())).is_err());
 }

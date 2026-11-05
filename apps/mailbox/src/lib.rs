@@ -33,9 +33,12 @@ type PeerRow = (Vec<u8>, Vec<u8>, Vec<u8>, i64);
 /// 位址簿只回傳最近 7 天內上線過的裝置。
 const PEER_TTL_MS: i64 = 7 * 24 * 3600 * 1000;
 
+/// 尚未綁定組織時的佔位 OK（全 0，不是有效的 Ed25519 公鑰，無法通過任何驗證）。
+pub const UNCLAIMED: Pub32 = Pub32([0; 32]);
+
 /// mailbox 共享狀態。鎖的順序固定為 trust → db，避免死結。
 pub struct Mailbox {
-    org_root: Pub32,
+    /// 未綁定組織時，org_root 為 [`UNCLAIMED`]
     trust: Mutex<TrustStore>,
     db: Mutex<Db>,
     blobs: PathBuf,
@@ -68,6 +71,7 @@ CREATE TABLE IF NOT EXISTS bundles (
 );
 CREATE INDEX IF NOT EXISTS bundles_doc ON bundles(org_id, doc_id, cursor);
 CREATE TABLE IF NOT EXISTS trust (id INTEGER PRIMARY KEY CHECK (id = 1), roster BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS invites (
     invite_id BLOB PRIMARY KEY,
     created_by BLOB NOT NULL,
@@ -100,28 +104,61 @@ CREATE TABLE IF NOT EXISTS peers (
 
 impl Mailbox {
     /// 開啟資料目錄（`index.sqlite`、`blobs/`），載入已保存的信任狀態。
-    pub fn open(data_dir: &Path, org_root: Pub32) -> anyhow::Result<Arc<Self>> {
+    ///
+    /// `org_root` 為 None 時使用已綁定的組織；尚未綁定則等待第一位以 OK 簽發之管理者連線
+    /// （technical-design §16.9）。指定的 OK 與已綁定的不同時拒絕啟動。
+    pub fn open(data_dir: &Path, org_root: Option<Pub32>) -> anyhow::Result<Arc<Self>> {
         std::fs::create_dir_all(data_dir.join("blobs"))?;
         let db = Db::open(data_dir.join("index.sqlite"))?;
         db.execute_batch(SCHEMA)?;
-        let mut trust = TrustStore::new(org_root);
+        let stored: Option<Vec<u8>> = db
+            .query_row("SELECT value FROM meta WHERE key = 'org_root'", [], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        let stored = stored
+            .map(|b| <[u8; 32]>::try_from(b.as_slice()).map(Pub32))
+            .transpose()
+            .map_err(|_| anyhow::anyhow!("資料庫中的 org_root 格式錯誤"))?;
+        let root = match (org_root, stored) {
+            (Some(a), Some(b)) if a != b => anyhow::bail!("HILLS_ORG_ROOT_PUB 與已綁定的組織不同"),
+            (Some(a), None) => {
+                db.execute(
+                    "INSERT INTO meta (key, value) VALUES ('org_root', ?1)",
+                    params![&a.0[..]],
+                )?;
+                a
+            }
+            (a, b) => a.or(b).unwrap_or(UNCLAIMED),
+        };
+        let mut trust = TrustStore::new(root);
         let saved: Option<Vec<u8>> = db
             .query_row("SELECT roster FROM trust WHERE id = 1", [], |r| r.get(0))
             .optional()?;
-        if let Some(bytes) = saved {
+        if let (Some(bytes), false) = (saved, root == UNCLAIMED) {
             let roster: Roster = hills_proto::decode(&bytes)?;
             trust.import_roster(&roster)?;
         }
         Ok(Arc::new(Self {
-            org_root,
             trust: Mutex::new(trust),
             db: Mutex::new(db),
             blobs: data_dir.join("blobs"),
         }))
     }
 
+    /// 是否已綁定組織。
+    pub fn is_claimed(&self) -> bool {
+        self.trust
+            .lock()
+            .map(|t| t.org_root() != UNCLAIMED)
+            .unwrap_or(false)
+    }
+
     pub fn org_id(&self) -> OrgId {
-        hills_identity::cert::org_id_for(&self.org_root)
+        self.trust
+            .lock()
+            .map(|t| t.org_id())
+            .unwrap_or(Pub32([0; 32]))
     }
 
     fn blob_path(&self, hash: &[u8; 32]) -> PathBuf {
@@ -161,7 +198,20 @@ impl Mailbox {
 
     fn hello(&self, h: &Hello, node: &Pub32) -> Result<Verified, Response> {
         let mut verified = None;
+        let mut claim = None;
         self.update_trust(|trust| {
+            if trust.org_root() == UNCLAIMED {
+                // 綁定：第一張由 OK 簽發的管理者憑證決定組織
+                let mc = h.member_cert.as_ref().ok_or_else(|| err(ErrorCode::Unauthorized, "mailbox 尚未綁定組織"))?;
+                let root = mc.signer;
+                if !mc.body.is_admin() || mc.body.org_id != hills_identity::cert::org_id_for(&root) {
+                    return Err(err(ErrorCode::Unauthorized, "mailbox 尚未綁定組織"));
+                }
+                let mut fresh = TrustStore::new(root);
+                fresh.add_member_cert(mc.clone()).map_err(|_| err(ErrorCode::Unauthorized, "成員憑證無效"))?;
+                *trust = fresh;
+                claim = Some(root);
+            }
             let member_cert = match &h.member_cert {
                 Some(mc) => {
                     if trust.member(&mc.body.member_id).is_none() {
@@ -188,6 +238,13 @@ impl Mailbox {
                     .verify_device(node)
                     .map_err(|e| err(ErrorCode::Unauthorized, &e.to_string()))?,
             );
+            // 綁定在全部驗證通過後才寫入（失敗的連線不會綁定組織）
+            if let Some(root) = claim {
+                let db = self.db.lock().map_err(|_| err(ErrorCode::Internal, "lock"))?;
+                db.execute("INSERT INTO meta (key, value) VALUES ('org_root', ?1)", params![&root.0[..]])
+                    .map_err(|_| err(ErrorCode::Internal, "無法綁定組織"))?;
+                tracing::info!(org = %hills_identity::cert::org_id_for(&root), "mailbox 已綁定組織");
+            }
             Ok(())
         })?;
         verified.ok_or_else(|| err(ErrorCode::Internal, "hello"))

@@ -1,22 +1,32 @@
 //! hills-mailbox 執行檔。
 //!
 //! 環境變數：
-//! - `HILLS_ORG_ROOT_PUB`（必填）：組織根金鑰 OK 公鑰（64 位 hex）
-//! - `HILLS_DATA_DIR`：資料目錄（預設 `./data`），含 `node.key`、`index.sqlite`、`blobs/`
+//! - `HILLS_ORG_ROOT_PUB`（選填）：組織根金鑰 OK 公鑰（64 位 hex）；未設定時為「未綁定」，
+//!   由第一位組織管理者連線時綁定（technical-design §16.9）
+//! - `HILLS_DATA_DIR`：資料目錄（預設 `./data`），含 `node.key`、`index.sqlite`、`blobs/`、
+//!   `mailbox-code.txt`
+//! - `HILLS_UDP_PORT`：iroh 固定 UDP 埠（預設 7843）
+//! - `HILLS_PUBLIC_ADDR`：對外位址（例如 `203.0.113.5:7843`），寫入 mailbox 連線碼
 //! - `HILLS_LISTEN`：健康檢查 HTTP 位址（預設 `0.0.0.0:8080`）
 //! - `HILLS_RELAY`：自架 iroh-relay URL；未設定時使用 iroh 預設 relay
 //! - `HILLS_NO_RELAY=1`：停用 relay（本機測試）
 
 use std::path::PathBuf;
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 use axum::{Json, Router, routing::get};
 use hills_mailbox::{Mailbox, serve};
 use hills_proto::Pub32;
+use hills_proto::ticket::{MailboxTicket, Ticket};
 use iroh::{Endpoint, RelayMode, SecretKey, endpoint::presets};
 use serde_json::{Value, json};
 
 const SERVICE: &str = "hills-mailbox";
+const DEFAULT_UDP_PORT: u16 = 7843;
+
+fn endpoint_relay_disabled() -> bool {
+    std::env::var("HILLS_NO_RELAY").is_ok_and(|v| v == "1")
+}
 
 fn app() -> Router {
     Router::new().route("/v1/health", get(health))
@@ -62,28 +72,53 @@ async fn main() -> anyhow::Result<()> {
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
-    let Ok(root) = std::env::var("HILLS_ORG_ROOT_PUB") else {
-        bail!("必須設定 HILLS_ORG_ROOT_PUB");
+    let org_root = match std::env::var("HILLS_ORG_ROOT_PUB") {
+        Ok(v) if !v.trim().is_empty() => Some(parse_pub(&v)?),
+        _ => None,
     };
-    let org_root = parse_pub(&root)?;
+    let port: u16 = std::env::var("HILLS_UDP_PORT")
+        .ok()
+        .map(|v| v.parse().context("HILLS_UDP_PORT 不是有效埠號"))
+        .transpose()?
+        .unwrap_or(DEFAULT_UDP_PORT);
     let data = PathBuf::from(std::env::var("HILLS_DATA_DIR").unwrap_or_else(|_| "data".into()));
     std::fs::create_dir_all(&data)?;
     let mailbox = Mailbox::open(&data, org_root)?;
 
-    let relay = if std::env::var("HILLS_NO_RELAY").is_ok_and(|v| v == "1") {
+    let relay = if endpoint_relay_disabled() {
         RelayMode::Disabled
     } else if let Ok(url) = std::env::var("HILLS_RELAY") {
         RelayMode::custom([url.parse().context("HILLS_RELAY 不是有效 URL")?])
     } else {
         RelayMode::Default
     };
-    let endpoint = Endpoint::builder(presets::N0)
+    let endpoint = Endpoint::builder(presets::Minimal)
         .secret_key(node_key(&data)?)
         .relay_mode(relay)
         .alpns(vec![hills_mailbox::MAILBOX_ALPN.to_vec()])
+        .bind_addr(std::net::SocketAddr::from(([0, 0, 0, 0], port)))?
         .bind()
         .await?;
-    tracing::info!(node_id = %endpoint.id(), org = %mailbox.org_id(), "{SERVICE} iroh endpoint ready");
+    if !endpoint_relay_disabled() {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(15), endpoint.online()).await;
+    }
+    let mut peer = hills_net::to_peer_addr(&endpoint.addr());
+    if let Ok(public) = std::env::var("HILLS_PUBLIC_ADDR") {
+        let public = public.trim().to_owned();
+        if !public.is_empty() {
+            peer.direct.retain(|a| a != &public);
+            peer.direct.insert(0, public);
+        }
+    }
+    let code = MailboxTicket::new(peer).to_code()?;
+    std::fs::write(data.join("mailbox-code.txt"), format!("{code}\n"))?;
+    if mailbox.is_claimed() {
+        tracing::info!(node_id = %endpoint.id(), org = %mailbox.org_id(), "{SERVICE} iroh endpoint ready");
+    } else {
+        tracing::info!(node_id = %endpoint.id(), "{SERVICE} iroh endpoint ready（尚未綁定組織）");
+    }
+    // 連線碼不是機密（只含位址），印出供建立組織時貼上
+    println!("mailbox 連線碼：{code}");
     let router = serve(endpoint, mailbox);
 
     let addr = std::env::var("HILLS_LISTEN").unwrap_or_else(|_| "0.0.0.0:8080".into());

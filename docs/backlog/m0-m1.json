@@ -1,0 +1,547 @@
+{
+  "milestones": [
+    {
+      "title": "M0 基礎",
+      "due": "2027-01-15",
+      "desc": "身分 / 金鑰、邀請碼、組織與小組、iroh P2P、Automerge 同步、信箱節點、Docker Compose 部署。驗收：兩台桌機跨網路同步資料。見 docs/feature-plan.md §8、docs/technical-design.md。"
+    },
+    {
+      "title": "M1 計劃與 Scrum（MVP）",
+      "due": "2027-05-31",
+      "desc": "桌機三平台：即時狀態、完整假勤（打卡、請假、加班、多層核准、特休）、台灣假日曆、團隊看板、五層計劃（OKR）、任務、每日 Scrum、日 / 週報；全員試用 4 週並達成 §8.2 指標。"
+    }
+  ],
+  "labels": [
+    {
+      "name": "area:core",
+      "color": "5319e7"
+    },
+    {
+      "name": "area:identity",
+      "color": "b60205"
+    },
+    {
+      "name": "area:crypto",
+      "color": "b60205"
+    },
+    {
+      "name": "area:net",
+      "color": "0e8a16"
+    },
+    {
+      "name": "area:sync",
+      "color": "0e8a16"
+    },
+    {
+      "name": "area:server",
+      "color": "006b75"
+    },
+    {
+      "name": "area:ui",
+      "color": "1d76db"
+    },
+    {
+      "name": "area:attendance",
+      "color": "fbca04"
+    },
+    {
+      "name": "area:plan",
+      "color": "c5def5"
+    },
+    {
+      "name": "area:scrum",
+      "color": "c5def5"
+    },
+    {
+      "name": "area:report",
+      "color": "c5def5"
+    },
+    {
+      "name": "type:poc",
+      "color": "d93f0b"
+    },
+    {
+      "name": "type:infra",
+      "color": "bfdadc"
+    },
+    {
+      "name": "type:docs",
+      "color": "0075ca"
+    },
+    {
+      "name": "type:feature",
+      "color": "a2eeef"
+    },
+    {
+      "name": "priority:high",
+      "color": "e11d21"
+    }
+  ],
+  "issues": [
+    {
+      "title": "[M0] Monorepo 骨架：Tauri 2 + React/TS + Rust workspace",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:infra",
+        "area:core",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n建立專案結構，讓之後所有工作有一致的起點。\n\n## 工作項目\n\n- [ ] 依 technical-design §1 建立 crates/、apps/、deploy/ 目錄\n- [ ] Tauri 2 桌機 app 可啟動（React + TypeScript + Vite + Tailwind）\n- [ ] Rust workspace：hills-proto、hills-identity、hills-crypto、hills-store、hills-sync、hills-net、hills-domain 空 crate\n- [ ] 設定 rustfmt、clippy、ESLint、Prettier\n- [ ] README 加入開發環境說明\n\n## 驗收條件\n\n- `cargo test` 與 `pnpm test` 在乾淨環境可執行\n- 三平台皆可 `tauri dev` 啟動空白視窗\n\n## 參考\n\ntechnical-design §1\n"
+    },
+    {
+      "title": "[M0] CI：三平台建置、測試與機密掃描",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:infra",
+        "priority:high"
+      ],
+      "body": "## 目標\n\nrepo 為公開，CI 必須同時把關建置品質與機密外洩。\n\n## 工作項目\n\n- [ ] GitHub Actions：macOS / Windows / Linux 建置與測試矩陣\n- [ ] clippy、ESLint 於 PR 必過\n- [ ] 啟用 GitHub secret scanning 與 push protection\n- [ ] 加入 pre-commit 機密掃描（gitleaks）\n- [ ] `.env.example` 範本化，`.gitignore` 排除金鑰與 .env\n\n## 驗收條件\n\n- PR 觸發三平台 CI 且全部通過\n- 刻意提交假金鑰會被阻擋\n\n## 參考\n\nfeature-plan D25、§9\n"
+    },
+    {
+      "title": "[M0][PoC] iroh 跨 NAT 連線驗證",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:poc",
+        "area:net",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n驗證風險最高的 P2P 穿透能力（D28）。\n\n## 工作項目\n\n- [ ] 以 iroh 建立最小 CLI：兩節點互連、傳送訊息\n- [ ] 自架 iroh-relay（Docker）\n- [ ] 測試矩陣：公司網路、家用寬頻、手機熱點（CGNAT）、企業防火牆兩兩組合\n- [ ] 記錄直連比例、relay 延遲、連線建立時間\n\n## 驗收條件\n\n- 全部組合可連線\n- 測試數據寫入 docs/poc-report.md\n\n## 參考\n\ntechnical-design §12\n"
+    },
+    {
+      "title": "[M0][PoC] Automerge 離線編輯與同步驗證",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:poc",
+        "area:sync",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n驗證 Automerge 在多裝置離線編輯下的正確性與效能。\n\n## 工作項目\n\n- [ ] 以計劃文件結構建立測試文件\n- [ ] 兩裝置各自離線編輯 100 次後經 iroh 同步\n- [ ] 量測合併時間、文件大小成長\n- [ ] 測試 Automerge sync protocol 跑在 iroh 連線上\n\n## 驗收條件\n\n- 結果一致、無資料遺失\n- 合併 < 1 秒\n- 結果寫入 docs/poc-report.md\n\n## 參考\n\ntechnical-design §12\n"
+    },
+    {
+      "title": "[M0][PoC] PoC 報告與技術選型 go / no-go",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:docs",
+        "type:poc"
+      ],
+      "body": "## 目標\n\n根據 PoC 結果決定是否沿用 iroh + Automerge。\n\n## 工作項目\n\n- [ ] 彙整穿透、同步、mailbox、打包四項結果\n- [ ] 若未通過，評估 WebRTC + Yjs / Loro 替代方案\n- [ ] 更新 technical-design 與 feature-plan 決策表\n\n## 驗收條件\n\n- docs/poc-report.md 完成並經審閱\n- 決策記錄於 feature-plan\n\n## 參考\n\ntechnical-design §12\n"
+    },
+    {
+      "title": "[M0] 身分金鑰：BIP39 復原詞推導 IK / EK",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:feature",
+        "area:identity",
+        "area:crypto",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n建立成員身分的密碼學基礎。\n\n## 工作項目\n\n- [ ] 24 字 BIP39 復原詞產生與驗證\n- [ ] HKDF 推導 Ed25519 IK 與 X25519 EK\n- [ ] 成員 ID = blake3(IK.pub) 前 16 bytes，base32 顯示\n- [ ] 私鑰存入系統 keychain（keyring crate）\n- [ ] 單元測試：固定測試向量\n\n## 驗收條件\n\n- 同一復原詞在三平台推導出相同 IK / EK\n- 私鑰不以明文寫入磁碟\n\n## 參考\n\ntechnical-design §2、§3.1\n"
+    },
+    {
+      "title": "[M0] 裝置金鑰、裝置憑證與信任鏈驗證",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:feature",
+        "area:identity",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n每台裝置有自己的金鑰，並可驗證任何簽章資料的來源。\n\n## 工作項目\n\n- [ ] DK 產生並作為 iroh NodeId\n- [ ] DeviceCert / MemberCert 結構與簽章（hills-proto，帶版本號）\n- [ ] 信任鏈驗證函式（technical-design §3.2）\n- [ ] 撤銷清單處理\n\n## 驗收條件\n\n- 偽造或已撤銷的憑證驗證失敗（含測試）\n\n## 參考\n\ntechnical-design §3.1–3.2\n"
+    },
+    {
+      "title": "[M0] 組織建立（Genesis）流程",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:feature",
+        "area:identity",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n第一位使用者可建立組織並成為管理者。\n\n## 工作項目\n\n- [ ] 產生 OK、第一張管理者 MemberCert\n- [ ] 建立 org 文件與 GK\n- [ ] 復原詞抄寫引導與驗證（抽 3 字）\n- [ ] OK 備份檔以密碼加密匯出\n- [ ] UI：建立組織精靈（名稱、時區、語言）\n\n## 驗收條件\n\n- 完成精靈後可在 app 中看到組織與自己為管理者\n- OK 備份檔可用密碼還原\n\n## 參考\n\ntechnical-design §3.3\n"
+    },
+    {
+      "title": "[M0] 邀請碼與加入流程",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:feature",
+        "area:identity",
+        "area:server",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n管理者可邀請成員，成員以邀請碼加入（D14）。\n\n## 工作項目\n\n- [ ] 邀請碼格式 hills1-…與 QR Code\n- [ ] Invite 寫入 org 文件（只存 secret 雜湊）\n- [ ] JoinRequest（HMAC 驗證）經 mailbox 投遞\n- [ ] 管理者裝置處理加入：簽發 MemberCert、HPKE 封裝 GK / TK\n- [ ] 一次性、72 小時過期、可撤銷\n- [ ] 新成員加入通知全員\n\n## 驗收條件\n\n- 管理者離線時提交的 JoinRequest，於管理者上線後完成加入\n- 過期或重複使用的邀請碼被拒絕\n\n## 參考\n\ntechnical-design §3.4\n"
+    },
+    {
+      "title": "[M0] 新裝置綁定（QR + SAS）",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:feature",
+        "area:identity",
+        "area:net"
+      ],
+      "body": "## 目標\n\n同一成員可新增第二台裝置。\n\n## 工作項目\n\n- [ ] ALPN hills/link/1\n- [ ] 新裝置顯示 QR，既有裝置掃描（桌機可改用貼上代碼）\n- [ ] 6 位數 SAS 比對\n- [ ] 加密傳送 IK / EK 並寫入 DeviceCert\n\n## 驗收條件\n\n- 第二台裝置綁定後可同步同一成員的所有資料\n- SAS 不一致時中止\n\n## 參考\n\ntechnical-design §3.5\n"
+    },
+    {
+      "title": "[M0] 金鑰 epoch 管理與 HPKE 封裝",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:feature",
+        "area:crypto",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n管理 GK、TK、AK、PK 等對稱金鑰的產生、封裝、輪替。\n\n## 工作項目\n\n- [ ] keys 紀錄格式（keyId、epoch、封裝給每位持有者）\n- [ ] HPKE 封裝 / 解封\n- [ ] 依 technical-design §4.1 決定各金鑰持有者\n- [ ] 輪替 API（供停用成員、負責人異動使用）\n\n## 驗收條件\n\n- 輪替後被移除者無法解密新資料（測試）\n\n## 參考\n\ntechnical-design §3.7、§4.1\n"
+    },
+    {
+      "title": "[M0] 簽章 change 與 single-writer 驗證層",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:feature",
+        "area:sync",
+        "area:crypto",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n確保每份文件只被合法寫入者修改。\n\n## 工作項目\n\n- [ ] SignedChange 格式\n- [ ] 套用前驗證：簽章 → 信任鏈 → 合法寫入者\n- [ ] 非法 change 拒絕並記錄本機稽核紀錄\n- [ ] 文件類型與寫入者對照表（technical-design §4.1）\n\n## 驗收條件\n\n- 成員寫入他人 attendance 文件被拒，且不影響合法 change（測試）\n\n## 參考\n\ntechnical-design §4.2\n"
+    },
+    {
+      "title": "[M0] 加密 change bundle 格式",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:feature",
+        "area:sync",
+        "area:crypto"
+      ],
+      "body": "## 目標\n\n讓離線同步的資料在伺服器上只是密文。\n\n## 工作項目\n\n- [ ] EncryptedBundle v1（XChaCha20-Poly1305）\n- [ ] bundleHash 去重\n- [ ] 打包 / 解包與 Automerge 整合\n\n## 驗收條件\n\n- mailbox 端資料無法還原內容（審查 + 測試）\n\n## 參考\n\ntechnical-design §4.4\n"
+    },
+    {
+      "title": "[M0] hills-mailbox 信箱節點服務",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:feature",
+        "area:server",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n成員離線時仍能補同步（D1）。\n\n## 工作項目\n\n- [ ] ALPN hills/mailbox/1：PUT / LIST / GET / JOIN / FETCH_JOINS\n- [ ] 憑證鏈存取控制，JOIN 限流\n- [ ] SQLite 索引 + 檔案系統儲存\n- [ ] 健康檢查端點\n- [ ] Dockerfile\n\n## 驗收條件\n\n- A 離線時 B 寫入，A 上線 ≤ 5 秒完成補同步\n\n## 參考\n\ntechnical-design §5.2\n"
+    },
+    {
+      "title": "[M0] 同步引擎：gossip 公告 + 直連同步 + mailbox 補同步",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:feature",
+        "area:sync",
+        "area:net",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n完成 technical-design §4.5 的完整同步流程。\n\n## 工作項目\n\n- [ ] iroh-gossip 組織主題與 HeadsAnnounce\n- [ ] ALPN hills/sync/1 多工多份文件\n- [ ] 離線時寫入 mailbox，上線時依 cursor 補同步\n- [ ] 重試、退避與連線狀態指示\n\n## 驗收條件\n\n- 三台裝置在任意上下線順序下最終一致（整合測試）\n\n## 參考\n\ntechnical-design §4.5、§5\n"
+    },
+    {
+      "title": "[M0] 本地儲存：Automerge 文件庫 + SQLite 投影",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:feature",
+        "area:core"
+      ],
+      "body": "## 目標\n\n提供前端可查詢的資料與靜態加密。\n\n## 工作項目\n\n- [ ] 文件以本機儲存金鑰加密存放\n- [ ] SQLite 投影框架（增量更新、可重建）\n- [ ] Tauri commands 查詢 + events 推送變更\n\n## 驗收條件\n\n- 刪除投影資料庫後可完整重建\n- 本機檔案無明文業務資料\n\n## 參考\n\ntechnical-design §9\n"
+    },
+    {
+      "title": "[M0] Presence：上線狀態廣播",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:feature",
+        "area:net"
+      ],
+      "body": "## 目標\n\n團隊看板的資料基礎。\n\n## 工作項目\n\n- [ ] Presence 訊息（GK 加密、簽章）每 30 秒廣播\n- [ ] 90 秒逾時判定離線\n- [ ] 多裝置合併狀態\n- [ ] 本機閒置偵測（三平台）\n\n## 驗收條件\n\n- 50 個模擬節點下狀態更新 ≤ 2 秒\n\n## 參考\n\ntechnical-design §5.1\n"
+    },
+    {
+      "title": "[M0] 成員停用與金鑰輪替",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:feature",
+        "area:identity",
+        "area:crypto"
+      ],
+      "body": "## 目標\n\n離職處理（feature-plan §5.1）。\n\n## 工作項目\n\n- [ ] Revocation 簽章紀錄\n- [ ] 自動輪替該成員可存取的所有金鑰\n- [ ] 移出所有小組，保留計劃與報表供交接\n- [ ] 全員通知\n\n## 驗收條件\n\n- 停用後該成員的裝置無法同步新資料\n\n## 參考\n\ntechnical-design §3.7\n"
+    },
+    {
+      "title": "[M0] 金鑰復原流程",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:feature",
+        "area:identity"
+      ],
+      "body": "## 目標\n\n成員遺失所有裝置時可用復原詞找回身分。\n\n## 工作項目\n\n- [ ] 以復原詞重建 IK / EK\n- [ ] RecoveryAnnounce 與其他成員重新封裝金鑰\n- [ ] 撤銷舊裝置\n- [ ] 無復原詞時的管理者重新邀請流程\n\n## 驗收條件\n\n- 刪除全部本機資料後以復原詞還原，可讀取原有資料\n\n## 參考\n\ntechnical-design §3.6\n"
+    },
+    {
+      "title": "[M0] Docker Compose 部署（relay、mailbox、tsa、caddy）",
+      "milestone": "M0 基礎",
+      "labels": [
+        "type:infra",
+        "area:server"
+      ],
+      "body": "## 目標\n\n一鍵部署所有自架服務（D13）。\n\n## 工作項目\n\n- [ ] deploy/docker-compose.yml\n- [ ] Caddy 自動 TLS\n- [ ] `.env.example` 與部署文件 docs/deploy.md\n- [ ] 每日備份腳本、健康檢查與磁碟告警\n\n## 驗收條件\n\n- 在全新 VPS 依文件 30 分鐘內完成部署\n\n## 參考\n\ntechnical-design §10\n"
+    },
+    {
+      "title": "[M1] 設計系統：色彩 / 字型 token 與基礎元件（含深色模式）",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:ui",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n建立「山丘俯瞰」設計系統（D22）。\n\n## 工作項目\n\n- [ ] 淺 / 深兩套色彩 token，跟隨系統\n- [ ] 字型：Noto Sans TC 為主\n- [ ] 基礎元件：按鈕、輸入、選單、表格、對話框、標籤、頭像、狀態點\n- [ ] 主題色可由組織覆寫\n\n## 驗收條件\n\n- 元件於淺 / 深模式皆符合 WCAG AA 對比\n\n## 參考\n\nfeature-plan §4、D22\n"
+    },
+    {
+      "title": "[M1] App 外框與導覽",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n主要頁面的框架。\n\n## 工作項目\n\n- [ ] 側邊導覽：團隊、計劃、任務、Scrum、出勤、報表、設定\n- [ ] 同步狀態與連線指示\n- [ ] 全域快捷鍵與搜尋入口（預留）\n\n## 驗收條件\n\n- 所有 M1 頁面可由導覽進入\n\n## 參考\n\nfeature-plan §5\n"
+    },
+    {
+      "title": "[M1] 組織設定：品牌、時區、公司 Wi-Fi、工作規則",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:ui",
+        "area:attendance"
+      ],
+      "body": "## 目標\n\n管理者可設定組織層級規則（D20、D29）。\n\n## 工作項目\n\n- [ ] 組織名稱、Logo、主題色、語言、時區\n- [ ] 公司 Wi-Fi 登錄（儲存雜湊）\n- [ ] 工作規則：彈性上班區間、每日時數、休息時間\n\n## 驗收條件\n\n- 設定變更同步至全員並即時生效\n\n## 參考\n\nfeature-plan §5.12、technical-design §8\n"
+    },
+    {
+      "title": "[M1] 成員與小組管理",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n管理者管理成員、小組與負責人。\n\n## 工作項目\n\n- [ ] 成員列表、邀請、停用（串接 M0 流程）\n- [ ] 小組建立、成員加入 / 移出、負責人設定（觸發 AK 輪替）\n- [ ] 到職日設定（特休計算用）\n- [ ] 組織架構檢視\n\n## 驗收條件\n\n- 一人可屬多小組；負責人異動後新負責人可讀組員出勤\n\n## 參考\n\nfeature-plan §5.1\n"
+    },
+    {
+      "title": "[M1] 即時狀態 UI 與團隊看板",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n一頁看全員狀態、所屬小組與正在執行的任務。\n\n## 工作項目\n\n- [ ] 狀態選擇與自訂文字、到期時間\n- [ ] 自動離開 / 請假狀態\n- [ ] 團隊看板：依小組分組、正在執行任務\n- [ ] 可見範圍設定\n\n## 驗收條件\n\n- 狀態變更於其他成員畫面 ≤ 2 秒更新\n\n## 參考\n\nfeature-plan §5.2\n"
+    },
+    {
+      "title": "[M1] 假日曆：台灣行事曆匯入與公司自訂假日",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:attendance"
+      ],
+      "body": "## 目標\n\n工作日判定的基礎（D21）。\n\n## 工作項目\n\n- [ ] repo 內維護 holidays/tw/<year>.json（國定假日、補班日）\n- [ ] 管理者匯入 / 更新；可切換其他地區\n- [ ] 公司自訂假日\n- [ ] isWorkday 函式與測試\n\n## 驗收條件\n\n- 2026、2027 年補班日與國定假日判定正確\n\n## 參考\n\ntechnical-design §7.1\n"
+    },
+    {
+      "title": "[M1] 工時計算引擎",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:attendance",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n依彈性上班 + 工時制計算遲到、工時不足與超時（D29）。\n\n## 工作項目\n\n- [ ] hills-domain 實作 technical-design §7.2\n- [ ] 跨日、請假半天、時區等邊界案例測試\n\n## 驗收條件\n\n- 單元測試涵蓋所有邊界案例\n\n## 參考\n\ntechnical-design §7.2\n"
+    },
+    {
+      "title": "[M1] hills-tsa 可信時間戳服務",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:server",
+        "area:attendance"
+      ],
+      "body": "## 目標\n\n打卡防竄改（D7）。\n\n## 工作項目\n\n- [ ] ALPN hills/tsa/1：對雜湊簽發 serverTime\n- [ ] 金鑰以 docker secret 掛載、支援輪替\n- [ ] TSA 公鑰寫入 org 文件\n\n## 驗收條件\n\n- 竄改打卡紀錄後驗證失敗\n\n## 參考\n\ntechnical-design §6\n"
+    },
+    {
+      "title": "[M1] 打卡：手動打卡、時間戳、忘打卡提醒",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:attendance",
+        "area:ui",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n上下班打卡主流程。\n\n## 工作項目\n\n- [ ] 打卡按鈕與今日狀態\n- [ ] 取得 TSA token；離線打卡 lateStamped\n- [ ] 首次上線 / 最後離線作為參考與忘打卡提醒\n- [ ] 本機時間與伺服器時間差異標示\n\n## 驗收條件\n\n- 離線打卡上線後自動補取時間戳\n\n## 參考\n\nfeature-plan §5.2、technical-design §6\n"
+    },
+    {
+      "title": "[M1] 桌機 Wi-Fi 識別（macOS / Windows / Linux）",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:attendance"
+      ],
+      "body": "## 目標\n\n標註辦公室 / 遠端（D11）。\n\n## 工作項目\n\n- [ ] 三平台取得目前連線 BSSID / SSID（必要時申請權限）\n- [ ] 以 blake3(orgId ‖ BSSID) 比對\n- [ ] 取不到時標為遠端\n\n## 驗收條件\n\n- 三平台在公司 Wi-Fi 下標為辦公室\n\n## 參考\n\ntechnical-design §6\n"
+    },
+    {
+      "title": "[M1] 假別設定與台灣勞基法範本",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:attendance"
+      ],
+      "body": "## 目標\n\n預設假別（D31），組織可增刪。\n\n## 工作項目\n\n- [ ] 依 feature-plan §5.2 建立假別範本\n- [ ] 給薪、最小單位、年度上限、是否需證明\n- [ ] **實作前對照現行勞基法、性別平等工作法核對天數與規則**\n\n## 驗收條件\n\n- 範本經人資或法務確認\n\n## 參考\n\nfeature-plan §5.2\n"
+    },
+    {
+      "title": "[M1] 特休週年制自動計算",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:attendance"
+      ],
+      "body": "## 目標\n\n依到職日計算特休額度（D31）。\n\n## 工作項目\n\n- [ ] 級距表存於 org.leavePolicy，可覆寫\n- [ ] 額度、已用、剩餘、到期日\n- [ ] 到期提醒\n\n## 驗收條件\n\n- 各年資邊界日期的計算正確（測試）\n\n## 參考\n\ntechnical-design §7.3\n"
+    },
+    {
+      "title": "[M1] 多層核准規則引擎",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:attendance",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n請假、加班、補打卡共用的核准引擎（D12、D30）。\n\n## 工作項目\n\n- [ ] ApprovalRule 結構與比對（technical-design §7.4）\n- [ ] approvals/<approverId> 文件與狀態投影\n- [ ] 申請者即核准者時上送管理者\n- [ ] 管理者規則設定 UI\n\n## 驗收條件\n\n- 兩層規則（>3 天需管理者）流程正確（整合測試）\n\n## 參考\n\ntechnical-design §7.4\n"
+    },
+    {
+      "title": "[M1] 請假申請流程",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:attendance",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n成員申請、核准者審核、同步行事曆與狀態。\n\n## 工作項目\n\n- [ ] 申請表：假別、期間、時數、代理人、事由、附件\n- [ ] 核准者待辦清單\n- [ ] 核准後更新 Presence 與團隊行事曆；通知代理人\n- [ ] 取消申請\n\n## 驗收條件\n\n- 申請到核准全流程可在離線 / 上線交錯下完成\n\n## 參考\n\nfeature-plan §5.2\n"
+    },
+    {
+      "title": "[M1] 加班申請與補休",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:attendance",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n加班需申請核准（D30）。\n\n## 工作項目\n\n- [ ] 事前 / 事後加班申請\n- [ ] 核准時選加班費或補休\n- [ ] 補休轉入補休額度\n- [ ] 未申請的超時僅列參考\n\n## 驗收條件\n\n- 補休額度於核准後正確增加\n\n## 參考\n\nfeature-plan §5.2\n"
+    },
+    {
+      "title": "[M1] 補打卡申請",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:attendance"
+      ],
+      "body": "## 目標\n\n忘記打卡時補登並經核准。\n\n## 工作項目\n\n- [ ] 補打卡申請與核准（共用引擎）\n- [ ] 核准後產生標註 corrected 的出勤紀錄\n\n## 驗收條件\n\n- 補登紀錄在報表中有明確標示\n\n## 參考\n\nfeature-plan §5.2\n"
+    },
+    {
+      "title": "[M1] 工時統計與匯出",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:attendance",
+        "area:report"
+      ],
+      "body": "## 目標\n\n個人 / 負責人 / 管理者工時報表。\n\n## 工作項目\n\n- [ ] 日 / 週 / 月工時、遲到、工時不足、加班、請假\n- [ ] 權限：本人、負責人、管理者\n- [ ] 匯出 CSV 與 Excel\n\n## 驗收條件\n\n- 匯出數據與畫面一致\n\n## 參考\n\nfeature-plan §5.2\n"
+    },
+    {
+      "title": "[M1] 五層計劃與 OKR 資料模型",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:plan",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n年 / 季 OKR、月 / 週 / 日待辦（D8）。\n\n## 工作項目\n\n- [ ] PlanItem、KeyResult（technical-design §8）\n- [ ] 私人 / 小組 / 全組織三份文件與可見度搬移\n- [ ] 對齊小組目標\n\n## 驗收條件\n\n- 改變可見度後他人可見性正確\n\n## 參考\n\ntechnical-design §4.3、§8\n"
+    },
+    {
+      "title": "[M1] 計劃 UI：目標樹、拆解與回顧",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:plan",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n使用者規劃與追蹤計劃的主要畫面。\n\n## 工作項目\n\n- [ ] 年 → 日的目標樹與期間切換\n- [ ] 從上層拆解建立下層項目\n- [ ] 關鍵結果數值更新\n- [ ] 週 / 月回顧表單\n\n## 驗收條件\n\n- 可從年度 OKR 一路拆到本日待辦\n\n## 參考\n\nfeature-plan §5.3\n"
+    },
+    {
+      "title": "[M1] 計劃進度自動彙總",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:plan"
+      ],
+      "body": "## 目標\n\n下層完成度彙總至上層（D8）。\n\n## 工作項目\n\n- [ ] 日 → 週 → 月 → 關鍵結果 → 目標的彙總規則\n- [ ] 手動覆寫關鍵結果數值\n- [ ] 落後標示（進度 < 時間進度）\n\n## 驗收條件\n\n- 彙總規則有單元測試\n\n## 參考\n\nfeature-plan §5.3\n"
+    },
+    {
+      "title": "[M1] 任務看板與清單",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:scrum",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n小組任務管理。\n\n## 工作項目\n\n- [ ] 看板 / 清單檢視\n- [ ] 任務欄位：負責人、狀態、預估、關聯計劃\n- [ ] 「開始執行」更新 Presence 的正在執行任務\n\n## 驗收條件\n\n- 兩人同時編輯同一任務不遺失變更\n\n## 參考\n\nfeature-plan §5.4\n"
+    },
+    {
+      "title": "[M1] 每日 Scrum 回報",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:scrum",
+        "area:ui",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n昨天完成、今天計劃、阻礙。\n\n## 工作項目\n\n- [ ] Scrum 表單，可從本日計劃與任務一鍵帶入\n- [ ] 小組 Scrum 總覽、未填寫標示\n- [ ] 阻礙通知小組負責人\n\n## 驗收條件\n\n- 填寫時間 < 2 分鐘（試用回饋）\n\n## 參考\n\nfeature-plan §5.4\n"
+    },
+    {
+      "title": "[M1] Scrum 提醒與工作日判定",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:scrum"
+      ],
+      "body": "## 目標\n\n依台灣行事曆、個人時區與請假決定提醒（D21）。\n\n## 工作項目\n\n- [ ] 組織預設提醒時間，個人可調\n- [ ] 非工作日與請假日不提醒\n\n## 驗收條件\n\n- 國定假日與補班日提醒行為正確\n\n## 參考\n\ntechnical-design §7.1\n"
+    },
+    {
+      "title": "[M1] 日 / 週報範本自動產生與發佈",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:report",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n四個固定欄位（D32），預設發佈到小組（D16）。\n\n## 工作項目\n\n- [ ] 彙整：完成 / 進行中 / 阻礙、OKR 進度、工時與出勤摘要、下期計劃\n- [ ] 個人報表與小組彙整報表\n- [ ] 發佈前可編輯與調整範圍\n- [ ] 匯出 Markdown / PDF\n\n## 驗收條件\n\n- 週五自動產生草稿，確認後發佈至小組\n\n## 參考\n\nfeature-plan §5.5\n"
+    },
+    {
+      "title": "[M1] 桌機通知",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:feature",
+        "area:ui"
+      ],
+      "body": "## 目標\n\nScrum 提醒、核准待辦、阻礙、報表完成通知。\n\n## 工作項目\n\n- [ ] 系統通知（三平台）\n- [ ] 通知中心與勿擾時段\n\n## 驗收條件\n\n- 各類通知可個別關閉\n\n## 參考\n\nfeature-plan §5.11\n"
+    },
+    {
+      "title": "[M1] 安裝檔簽章與自動更新",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:infra"
+      ],
+      "body": "## 目標\n\n可發佈給全員試用的安裝檔。\n\n## 工作項目\n\n- [ ] macOS 簽章與 notarization\n- [ ] Windows 程式碼簽章\n- [ ] Linux AppImage / deb\n- [ ] Tauri updater 與更新通道\n\n## 驗收條件\n\n- 全員可安裝並收到自動更新\n\n## 參考\n\ntechnical-design §12\n"
+    },
+    {
+      "title": "[M1] 試用指標收集與錯誤回報",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:infra",
+        "area:report"
+      ],
+      "body": "## 目標\n\n支撐 4 週試用的驗收指標（D24）。\n\n## 工作項目\n\n- [ ] Scrum 填寫率、同步異常、打卡異常等指標（本機計算、匿名彙整，需使用者同意）\n- [ ] 當機與錯誤回報（opt-in）\n- [ ] 試用回饋表單\n\n## 驗收條件\n\n- 可產出 feature-plan §8.2 的所有指標\n\n## 參考\n\nfeature-plan §8.2\n"
+    },
+    {
+      "title": "[M1] 全員試用 4 週與驗收",
+      "milestone": "M1 計劃與 Scrum（MVP）",
+      "labels": [
+        "type:docs",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n以數據決定是否進入 M2（D24）。\n\n## 工作項目\n\n- [ ] 試用計畫與說明文件\n- [ ] 每週檢視指標與問題\n- [ ] 試用報告 docs/m1-pilot-report.md\n\n## 驗收條件\n\n- 達成 feature-plan §8.2 全部指標\n\n## 參考\n\nfeature-plan §8.2\n"
+    }
+  ]
+}

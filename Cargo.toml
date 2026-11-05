@@ -1,0 +1,68 @@
+[workspace]
+resolver = "3"
+members = [
+  "crates/*",
+  "apps/mailbox",
+  "apps/tsa",
+  "apps/storage",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/CAFECA-IO/hills.cafeca.io"
+rust-version = "1.91"
+
+[workspace.dependencies]
+# 內部 crate
+hills-proto = { path = "crates/hills-proto" }
+hills-identity = { path = "crates/hills-identity" }
+hills-crypto = { path = "crates/hills-crypto" }
+hills-store = { path = "crates/hills-store" }
+hills-sync = { path = "crates/hills-sync" }
+hills-net = { path = "crates/hills-net" }
+hills-domain = { path = "crates/hills-domain" }
+
+# 通用
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+postcard = { version = "1", features = ["alloc"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+
+# 密碼學（僅限 technical-design §2 列出的函式庫）
+ed25519-dalek = "3"
+x25519-dalek = { version = "3", features = ["static_secrets"] }
+hkdf = "0.13"
+sha2 = "0.11"
+blake3 = "1"
+bip39 = { version = "3", features = ["zeroize", "chinese-traditional"] }
+zeroize = { version = "1", features = ["derive"] }
+data-encoding = "2"
+getrandom = "0.4"
+
+# 網路與同步
+iroh = "1"
+automerge = "0.12"
+axum = "0.8"
+
+# 測試
+proptest = "1"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+dbg_macro = "deny"
+
+[profile.release]
+lto = "thin"

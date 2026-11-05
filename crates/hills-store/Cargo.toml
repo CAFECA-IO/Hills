@@ -1,0 +1,13 @@
+[package]
+name = "hills-store"
+description = "本地儲存：Automerge 文件庫（靜態加密）與 SQLite 投影。見 technical-design §9。"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

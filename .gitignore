@@ -141,3 +141,10 @@ vite.config.ts.timestamp-*
 # Hills
 !.env.example
 CLAUDE.local.md
+
+# PoC 本機設定
+deploy/poc/relay.toml
+
+# Rust / Tauri
+/target/
+apps/desktop/src-tauri/gen/

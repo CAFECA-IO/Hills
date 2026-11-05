@@ -1,0 +1,9 @@
+target/
+node_modules/
+dist/
+pnpm-lock.yaml
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/icons/
+docs/
+*.md
+packages/swarm/test/fixtures/*.json

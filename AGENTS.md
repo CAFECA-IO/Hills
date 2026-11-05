@@ -5,7 +5,7 @@
 
 ## 1. 專案一句話
 
-Hills（山丘上的卡菲卡）是 CAFECA 的 P2P 工作協作工具：出勤與假勤、年→日五層計劃、每日 Scrum、自動報表、即時通訊、檔案、會議，以及個人與群組 AI 助理。技術：Tauri 2（Rust 核心 + React/TS）、iroh、Automerge、自架服務以 Docker Compose 部署。
+Hills（山丘上的卡菲卡）是 CAFECA 的 P2P 工作協作工具：出勤與假勤、年→日五層計劃、每日 Scrum、自動報表、即時通訊、檔案、會議，以及個人與群組 AI 助理。技術：Tauri 2（Rust 核心 + React/TS）、iroh、Automerge；檔案依 SwarmStorage 原理（前端逐條帶加密 + Reed-Solomon 8/5 分片）存於自架儲存節點；自架服務以 Docker Compose 部署。M1 目標：Mac 與 Windows 筆電可安裝、互相對話與分享檔案。
 
 ## 2. 文件是唯一事實來源
 
@@ -29,7 +29,8 @@ Hills（山丘上的卡菲卡）是 CAFECA 的 P2P 工作協作工具：出勤�
 | 身分、金鑰、加密、驗證層 | technical-design §2–4、§11；development-guidelines §6 |
 | 網路、同步、伺服器服務 | technical-design §4–6、§10 |
 | 假勤、計劃、Scrum、報表規則 | feature-plan §5.2–5.5；technical-design §7–8 |
-| 聊天、檔案、行動端、AI、整合、通話 | technical-design-m2-m5 對應章節 |
+| M1 對話、檔案分享（SwarmStorage 原理） | technical-design §14–15；feature-plan D34–D37；ui-spec「聊天」「檔案分享」 |
+| M2 之後的聊天進階、行動端、AI、整合、通話 | technical-design-m2-m5 對應章節 |
 | 任何 UI | ui-spec 對應章節與「共通規則」 |
 
 讀完後，在回覆或 PR 描述中列出「依據的文件章節」。

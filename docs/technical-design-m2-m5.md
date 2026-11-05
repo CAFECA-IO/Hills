@@ -1,10 +1,12 @@
 # Hills 技術設計文件（M2–M5）
 
-> 版本：v0.1 草案 · 2026-11-05 · 對應 [feature-plan.md](./feature-plan.md) v0.9
+> 版本：v0.2 草案 · 2026-11-05 · 對應 [feature-plan.md](./feature-plan.md) v1.0
 > 前置：[technical-design.md](./technical-design.md)（M0 / M1：身分、金鑰、同步、假勤）。本文件沿用其金鑰、ALPN、文件切分與驗證層，不重複說明。
 > 標示 **〔提案〕** 的項目尚未列入決策表，需經確認後才能實作（見 §9）。
 
 ## 1. M2 即時通訊
+
+> D34：一對一 / 群組對話、對話金鑰與訊息文件已移至 M1，設計見 [technical-design.md](./technical-design.md) §14。本節 §1.1–1.2 為完整模型參考，M2 實作的是其中的小組頻道、討論串、編輯撤回、已讀、搜尋與歷史訊息分享。
 
 ### 1.1 對話與金鑰
 
@@ -14,7 +16,7 @@
 | 群組（group） | 任意成員組合 | `CK_conv` |
 | 小組頻道（team） | 小組全員，隨小組成員異動 | 沿用 `TK_team` |
 
-- **〔提案 P1〕** M2 沿用 M0 的 epoch 對稱金鑰機制，以 HPKE 封裝給每位成員的 EK；成員移出時輪替 epoch。理由：重用 M0 程式碼，符合 1–2 人人力（D23）。代價：沒有逐訊息前向保密。OpenMLS 列為 M5 之後的升級選項（technical-design §13.4）。
+- **D37（原提案 P1，已確認）**：沿用 M0 的 epoch 對稱金鑰機制，以 HPKE 封裝給每位成員的 EK；成員移出時輪替 epoch。理由：重用 M0 程式碼，符合 1–2 人人力（D23）。代價：沒有逐訊息前向保密。OpenMLS 列為 M5 之後的升級選項（technical-design §13.4）。
 - 對話設定（名稱、成員、AI 助理設定、歷史訊息政策）存在 `conv/<convId>/meta` 文件，寫入者為對話管理員（建立者及其指定者）。
 
 ### 1.2 訊息儲存
@@ -56,21 +58,14 @@ Message {
 
 ## 2. M2 檔案傳遞
 
-採用 **iroh-blobs**（BLAKE3 驗證串流、支援續傳與部分下載）：
+> D35：檔案傳輸改依 SwarmStorage 原理，已在 M1 實作，設計見 [technical-design.md](./technical-design.md) §15。原 iroh-blobs + 信箱暫存設計作廢。
 
-```
-傳送端：fileKey = 隨機 32 bytes
-        ciphertext = XChaCha20-Poly1305 分塊加密(file, fileKey)   // 每 1 MiB 一塊，各自 nonce
-        hash = iroh-blobs 匯入 ciphertext → BLAKE3 hash
-        Message.attachments += FileRef{ hash, size, name, mime, fileKey, thumb? }
-接收端：從任一持有者（傳送端、其他已下載成員、mailbox）以 hash 取得 → 驗證 → 解密
-```
+M2 在 M1 的基礎上新增：
 
-- `fileKey` 只出現在加密後的訊息內，mailbox 與 relay 看不到。
-- mailbox 保存上限：單檔 100 MB（可設定），保留 1 年後清除（D16）；超過上限的檔案只走 P2P，需雙方上線。
-- ALPN：`/iroh-bytes/4`（iroh-blobs 內建）；mailbox 的 blob 存取需出示憑證鏈。
-- 群組檔案區：由投影層彙整對話內所有 `FileRef`。
-- 預覽：圖片縮圖由傳送端產生並一起加密；PDF 與影片於本機解密後預覽。
+- **群組檔案區**：由投影層彙整對話內所有 `Attachment`，依類型、上傳者、日期篩選。
+- **預覽**：上傳時由前端產生縮圖（圖片、PDF 首頁、影片截圖），以同一流程加密上傳，`FileManifest` 增加 `thumb` 欄位；預覽在本機解密，不寫出明文暫存檔。
+- **行動端**：沿用同一前端流程；iOS / Android 背景上傳需使用系統背景傳輸 API，並在 App 回到前景時續傳。
+- **分片修復**：節點抽查發現損壞或遺失時，由持有原檔或可還原檔案的成員裝置重新產生並上傳缺少的分片。
 
 ## 3. M2 行動端與推播
 
@@ -202,7 +197,6 @@ Assistant {
 
 | 名稱 | 類型 | 版本 |
 |------|------|------|
-| `/iroh-bytes/4` | iroh-blobs | M2 |
 | `hills-push` | HTTPS 服務 | M2 |
 | `hills-ai-gateway` | HTTPS 服務 | M3 |
 | `hills-integrations` | HTTPS 服務（webhook）+ iroh 節點 | M3 |
@@ -213,7 +207,7 @@ Assistant {
 
 | 編號 | 提案 | 影響的決策 | 狀態 |
 |------|------|-----------|------|
-| P1 | M2 聊天沿用 epoch 對稱金鑰，OpenMLS 延到 M5 之後 | 新增決策 | 待確認 |
+| P1 | M2 聊天沿用 epoch 對稱金鑰，OpenMLS 延到 M5 之後 | 新增決策 | **已確認（D37）** |
 | P2 | M2 推播只顯示通用文字，iOS 背景解密延到 M5 評估 | 新增決策 | 待確認 |
 | P3 | M4 全部通話走 LiveKit SFU，P2P mesh 延後 | 修改 D10 | 待確認 |
 
@@ -221,4 +215,4 @@ Assistant {
 
 1. 語音轉文字供應商與是否允許本地模型（如 Whisper）處理會議錄音。
 2. Google Calendar 是否需要「伺服器端同步」以在成員離線時也更新狀態（目前設計為否）。
-3. 單檔 100 MB 的 mailbox 上限是否合適。
+3. ~~單檔 100 MB 的 mailbox 上限~~（已由 D35 取代：檔案改存於儲存節點，單檔上限預設 5 GB）。

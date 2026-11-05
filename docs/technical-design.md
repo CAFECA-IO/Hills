@@ -1,7 +1,7 @@
 # Hills 技術設計文件
 
-> 版本：v0.1 草案 · 2026-11-05 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v0.9；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
-> 範圍：M0（基礎）與 M1（計劃、Scrum、假勤）所需的協定、資料模型與金鑰流程。聊天、檔案、通話、AI 於後續版本補充。
+> 版本：v0.2 草案 · 2026-11-05 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15。
 
 ## 1. 元件總覽
 
@@ -21,6 +21,7 @@
 │ iroh-relay      打洞協調與中繼（只看得到密文）                               │
 │ hills-mailbox   常駐節點：保存加密 change bundle，供離線成員補同步            │
 │ hills-tsa       可信時間戳：對打卡雜湊簽發時間憑證                           │
+│ hills-storage×8 檔案分片儲存節點（SwarmStorage 原理，§15）                    │
 │ caddy           反向代理與自動 TLS                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -36,6 +37,7 @@ apps/
   desktop/         # Tauri 2 app（src-tauri + React 前端）
   mailbox/         # hills-mailbox 服務
   tsa/             # hills-tsa 服務
+  storage/         # hills-storage 分片節點（§15.6）
 deploy/
   docker-compose.yml  .env.example
 ```
@@ -356,6 +358,7 @@ services:
   relay:    # iroh-relay（含 QUIC address discovery）
   mailbox:  # hills-mailbox，volume: mailbox-data:/data
   tsa:      # hills-tsa，私鑰以 docker secret 掛載
+  storage-0 … storage-7:  # hills-storage，各自獨立 volume（§15.7）
   caddy:    # 80/443，自動 TLS，反向代理 relay
 ```
 
@@ -383,7 +386,8 @@ services:
 | iroh 穿透 | 兩台桌機分別在公司網路、家用寬頻、手機熱點（CGNAT）、企業防火牆下兩兩組合測試 | 全部組合可連線；記錄直連比例與 relay 延遲 |
 | Automerge 同步 | 兩裝置各自離線編輯同一計劃文件 100 次後重連 | 結果一致、無遺失，合併 < 1 秒 |
 | 加密 bundle + mailbox | A 離線時 B 寫入，A 上線經 mailbox 補同步 | 補同步 ≤ 5 秒 |
-| 三平台打包 | macOS（notarize）、Windows（簽章）、Linux（AppImage / deb） | 可安裝、可啟動 |
+| 桌機打包 | macOS（notarize）、Windows（簽章）；Linux 於 M2 | 可安裝、可啟動 |
+| 檔案分享 | 見 §15.8 | 見 §15.8 |
 
 結論寫入 `docs/poc-report.md`。iroh 或 Automerge 未通過時，評估替代方案（WebRTC + Yjs / Loro）。
 
@@ -393,3 +397,177 @@ services:
 2. 多人寫入的 `team` 文件長期成長的快照與壓縮策略。
 3. 時間戳是否採 RFC 3161 標準格式，以便作為法定出勤紀錄的佐證。
 4. M2 群組聊天是否改用 OpenMLS 取代 epoch 小組金鑰。
+
+## 14. M1 對話（D34、D37）
+
+M1 的對話範圍：一對一（`dm`）與群組（`group`），文字、Markdown、@提及、檔案與資料夾附件、桌機通知。小組頻道、已讀、搜尋、討論串、編輯撤回、歷史訊息分享在 M2（見 [technical-design-m2-m5.md](./technical-design-m2-m5.md) §1）。
+
+### 14.1 對話金鑰（D37）
+
+- 每個對話一把 epoch 對稱金鑰 `CK_conv`，沿用 §3.7 的 epoch 機制：建立者產生 `CK`，以 HPKE 封裝給每位成員的 EK。
+- 新增成員：封裝**目前** epoch 給新成員（M1 不分享歷史 epoch，新成員看不到加入前訊息；歷史分享為 M2 功能）。
+- 移出成員：輪替 epoch，新訊息使用新 `CK`。
+- 對話設定存於 `conv/<convId>/meta`（寫入者：對話管理員 = 建立者與其指定者）：名稱、成員、金鑰封裝紀錄。
+
+### 14.2 訊息文件
+
+```
+conv/<convId>/meta            寫入者：對話管理員       金鑰：CK
+conv/<convId>/log/<yyyy-mm>   寫入者：對話成員（append） 金鑰：CK
+```
+
+```ts
+Message {
+  id: ULID, convId, authorId, deviceId, createdAt,
+  kind: 'text' | 'files' | 'system',
+  body: string,                       // Markdown
+  mentions: MemberId[],
+  attachments?: Attachment[]          // kind = 'files'
+}
+Attachment =
+  | { type: 'file',   manifest: FileManifest,  fileKey: base64 }          // §15.4
+  | { type: 'folder', name, totalSize, fileCount,
+      manifestRef: ObjectRef, manifestKey: base64 }                      // §15.5
+```
+
+- 驗證層（§4.2）：作者必須是 `meta` 中的成員；`log` 為多人寫入文件，只接受新增訊息（投影層忽略修改既有訊息的 change）。
+- 傳遞：沿用 §4.5——在線成員直連同步，離線成員經 mailbox 補同步。`fileKey` / `manifestKey` 只出現在 `CK` 加密的訊息中。
+- 通知：收到 `mentions` 含自己或 `dm` 訊息時發桌機通知；群組預設只通知提及。
+
+## 15. M1 檔案分享：SwarmStorage 原理（D35、D36）
+
+### 15.1 與 SwarmStorage 的對應
+
+| SwarmStorage | Hills | 差異原因 |
+|-------------|-------|---------|
+| 整個檔案以 AES-256-GCM 串流加密，一組 IV / tag | **每個 20 MB 條帶各自 AES-256-GCM**，各有 IV / tag | WebCrypto 不支援 GCM 串流；逐條帶加密可固定記憶體並支援續傳 |
+| 20 MB 條帶 → 5 個 4 MB 資料分片 + 3 個同位分片，RS (8, 5)，GF(2⁸)，Vandermonde 系統碼 | 相同 | — |
+| 第 i 片附加到 `shard-i.bin`，整檔一個 SHA-256 | **每個條帶的每個分片是獨立物件**，以 SHA-256 定址 | 可逐條帶上傳、續傳、平行傳輸 |
+| `metadata.json` 存於倉儲 | `FileManifest` 放在 `CK` 加密的對話訊息中；資料夾的清單另存為加密物件 | 伺服器看不到檔名與結構 |
+| 金鑰由呼叫者保管 | 金鑰只存在加密的對話訊息中 | 只有對話成員能解密 |
+| 任 5 片可還原；`.partial` 驗證後改名 | 相同 | — |
+
+Reed-Solomon 實作直接移植 SwarmStorage 的 `src/lib/reed_solomon_erasure.ts`（MIT），並以 SwarmStorage 產生的測試向量驗證兩者輸出一致。
+
+### 15.2 前端上傳流程
+
+```
+使用者選擇檔案 / 資料夾（Tauri dialog）
+  └► 主執行緒：列出檔案（Tauri fs plugin，權限只限所選路徑）→ 建立上傳佇列
+       └► 逐一處理每個檔案（依序，一次一個檔案）
+            └► 每個條帶 k（20 MiB 明文，最後一條帶可較短）：
+                 1. fs FileHandle 讀取 [k·20MiB, (k+1)·20MiB)   ──► 傳給 Web Worker（Transferable）
+                 2. Worker：AES-256-GCM 加密
+                      key = fileKey（每檔隨機 256-bit）
+                      IV  = fileNonce(8 B 隨機) ‖ uint32_be(k)
+                      AAD = fileId ‖ uint32_be(k) ‖ uint32_be(stripeCount)
+                      payload = ciphertext ‖ tag(16 B)
+                 3. Worker：payload 以 0 補齊到 5 的倍數 → 切 5 個資料分片 → RS 計算 3 個同位分片
+                 4. Worker：每個分片計算 SHA-256（物件 ID）
+                 5. 主執行緒：8 個分片平行上傳到 8 個儲存節點（§15.6）
+            └► 全部條帶完成 → 產生 FileManifest
+  └► 資料夾：產生 FolderManifest → 以 manifestKey 加密後當作一般檔案上傳（同一流程）
+  └► 送出對話訊息（Attachment）
+```
+
+- **記憶體**：最多同時處理 2 個條帶（一個加密編碼中、一個上傳中），約 2 ×（20 MiB 明文 + 20 MiB 密文 + 12 MiB 同位）≈ 104 MiB。
+- **AAD 綁定條帶序號與總數**：防止分片被重排、截斷或混用其他檔案。
+- **IV 唯一性**：每檔隨機 `fileKey` 加上條帶計數器，同一金鑰下 IV 不重複。
+- **續傳**：本機記錄每個條帶、每個分片的上傳狀態（SQLite）；重新開始時以 `HEAD` 查詢節點已有的分片並略過。
+- **取消**：已上傳的分片不寫入任何訊息，到期後由節點清除。
+- **相同內容**：分片以 SHA-256 定址；同一檔案重傳時分片 ID 不同（每次 `fileKey` 不同），不做跨檔去重（避免洩漏內容相同的資訊）。
+
+### 15.3 前端下載流程
+
+```
+收件者點擊下載 → 選擇存放位置（資料夾分享則選擇目標資料夾）
+  └► 每個條帶 k：
+       1. 優先下載資料分片 1–5；任一失敗或 SHA-256 不符，改抓同位分片 6–8
+       2. 收到任 5 片：若缺資料分片，RS 解碼還原
+       3. 依 payloadLen 去除補齊 → AES-256-GCM 解密（同上 IV / AAD）
+       4. 寫入 <name>.partial 的對應位置
+  └► 全部條帶 tag 驗證通過 → 改名為正式檔名；任何條帶失敗 → 刪除 .partial 並回報
+```
+
+- 少於 5 片可用時回報「檔案無法還原」，並顯示可用分片數。
+- 資料夾下載：先下載並解密 FolderManifest，再逐一下載檔案；可只勾選部分檔案。
+
+### 15.4 FileManifest
+
+```ts
+FileManifest {
+  v: 1,
+  fileId: ULID,
+  name: string,                 // 單檔分享時的檔名（資料夾內檔案用 FolderManifest 的 path）
+  size: number,                 // 明文大小
+  mime?: string,
+  mtime?: string,
+  cipher: 'AES-256-GCM/stripe',
+  fileNonce: base64,            // 8 B
+  stripeSize: 20971520,         // 20 MiB
+  rs: { data: 5, parity: 3 },
+  stripes: Array<{
+    payloadLen: number,         // 密文 + tag 長度（補齊前）
+    shards: Array<{ id: hex /* SHA-256 */, size: number, node: number /* 0–7 */ }>  // 長度 8
+  }>
+}
+```
+
+- 每個條帶 8 筆分片：約 8 × 80 B ≈ 640 B／20 MiB；1 GB 檔案的清單約 32 KB，可直接放在訊息中。超過 256 KB 的清單（約 8 GB 以上的檔案）改為與資料夾相同，存成加密物件後以 `manifestRef` 參照。
+
+### 15.5 資料夾快照（D36）
+
+```ts
+FolderManifest {
+  v: 1,
+  rootName: string,
+  createdAt: string,
+  entries: Array<
+    | { kind: 'dir',  path: string }
+    | { kind: 'file', path: string, manifest: FileManifest, fileKey: base64 }
+  >
+}
+```
+
+- `path` 一律以 `/` 分隔、Unicode NFC 正規化、相對於根目錄。
+- 分享時略過：符號連結（不跟隨）、系統檔（`.DS_Store`、`Thumbs.db`、`desktop.ini`）、無讀取權限的檔案（列在結果摘要中）。
+- 資料夾清單以 `manifestKey` 加密後，依 §15.2 同一流程上傳，訊息中只放 `manifestRef`（其 FileManifest）與 `manifestKey`。
+- **下載時的路徑安全**（Windows 與 macOS 都必須處理）：
+  - 拒絕 `..`、絕對路徑、磁碟代號、`\`。
+  - Windows 保留名稱（`CON`、`PRN`、`AUX`、`NUL`、`COM1`…`LPT9`）與結尾的空白或句點：加上 `_` 前綴。
+  - Windows 禁用字元 `<>:"|?*` 替換為 `_`。
+  - 大小寫不敏感的檔名衝突（`a.txt` / `A.txt`）：後者加上 ` (2)`。
+  - Windows 長路徑：寫入時使用 `\\?\` 前綴。
+  - macOS 檔名以 NFD 儲存，讀取時一律轉為 NFC 再比對。
+
+### 15.6 儲存節點 hills-storage
+
+M1 自行實作輕量 HTTPS 物件節點（Rust + axum），部署 8 個實例；日後可替換為 SwarmStorage 節點網路。
+
+```
+PUT    /v1/objects/{sha256}     body = 分片位元組；節點驗證 SHA-256 相符才存
+HEAD   /v1/objects/{sha256}     200 / 404（續傳用）
+GET    /v1/objects/{sha256}     回傳分片；支援 Range
+GET    /v1/health
+```
+
+- **驗證**：每個請求帶 `Hills-Auth` 標頭：`DeviceCert`、`MemberCert` 與 DK 對 `method ‖ path ‖ date ‖ sha256(body)` 的簽章；節點持有 OK.pub 與成員憑證快照（同 mailbox，§5.2）以驗證。
+- **前端直接上傳**：前端以 Tauri http plugin（或設定 CORS 後使用 fetch）直接連線 8 個節點；不經過 Rust 核心轉送，以符合「前端切割加密後上傳」。
+- **分片分配**：分片 i 放到節點 `(i + fileNonce[0]) mod N`（N = 節點數，M1 為 8），讓負載分散。
+- **保留**：上傳時帶 `Hills-Expires`（預設上傳後 1 年，D16）；節點每日清除過期物件。
+- **配額**：每組織、每成員的總容量與單檔上限（預設 5 GB，可設定），超過時回 `413`。
+- **節點看到的資訊**：分片密文、大小、上傳者的成員 ID 與時間；看不到檔名、目錄結構、內容。
+
+### 15.7 部署與容錯
+
+- docker-compose 新增 `storage-0` … `storage-7`，每個實例使用獨立 volume；`caddy` 以 `storage-<n>.<domain>` 對外。
+- M1 單台主機時，請把 8 個 volume 分散在不同磁碟；正式環境建議分散到至少 3 台主機，讓任 1 台主機故障時仍保有 ≥ 5 片（每台最多放 3 個節點，且 3 台中任兩台合計 ≥ 5）。
+- 監控：每日抽查每個節點的分片 SHA-256，發現損壞時由持有檔案的成員裝置重新上傳缺少的分片（修復流程列為 M2）。
+
+### 15.8 M0 PoC 追加項目
+
+| 項目 | 方法 | 通過標準 |
+|------|------|---------|
+| WebView 加密與編碼效能 | 在 macOS（WKWebView）與 Windows（WebView2）的 Web Worker 中，對 1 GB 檔案執行讀取 → AES-GCM → RS(8,5) | 每平台 ≥ 50 MB/s；記憶體 < 200 MB |
+| RS 相容性 | 以 SwarmStorage 產生的分片比對移植後的實作 | 輸出逐位元組一致 |
+| Mac ↔ Windows 檔案往返 | Mac 上傳含中文檔名、多層目錄的資料夾，Windows 下載；反向亦同 | 雜湊一致；關閉任 3 個節點仍可下載 |

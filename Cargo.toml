@@ -48,6 +48,8 @@ blake3 = "1"
 bip39 = { version = "3", features = ["zeroize", "chinese-traditional"] }
 zeroize = { version = "1", features = ["derive"] }
 data-encoding = "2"
+hpke = { version = "0.15", default-features = false, features = ["alloc", "getrandom", "x25519", "chacha"] }
+chacha20poly1305 = "0.11"
 getrandom = "0.4"
 
 # 網路與同步

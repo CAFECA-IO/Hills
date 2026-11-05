@@ -92,6 +92,7 @@ fn roster(
             v: FORMAT_VERSION,
             org_id: o.trust.org_id(),
             member_certs: o.trust.member_certs(),
+            device_certs: vec![],
             revocations,
             issued_at: 3,
         })
@@ -338,5 +339,308 @@ async fn bad_bundles_rejected_and_state_persists() {
     };
     let (alice, _alep) = connect(&srv, &o, &o.alice).await.unwrap();
     assert_eq!(alice.list_all(None, 0).await.unwrap().0.len(), 1);
+    srv.router.shutdown().await.unwrap();
+}
+
+// ---------- v0.7 請求（technical-design §16.7） ----------
+
+fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
+}
+
+fn join_request(p: &Person) -> hills_proto::JoinRequest {
+    let mut r = hills_proto::JoinRequest {
+        v: FORMAT_VERSION,
+        ik_pub: Pub32(p.keys.identity_public().to_bytes()),
+        ek_pub: ek(p),
+        device_cert: p
+            .keys
+            .issue_device_cert(&p.device.public(), "new-laptop", 2)
+            .unwrap(),
+        name: "新成員".into(),
+        mac: [0; 32],
+    };
+    r.mac = hills_crypto::exchange::join_mac(&[9; 16], &[1; 8], &r.mac_input().unwrap());
+    r
+}
+
+async fn bootstrap(o: &Org) -> (Server, MailboxClient, Endpoint) {
+    let (srv, _) = server(o).await;
+    let (admin, aep) = connect(&srv, o, &o.admin).await.unwrap();
+    admin.put_roster(roster(o, vec![])).await.unwrap();
+    (srv, admin, aep)
+}
+
+#[tokio::test]
+async fn devices_revocations_and_roster_distribution() {
+    let o = org();
+    let (srv, admin, _aep) = bootstrap(&o).await;
+    let (alice, _alep) = connect(&srv, &o, &o.alice).await.unwrap();
+
+    // alice 上傳自己的第二台裝置
+    let d2 = DeviceKey::generate().unwrap();
+    alice
+        .put_device(
+            o.alice
+                .keys
+                .issue_device_cert(&d2.public(), "desktop", 3)
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    // 不能替 bob 上傳
+    let mut forged = o
+        .alice
+        .keys
+        .issue_device_cert(&d2.public(), "x", 3)
+        .unwrap();
+    forged.body.member_id = o.bob.keys.member_id();
+    assert!(alice.put_device(forged).await.is_err());
+
+    let r = alice.get_roster().await.unwrap();
+    assert_eq!(r.member_certs.len(), 3);
+    assert!(
+        r.device_certs
+            .iter()
+            .any(|c| c.body.device_pub == d2.public())
+    );
+
+    // 一般成員不能撤銷別人；本人可撤銷自己的裝置
+    let bad = o
+        .alice
+        .keys
+        .issue_revocation(
+            o.trust.org_id(),
+            RevocationTarget::Member(o.bob.keys.member_id()),
+            "",
+            4,
+        )
+        .unwrap();
+    assert!(alice.put_revocation(bad).await.is_err());
+    let own = o
+        .alice
+        .keys
+        .issue_revocation(
+            o.trust.org_id(),
+            RevocationTarget::Device(d2.public()),
+            "lost",
+            4,
+        )
+        .unwrap();
+    alice.put_revocation(own).await.unwrap();
+    let r = admin.get_roster().await.unwrap();
+    assert_eq!(r.revocations.len(), 1);
+
+    // 匯入 mailbox 給的 roster 後，本地信任狀態可驗證 alice 的裝置、拒絕已撤銷裝置
+    let mut local = TrustStore::new(o.ok.public());
+    local.import_roster(&r).unwrap();
+    assert!(local.verify_device(&o.alice.device.public()).is_ok());
+    assert!(local.verify_device(&d2.public()).is_err());
+    srv.router.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn invite_and_join_flow() {
+    let o = org();
+    let (srv, admin, _aep) = bootstrap(&o).await;
+    let (alice, _alep) = connect(&srv, &o, &o.alice).await.unwrap();
+    let newbie = Person {
+        keys: RecoveryPhrase::generate().unwrap().derive_keys(),
+        device: DeviceKey::generate().unwrap(),
+    };
+    let nep = endpoint_for(&newbie.device, vec![]).await;
+    let org_id = o.trust.org_id();
+
+    // 未登記的邀請 → 拒絕
+    assert!(
+        MailboxClient::join(
+            &nep,
+            srv.addr.clone(),
+            org_id,
+            [1; 8],
+            join_request(&newbie)
+        )
+        .await
+        .is_err()
+    );
+    // 一般成員不能登記邀請
+    assert!(alice.register_invite([1; 8], now() + 60_000).await.is_err());
+    admin.register_invite([1; 8], now() + 60_000).await.unwrap();
+    MailboxClient::join(
+        &nep,
+        srv.addr.clone(),
+        org_id,
+        [1; 8],
+        join_request(&newbie),
+    )
+    .await
+    .unwrap();
+
+    // 申請中的裝置必須是連線的 NodeId
+    let other = endpoint_for(&DeviceKey::generate().unwrap(), vec![]).await;
+    assert!(
+        MailboxClient::join(
+            &other,
+            srv.addr.clone(),
+            org_id,
+            [1; 8],
+            join_request(&newbie)
+        )
+        .await
+        .is_err()
+    );
+
+    // 只有管理者能讀取申請
+    assert!(alice.fetch_joins().await.is_err());
+    let joins = admin.fetch_joins().await.unwrap();
+    assert_eq!(joins.len(), 1);
+    assert_eq!(joins[0].request.name, "新成員");
+
+    // 每個邀請最多 5 筆待處理
+    for _ in 0..4 {
+        let p = Person {
+            keys: RecoveryPhrase::generate().unwrap().derive_keys(),
+            device: DeviceKey::generate().unwrap(),
+        };
+        let ep = endpoint_for(&p.device, vec![]).await;
+        MailboxClient::join(&ep, srv.addr.clone(), org_id, [1; 8], join_request(&p))
+            .await
+            .unwrap();
+    }
+    let p = Person {
+        keys: RecoveryPhrase::generate().unwrap().derive_keys(),
+        device: DeviceKey::generate().unwrap(),
+    };
+    let ep = endpoint_for(&p.device, vec![]).await;
+    assert!(matches!(
+        MailboxClient::join(&ep, srv.addr.clone(), org_id, [1; 8], join_request(&p)).await,
+        Err(NetError::Remote(m)) if m.contains("TooLarge")
+    ));
+
+    // 關閉邀請後無法再申請，待處理清單也清空
+    admin.close_invite([1; 8]).await.unwrap();
+    assert!(admin.fetch_joins().await.unwrap().is_empty());
+    assert!(
+        MailboxClient::join(
+            &nep,
+            srv.addr.clone(),
+            org_id,
+            [1; 8],
+            join_request(&newbie)
+        )
+        .await
+        .is_err()
+    );
+    // 過期的邀請無法登記
+    assert!(admin.register_invite([2; 8], now() - 1).await.is_err());
+    srv.router.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn wrapped_keys_mailbox() {
+    let o = org();
+    let (srv, admin, _aep) = bootstrap(&o).await;
+    let (alice, _alep) = connect(&srv, &o, &o.alice).await.unwrap();
+    let (bob, _bep) = connect(&srv, &o, &o.bob).await.unwrap();
+
+    let rot = rotate(
+        &KeyRing::default(),
+        &KeyFamily::Org,
+        &[
+            (o.alice.keys.member_id(), ek(&o.alice)),
+            (o.bob.keys.member_id(), ek(&o.bob)),
+        ],
+    )
+    .unwrap();
+    let signed: Vec<_> = rot
+        .wrapped
+        .iter()
+        .map(|w| o.admin.device.sign_body(w.clone()).unwrap())
+        .collect();
+    // 一般成員自己簽署的 org 金鑰封裝 → 拒絕（權限看簽署者，不看上傳者）
+    let by_alice: Vec<_> = rot
+        .wrapped
+        .iter()
+        .map(|w| o.alice.device.sign_body(w.clone()).unwrap())
+        .collect();
+    assert!(alice.put_keys(by_alice).await.is_err());
+    admin.put_keys(signed.clone()).await.unwrap();
+    admin.put_keys(signed).await.unwrap(); // 重送不重複
+
+    let (items, next) = alice.fetch_keys(0).await.unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].wrapped.body.recipient, o.alice.keys.member_id());
+    let mut ring = KeyRing::default();
+    ring.accept(&items[0].wrapped.body, &o.alice.keys).unwrap();
+    assert!(alice.fetch_keys(next).await.unwrap().0.is_empty());
+    assert_eq!(bob.fetch_keys(0).await.unwrap().0.len(), 1);
+
+    // 成員可以封裝自己的私密金鑰
+    let fam = KeyFamily::MemberPrivate(o.alice.keys.member_id());
+    let own = rotate(
+        &KeyRing::default(),
+        &fam,
+        &[(o.alice.keys.member_id(), ek(&o.alice))],
+    )
+    .unwrap();
+    alice
+        .put_keys(vec![
+            o.alice.device.sign_body(own.wrapped[0].clone()).unwrap(),
+        ])
+        .await
+        .unwrap();
+    // 但不能替 bob 封裝 bob 的私密金鑰
+    let fam_b = KeyFamily::MemberPrivate(o.bob.keys.member_id());
+    let other = rotate(
+        &KeyRing::default(),
+        &fam_b,
+        &[(o.bob.keys.member_id(), ek(&o.bob))],
+    )
+    .unwrap();
+    assert!(
+        alice
+            .put_keys(vec![
+                o.alice.device.sign_body(other.wrapped[0].clone()).unwrap()
+            ])
+            .await
+            .is_err()
+    );
+    srv.router.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn address_book() {
+    let o = org();
+    let (srv, admin, _aep) = bootstrap(&o).await;
+    let (alice, alep) = connect(&srv, &o, &o.alice).await.unwrap();
+    let my = hills_net::to_peer_addr(&alep.addr());
+    alice.announce(my.clone()).await.unwrap();
+    // 不能替別的裝置登記位址
+    let mut fake = my.clone();
+    fake.node = o.bob.device.public();
+    assert!(alice.announce(fake).await.is_err());
+    let peers = admin.peers().await.unwrap();
+    assert_eq!(peers.len(), 1);
+    assert_eq!(peers[0].device, o.alice.device.public());
+    assert_eq!(
+        hills_net::to_endpoint_addr(&peers[0].addr).unwrap().id,
+        alep.addr().id
+    );
+    // 撤銷 alice 後不再列出
+    let rev = o
+        .admin
+        .keys
+        .issue_revocation(
+            o.trust.org_id(),
+            RevocationTarget::Member(o.alice.keys.member_id()),
+            "",
+            5,
+        )
+        .unwrap();
+    admin.put_revocation(rev).await.unwrap();
+    assert!(admin.peers().await.unwrap().is_empty());
     srv.router.shutdown().await.unwrap();
 }

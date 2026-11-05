@@ -5,8 +5,9 @@
 
 pub mod mailbox;
 
-use hills_proto::{ProtoError, Pub32};
+use hills_proto::{PeerAddr, ProtoError, Pub32};
 use iroh::endpoint::{Connection, RecvStream, SendStream};
+use iroh::{EndpointAddr, PublicKey, RelayUrl, TransportAddr};
 use serde::{Serialize, de::DeserializeOwned};
 
 #[derive(Debug, thiserror::Error)]
@@ -25,6 +26,32 @@ pub enum NetError {
 
 pub fn stream_err(e: impl std::fmt::Display) -> NetError {
     NetError::Stream(e.to_string())
+}
+
+/// iroh 位址 → 協定用的 `PeerAddr`。
+pub fn to_peer_addr(addr: &EndpointAddr) -> PeerAddr {
+    PeerAddr {
+        node: Pub32(*addr.id.as_bytes()),
+        relay: addr.relay_urls().next().map(|u| u.to_string()),
+        direct: addr.ip_addrs().map(|a| a.to_string()).collect(),
+    }
+}
+
+/// `PeerAddr` → iroh 位址；格式錯誤的項目略過。
+pub fn to_endpoint_addr(p: &PeerAddr) -> Result<EndpointAddr, NetError> {
+    let id =
+        PublicKey::from_bytes(&p.node.0).map_err(|_| NetError::Connect("NodeId 無效".into()))?;
+    let relay = p
+        .relay
+        .iter()
+        .filter_map(|r| r.parse::<RelayUrl>().ok())
+        .map(TransportAddr::Relay);
+    let direct = p
+        .direct
+        .iter()
+        .filter_map(|a| a.parse().ok())
+        .map(TransportAddr::Ip);
+    Ok(EndpointAddr::from_parts(id, relay.chain(direct)))
 }
 
 /// 連線對方的 NodeId（= 對方裝置的 DK 公鑰）。

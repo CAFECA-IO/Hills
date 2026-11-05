@@ -149,6 +149,11 @@ pub fn decode<T: DeserializeOwned + Versioned>(bytes: &[u8]) -> Result<T, ProtoE
     Ok(value)
 }
 
+/// 解碼不帶版本欄位的輔助型別（例如 `PeerAddr`）。
+pub fn decode_unversioned<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, ProtoError> {
+    postcard::from_bytes(bytes).map_err(|_| ProtoError::Decode)
+}
+
 pub fn check_version(v: u8) -> Result<(), ProtoError> {
     if v == FORMAT_VERSION {
         Ok(())

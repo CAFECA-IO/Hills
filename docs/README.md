@@ -12,6 +12,7 @@
 | 3 | [technical-design-m2-m5.md](./technical-design-m2-m5.md) | M2–M5：聊天、檔案、行動端、AI、整合、通話、開源；提案 P1… | 同上 |
 | 4 | [ui-spec.md](./ui-spec.md) | 畫面結構、流程、狀態 | UI 流程變更 |
 | 5 | [development-guidelines.md](./development-guidelines.md) | 分支、commit、程式碼、測試、資安、發佈 | 開發流程變更 |
+| — | [deploy.md](./deploy.md) | 自架 relay + mailbox 的部署、備份、升級、M0 驗收步驟（依 technical-design §10、§16.9） | 部署方式變更 |
 | 6 | [backlog/](./backlog/) | M0–M5 Issue 清單（JSON 為來源，.md 為產生的總覽） | 工作項目增減 |
 
 上層文件與下層衝突時以上層為準，並修正下層文件。

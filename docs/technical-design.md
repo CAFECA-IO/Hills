@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.5 草案 · 2026-11-05 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.6 草案 · 2026-11-05 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15。
 
 ## 1. 元件總覽
@@ -379,9 +379,10 @@ ApprovalDecision { requestId, requesterId, step, decision: approve|reject, comme
 
 ## 9. 本地儲存與前端
 
-- Automerge 文件存於 app data 目錄，檔名為 `blake3(docId)` 的 hex（不洩漏文件結構）；以本機儲存金鑰（隨機 32 bytes，存於系統 keychain）靜態加密：XChaCha20-Poly1305、隨機 nonce、AAD = utf8(docId)。
+- Automerge 文件存於 app data 目錄，檔名為 `blake3(docId)` 的 hex（不洩漏文件結構）；以本機儲存金鑰（隨機 32 bytes，存於系統 keychain）靜態加密：XChaCha20-Poly1305、隨機 nonce、AAD = 檔名（`hex(blake3(docId))`）；加密內容為 `docId ‖ Automerge 存檔`，讀取時確認 `blake3(docId)` 與檔名一致。如此不知道 docId 也能列出並解密全部文件（重建投影用），且檔案無法被搬到別的檔名下冒用。
 - 寫入採「寫暫存檔 → fsync → rename」，中途中斷不會損壞既有檔案。
 - SQLite 投影：從文件導出可查詢的表（任務、Scrum、出勤、申請狀態、計劃樹），文件變更時增量更新；投影隨時可重建。
+- **投影資料庫只存在記憶體**，app 啟動時由加密文件重建，因此磁碟上沒有明文業務資料。小團隊（≤ 50 人）的資料量重建只需數秒；若日後過慢，改用 SQLCipher 加密的磁碟資料庫（需先更新本節）。
 - 前端只讀投影（Tauri command 查詢 + event 推送變更）；寫入一律經 Rust 核心產生簽章 change。
 
 ## 10. 部署（docker-compose）

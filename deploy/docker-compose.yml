@@ -1,0 +1,38 @@
+# Hills 自架服務（M0）：relay + mailbox。technical-design §10、§16.9；步驟見 docs/deploy.md。
+# tsa、storage 隨 M1 加入。
+services:
+  relay:
+    build:
+      context: .
+      dockerfile: Dockerfile.relay
+    restart: unless-stopped
+    ports:
+      - "80:80" # HTTP（LetsEncrypt 驗證）
+      - "443:443" # HTTPS relay
+      - "7842:7842/udp" # QUIC address discovery
+    volumes:
+      - ./relay.toml:/config/relay.toml:ro
+      - relay-data:/data
+
+  mailbox:
+    build:
+      context: ..
+      dockerfile: apps/mailbox/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - relay
+    environment:
+      HILLS_RELAY: https://${HILLS_RELAY_HOST:?請在 .env 設定 HILLS_RELAY_HOST}
+      HILLS_PUBLIC_ADDR: ${HILLS_PUBLIC_IP:?請在 .env 設定 HILLS_PUBLIC_IP}:${HILLS_UDP_PORT:-7843}
+      HILLS_UDP_PORT: ${HILLS_UDP_PORT:-7843}
+      HILLS_ORG_ROOT_PUB: ${HILLS_ORG_ROOT_PUB:-}
+      RUST_LOG: info,iroh=warn
+    ports:
+      - "${HILLS_UDP_PORT:-7843}:${HILLS_UDP_PORT:-7843}/udp"
+      - "127.0.0.1:8080:8080" # 健康檢查只對本機開放
+    volumes:
+      - mailbox-data:/data
+
+volumes:
+  relay-data:
+  mailbox-data:

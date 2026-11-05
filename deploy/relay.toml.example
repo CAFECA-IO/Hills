@@ -1,0 +1,10 @@
+# 複製為 relay.toml 並填入你的網域與聯絡信箱（relay.toml 已列入 .gitignore）
+enable_relay = true
+http_bind_addr = "[::]:80"
+enable_quic_addr_discovery = true
+
+[tls]
+hostname = "relay.example.com"
+cert_mode = "LetsEncrypt"
+contact = "admin@example.com"
+cert_dir = "/data/certs"

@@ -144,6 +144,7 @@ CLAUDE.local.md
 
 # PoC 本機設定
 deploy/poc/relay.toml
+deploy/relay.toml
 
 # Rust / Tauri
 /target/

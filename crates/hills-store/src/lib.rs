@@ -60,6 +60,16 @@ impl DocStore {
     }
 
     pub fn save(&self, doc_id: &str, doc: &mut AutoCommit) -> Result<(), StoreError> {
+        self.save_with(doc_id, doc, &[])
+    }
+
+    /// 保存文件與附加資料（例如每筆 change 的簽章，technical-design §16.5）。
+    pub fn save_with(
+        &self,
+        doc_id: &str,
+        doc: &mut AutoCommit,
+        extra: &[u8],
+    ) -> Result<(), StoreError> {
         if doc_id.is_empty() || doc_id.len() > MAX_DOC_ID {
             return Err(StoreError::BadDocId);
         }
@@ -67,6 +77,8 @@ impl DocStore {
         let mut plain = Zeroizing::new(Vec::new());
         plain.extend_from_slice(&(doc_id.len() as u16).to_be_bytes());
         plain.extend_from_slice(doc_id.as_bytes());
+        plain.extend_from_slice(&(extra.len() as u32).to_be_bytes());
+        plain.extend_from_slice(extra);
         plain.extend_from_slice(&doc.save());
         let sealed =
             seal_at_rest(&self.key, stem.as_bytes(), &plain).map_err(|_| StoreError::Decrypt)?;
@@ -74,15 +86,43 @@ impl DocStore {
     }
 
     pub fn load(&self, doc_id: &str) -> Result<Option<AutoCommit>, StoreError> {
+        Ok(self.load_with(doc_id)?.map(|(d, _)| d))
+    }
+
+    /// 載入文件與附加資料。
+    pub fn load_with(&self, doc_id: &str) -> Result<Option<(AutoCommit, Vec<u8>)>, StoreError> {
         let stem = file_stem(doc_id);
         match self.read(&stem)? {
             None => Ok(None),
-            Some((id, doc)) if id == doc_id => Ok(Some(doc)),
+            Some((id, doc, extra)) if id == doc_id => Ok(Some((doc, extra))),
             Some(_) => Err(StoreError::Mismatch),
         }
     }
 
-    fn read(&self, stem: &str) -> Result<Option<(String, AutoCommit)>, StoreError> {
+    /// 以儲存金鑰加密保存任意小檔（KeyRing、TrustStore 快照），AAD = 檔名。
+    pub fn write_secret_file(&self, name: &str, data: &[u8]) -> Result<(), StoreError> {
+        if name.is_empty() || name.contains(['/', '\\']) {
+            return Err(StoreError::BadDocId);
+        }
+        let aad = format!("file:{name}");
+        let sealed =
+            seal_at_rest(&self.key, aad.as_bytes(), data).map_err(|_| StoreError::Decrypt)?;
+        atomic_write(&self.dir.join(format!("{name}.enc")), &sealed)
+    }
+
+    pub fn read_secret_file(&self, name: &str) -> Result<Option<Zeroizing<Vec<u8>>>, StoreError> {
+        let bytes = match fs::read(self.dir.join(format!("{name}.enc"))) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+        let aad = format!("file:{name}");
+        Ok(Some(Zeroizing::new(
+            open_at_rest(&self.key, aad.as_bytes(), &bytes).map_err(|_| StoreError::Decrypt)?,
+        )))
+    }
+
+    fn read(&self, stem: &str) -> Result<Option<(String, AutoCommit, Vec<u8>)>, StoreError> {
         let bytes = match fs::read(self.path(stem)) {
             Ok(b) => b,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -103,8 +143,14 @@ impl DocStore {
         if file_stem(&id) != stem {
             return Err(StoreError::Mismatch);
         }
-        let doc = AutoCommit::load(&plain[2 + n..]).map_err(|_| StoreError::Automerge)?;
-        Ok(Some((id, doc)))
+        let rest = &plain[2 + n..];
+        if rest.len() < 4 {
+            return Err(StoreError::Decrypt);
+        }
+        let m = u32::from_be_bytes([rest[0], rest[1], rest[2], rest[3]]) as usize;
+        let extra = rest.get(4..4 + m).ok_or(StoreError::Decrypt)?.to_vec();
+        let doc = AutoCommit::load(&rest[4 + m..]).map_err(|_| StoreError::Automerge)?;
+        Ok(Some((id, doc, extra)))
     }
 
     /// 列出所有文件 ID（解密每個檔案取得；略過暫存檔）。
@@ -118,7 +164,7 @@ impl DocStore {
             let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
                 continue;
             };
-            if let Some((id, _)) = self.read(stem)? {
+            if let Some((id, _, _)) = self.read(stem)? {
                 ids.push(id);
             }
         }

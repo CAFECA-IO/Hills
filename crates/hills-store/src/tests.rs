@@ -153,3 +153,22 @@ fn projection_updates_and_rebuilds() {
         .unwrap();
     assert_eq!(title, "私人項目");
 }
+
+#[test]
+fn extra_data_and_secret_files() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (s, _) = store(tmp.path());
+    let mut doc = plan_doc(&[("p", "x", false)]);
+    s.save_with("org", &mut doc, b"signatures").unwrap();
+    let (mut back, extra) = s.load_with("org").unwrap().unwrap();
+    assert_eq!(extra, b"signatures");
+    assert_eq!(back.get_heads(), doc.get_heads());
+    s.write_secret_file("keyring", b"KEYS").unwrap();
+    assert_eq!(&**s.read_secret_file("keyring").unwrap().unwrap(), b"KEYS");
+    assert!(s.read_secret_file("nothing").unwrap().is_none());
+    assert!(s.write_secret_file("../x", b"").is_err());
+    // 密文檔不含明文，也不會被當成文件列出
+    let raw = fs::read(tmp.path().join("docs/keyring.enc")).unwrap();
+    assert!(!raw.windows(4).any(|w| w == b"KEYS"));
+    assert_eq!(s.doc_ids().unwrap(), vec!["org".to_string()]);
+}

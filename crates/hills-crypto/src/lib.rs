@@ -183,6 +183,42 @@ impl KeyRing {
         }
     }
 
+    pub fn contains(&self, id: &KeyId) -> bool {
+        self.keys.contains_key(id)
+    }
+
+    /// 某家族的所有 epoch（由舊到新）。
+    pub fn epochs(&self, family: &KeyFamily) -> Vec<(&KeyId, &SymmetricKey)> {
+        self.keys
+            .iter()
+            .filter(|(id, _)| &id.family == family)
+            .collect()
+    }
+
+    /// 匯出（加密保存用）：postcard of `Vec<(KeyId, [u8; 32])>`。
+    pub fn export(&self) -> Result<Zeroizing<Vec<u8>>, CryptoError> {
+        use zeroize::Zeroize;
+        let mut items: Vec<(KeyId, [u8; 32])> =
+            self.keys.iter().map(|(id, k)| (id.clone(), *k.0)).collect();
+        let out = hills_proto::encode(&items).map(Zeroizing::new);
+        for (_, k) in items.iter_mut() {
+            k.zeroize();
+        }
+        Ok(out?)
+    }
+
+    pub fn import(bytes: &[u8]) -> Result<Self, CryptoError> {
+        use zeroize::Zeroize;
+        let mut items: Vec<(KeyId, [u8; 32])> =
+            postcard::from_bytes(bytes).map_err(|_| hills_proto::ProtoError::Decode)?;
+        let mut ring = Self::default();
+        for (id, k) in items.iter_mut() {
+            ring.insert(id.clone(), SymmetricKey::from_bytes(k));
+            k.zeroize();
+        }
+        Ok(ring)
+    }
+
     /// 解封裝並加入金鑰圈。
     pub fn accept(&mut self, wrapped: &WrappedKey, me: &MemberKeys) -> Result<KeyId, CryptoError> {
         let key = unwrap_key(wrapped, me)?;
@@ -483,6 +519,20 @@ mod tests {
             open_at_rest(&k, b"doc-1", &data[..10]).unwrap_err(),
             CryptoError::Open
         );
+    }
+
+    #[test]
+    fn keyring_export_import() {
+        let mut ring = KeyRing::default();
+        let id = KeyId {
+            family: team(),
+            epoch: 2,
+        };
+        let k = SymmetricKey::generate().unwrap();
+        ring.insert(id.clone(), k.clone());
+        let back = KeyRing::import(&ring.export().unwrap()).unwrap();
+        assert_eq!(*back.get(&id).unwrap().to_bytes(), *k.to_bytes());
+        assert_eq!(back.epochs(&team()).len(), 1);
     }
 
     #[test]

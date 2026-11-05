@@ -1,6 +1,6 @@
 # M0 PoC 報告
 
-> 版本：v0.1 初稿 · 2026-11-05 · 對應 technical-design §12、§15.8；Issue「[M0][PoC] …」各項
+> 版本：v0.2 · 2026-11-05 · 對應 technical-design §12、§15.8；Issue「[M0][PoC] …」各項
 > 狀態：**部分完成**。雲端 Linux 已測項目有結果；NAT 矩陣、macOS / Windows WebView、安裝檔需在實機上測試（§5）。
 
 ## 1. 結論摘要
@@ -9,7 +9,7 @@
 |------|---------|---------|------|
 | iroh 穿透 | 各網路組合皆可連線 | 本機雙行程直連成功；NAT 矩陣待測 | ⏳ 待實測 |
 | Automerge 同步 | 一致、無遺失、合併 < 1 秒 | 一致；100 次 / 副本合併 3.4 ms | ✅ 通過 |
-| 加密 bundle + mailbox | 補同步 ≤ 5 秒 | 尚未實作（M0 下一批） | ⏳ |
+| 加密 bundle + mailbox | 補同步 ≤ 5 秒 | 3 份 bundle 補同步 77–90 ms（debug）、6 ms（release），本機直連 | ✅ 通過（跨網路待 §5.1 一併實測） |
 | RS 與 SwarmStorage 相容 | 逐位元組一致 | 5 組向量全部一致 | ✅ 通過 |
 | 前端加密 / 編碼效能 | 每平台 ≥ 50 MB/s、記憶體 < 200 MB | Node 192 MB/s、Chromium Worker 123 MB/s；存活記憶體 100 MB | ✅ 代理環境通過，⏳ WKWebView / WebView2 待測 |
 | 桌機打包 | macOS、Windows 可安裝啟動 | Linux 可建置並啟動；CI 已設定 macOS / Windows 打包 | ⏳ 待 CI / 實機 |
@@ -73,7 +73,23 @@
 - 已做的最佳化：資料分片 0–3 直接引用密文 buffer，每條帶少複製 20 MB。
 - 若 WebView 實測不足 50 MB/s：RS 改用 WASM（`reed-solomon-erasure` crate），或改由 Rust 核心處理（需更新 D35）。
 
-### 3.6 桌機 app
+### 3.6 加密 bundle + mailbox（`apps/mailbox/tests/e2e.rs`）
+
+真實 iroh 連線（停用 relay、本機直連）：
+
+1. 管理者以 OK 簽發的憑證連線（bootstrap），推送 roster。
+2. 小組金鑰 epoch 1 以 HPKE 封裝給 alice、bob。
+3. alice 離線期間，bob 編輯小組文件 3 次，每次以 DK 簽署 change、以小組金鑰加密成 bundle 上傳；重送同一份被去重。
+4. alice 上線：連線 + Hello → LIST → 解密 → 驗證層驗證簽章、信任鏈與寫入權限 → 套用。
+
+| 建置 | 補同步耗時（含連線與 Hello） | 結果 |
+|------|---:|------|
+| debug | 77–90 ms | alice 與 bob 的文件 heads 一致，無被拒 change |
+| release | 6.1 ms | 同上 |
+
+同一組測試也驗證：未 Hello、陌生組織、憑證與連線 NodeId 不符的裝置被拒；一般成員不能推送 roster；撤銷成員後其**既有連線**立即失效；bundle_hash 不符被拒；mailbox 重啟後 roster 與 bundle 仍在。
+
+### 3.7 桌機 app
 
 - Tauri 2.12.5 + React 19 + Vite 8 + Tailwind 4；Linux（WebKitGTK）可建置並啟動。
 - 開發模式提供 `#/dev/swarm-bench` 頁面，在 Web Worker 中執行 §3.5 的基準（正式版不包含）。

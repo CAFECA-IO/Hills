@@ -22,7 +22,7 @@ TCP 80 用於 LetsEncrypt 自動取得憑證，需要保持開放。
 git clone https://github.com/CAFECA-IO/hills.cafeca.io.git
 cd hills.cafeca.io/deploy
 
-cp relay.toml.example relay.toml   # 填入 [tls] hostname 與 contact
+cp relay.toml.example relay.toml   # 填入 [tls] hostname 與 contact（必須在 up 之前建立，否則 Docker 會建立同名資料夾）
 cp .env.example .env               # 填入 HILLS_RELAY_HOST、HILLS_PUBLIC_IP
 
 docker compose up -d --build       # 第一次建置約 10–20 分鐘
@@ -93,8 +93,10 @@ docker compose up -d --build
 
 | 狀況 | 檢查 |
 |------|------|
+| relay 日誌 `Error: config-path must be a file` | 啟動前沒有 `deploy/relay.toml`，Docker 自動建立了同名**資料夾**。執行 `docker compose down`、`rm -rf relay.toml`、`cp relay.toml.example relay.toml` 並填寫後再 `docker compose up -d` |
 | app 一直顯示「離線」 | 防火牆 UDP 7843 是否開放；`.env` 的 `HILLS_PUBLIC_IP` 是否正確；`docker compose logs mailbox` |
 | relay 無法取得憑證 | DNS 是否已生效（`dig relay.example.com`）；TCP 80 是否開放 |
+| mailbox 連線碼不含 relay（只能經 mailbox 輪詢同步） | relay 未正常啟動或憑證未取得；先修好 relay（`docker compose logs relay`），再 `docker compose restart mailbox` 取得新連線碼 |
 | 建立組織後一直「離線」，mailbox 日誌出現拒絕連線 | mailbox 已被其他組織綁定，或 `HILLS_ORG_ROOT_PUB` 與你的組織不同；重新部署時需清除 `mailbox-data` volume |
 | 啟動時 `Bind for …:8080 failed: port is already allocated` 之類的埠衝突 | 主機上已有服務占用該埠；在 `.env` 修改 `HILLS_HEALTH_PORT`（健康檢查，預設 18080）或 `HILLS_UDP_PORT` |
 | 加入後一直「等待核准」 | 建立該邀請的管理者裝置需上線一次 |

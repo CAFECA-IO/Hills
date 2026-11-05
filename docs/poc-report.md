@@ -139,7 +139,7 @@ pnpm --filter @hills/desktop tauri dev
 | 平台 | WebView | 大小 | encodeMBps | decodeMBps | 記憶體峰值 |
 |------|---------|---:|---:|---:|---:|
 | macOS（MacBook Air M4） | WKWebView | 256 MB | 366.2 | 1857.1 | 待記錄 |
-| macOS | WKWebView | 1024 MB | | | |
+| macOS（MacBook Air M4） | WKWebView | 1024 MB | 400.6 | 1969.1 | 待記錄 |
 | macOS（MacBook Air M4） | Chrome 156 瀏覽器（Blink，與 WebView2 同引擎；非 Tauri 視窗） | 1024 MB | 288.5 | 1239.2 | 待記錄 |
 | Windows | WebView2 | 256 MB | | | |
 | Windows | WebView2 | 1024 MB | | | |

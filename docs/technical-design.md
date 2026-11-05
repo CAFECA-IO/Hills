@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.4 草案 · 2026-11-05 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.5 草案 · 2026-11-05 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15。
 
 ## 1. 元件總覽
@@ -65,6 +65,15 @@ deploy/
 
 原則：不自行設計密碼學原語；所有訊息格式帶版本號 `v`，以便日後升級（例如 M2 群組聊天改用 OpenMLS）。
 
+**簽章輸入格式**（所有 Ed25519 簽章一致）：
+
+```
+sig = Sign(key, "hills/v1/" ‖ type ‖ 0x00 ‖ postcard(body))
+type ∈ { device-cert, member-cert, revocation, change, roster, … }
+```
+
+`type` 做 domain separation，避免一種簽章被拿去冒充另一種；`body` 以 postcard 序列化，欄位順序即定義順序，因此序列化結果唯一。
+
 ## 3. 身分與金鑰
 
 ### 3.1 金鑰階層
@@ -84,7 +93,8 @@ deploy/
 
 - **推導細節**（`hills-identity`，有固定測試向量）：IKM = BIP39 **熵**（32 bytes，不使用 BIP39 PBKDF2 seed），HKDF-SHA256 salt = `hills/v1/identity`，info = `hills/v1/ik` / `hills/v1/ek`，各輸出 32 bytes 作為 Ed25519 / X25519 私鑰。因為由熵推導，同一組復原詞以**英文或繁體中文字表**顯示都對應同一個身分；UI 預設顯示語言於 M0「組織建立」Issue 決定。變更 salt / info 等同變更所有身分，屬協定變更。
 - IK / EK 私鑰存於每台已綁定裝置的系統安全儲存區，可由復原詞重建。
-- DK 私鑰永不離開裝置。
+- DK 為每台裝置隨機產生的 Ed25519 金鑰（不由復原詞推導），同時作為 iroh `SecretKey` / NodeId；私鑰永不離開裝置。
+- `DeviceCert` 保留 `expiresAt?` 欄位（M0 不設期限）。
 - OK 只用來簽發第一張管理者憑證，之後的管理操作由任一管理者 IK 簽章。OK 是信任根與災難復原用途，建立後匯出離線備份。
 
 ### 3.2 信任鏈驗證
@@ -188,12 +198,23 @@ deploy/
 EncryptedBundle {
   v: 1,
   docId,          // 文件 ID（洩漏「某文件有更新」，不洩漏內容）
-  keyId,          // 例如 team:<teamId>:epoch:<n>
-  nonce,          // 24 bytes
+  keyId,          // 例如 team:<teamId>:epoch:<n>（格式見下）
+  nonce,          // 24 bytes，隨機
   ciphertext,     // XChaCha20-Poly1305( postcard(SignedChange[]) )
   bundleHash      // blake3(ciphertext)，mailbox 去重鍵
 }
+AAD = utf8(docId) ‖ 0x00 ‖ utf8(keyId)
 ```
+
+`keyId` 格式（`<family>:epoch:<n>`，n 從 1 開始）：
+
+| family | 用途 |
+|--------|------|
+| `org` | GK |
+| `team:<teamId>` | TK |
+| `member:<memberId>:attendance` | AK |
+| `member:<memberId>:private` | PK |
+| `conv:<convId>` | CK |
 
 ### 4.5 同步流程
 
@@ -231,7 +252,9 @@ JOIN  { orgId, inviteId, payload }                   → ok
 FETCH_JOINS { orgId }                                → [JoinRequest]   // 限管理者
 ```
 
-- 存取控制：請求者出示 `DeviceCert` + `MemberCert` 鏈，mailbox 持有 OK.pub 與 org 憑證快照以驗證（憑證以明文簽章副本另行上傳，不含其他組織資料）。`JOIN` 例外，以 inviteId 與 IP 限流。
+- 存取控制：iroh 連線本身已驗證對方的 NodeId（= DK），因此每條連線開頭送一次 `Hello{DeviceCert, MemberCert}`，mailbox 確認 `DeviceCert.devicePub == 連線的 NodeId` 且信任鏈有效後，該連線上的請求不需逐一簽章。
+- mailbox 以設定檔中的 OK.pub 與管理者推送的 **roster 快照**驗證：`PUT_ROSTER{memberCerts[], revocations[]}`，每筆憑證與撤銷各自驗證簽章（第一位管理者由 OK 簽發，其他由有效管理者簽發）。roster 只含公鑰與角色，不含其他組織資料。
+- `JOIN` 例外（尚無憑證），以 inviteId 與來源限流（與邀請流程同批實作）。
 - 儲存：SQLite 索引 + 檔案系統存 ciphertext（M1 規模足夠）。
 - 配額：每組織、每裝置限流。
 
@@ -356,7 +379,8 @@ ApprovalDecision { requestId, requesterId, step, decision: approve|reject, comme
 
 ## 9. 本地儲存與前端
 
-- Automerge 文件以 `docId` 為檔名存於 app data 目錄，以本機儲存金鑰（存於 keychain）靜態加密。
+- Automerge 文件存於 app data 目錄，檔名為 `blake3(docId)` 的 hex（不洩漏文件結構）；以本機儲存金鑰（隨機 32 bytes，存於系統 keychain）靜態加密：XChaCha20-Poly1305、隨機 nonce、AAD = utf8(docId)。
+- 寫入採「寫暫存檔 → fsync → rename」，中途中斷不會損壞既有檔案。
 - SQLite 投影：從文件導出可查詢的表（任務、Scrum、出勤、申請狀態、計劃樹），文件變更時增量更新；投影隨時可重建。
 - 前端只讀投影（Tauri command 查詢 + event 推送變更）；寫入一律經 Rust 核心產生簽章 change。
 

@@ -17,7 +17,9 @@
 AGENTS.md  CLAUDE.md  README.md  LICENSE
 docs/        規劃與設計文件（見 docs/README.md）
 crates/      Rust 函式庫（hills-proto / identity / crypto / store / sync / net / domain）
-apps/        desktop（Tauri）、mailbox、tsa，以及後續服務
+apps/        desktop（Tauri）、mailbox、tsa、storage，以及後續服務
+packages/    前端共用 TypeScript 套件（swarm：SwarmStorage 管線）
+poc/         PoC 工具（net-echo、automerge-sync）
 deploy/      docker-compose.yml、.env.example
 holidays/    假日曆資料（holidays/<region>/<year>.json）
 scripts/     開發與維運腳本

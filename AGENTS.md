@@ -84,9 +84,28 @@ Hills（山丘上的卡菲卡）是 CAFECA 的 P2P 工作協作工具：出勤�
 
 ## 7. 常用指令
 
-> 專案骨架建立後（Issue「Monorepo 骨架」）補上實際指令。
-
 ```bash
+# 安裝依賴
+pnpm install
+
+# Rust：格式、lint、測試
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+
+# 前端：lint、測試、建置
+pnpm -r lint
+pnpm -r test
+pnpm -r build
+
+# 桌機 app 開發模式（需在 macOS / Windows，或已安裝 webkit2gtk 的 Linux）
+pnpm --filter @hills/desktop tauri dev
+
+# PoC
+cargo run -p net-echo -- listen
+cargo run --release -p automerge-sync
+pnpm --filter @hills/swarm bench
+
 # 修改 docs/backlog/*.json 後重新產生總覽
 python3 scripts/render-backlog.py
 

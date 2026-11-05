@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.2 草案 · 2026-11-05 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.3 草案 · 2026-11-05 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15。
 
 ## 1. 元件總覽
@@ -38,9 +38,17 @@ apps/
   mailbox/         # hills-mailbox 服務
   tsa/             # hills-tsa 服務
   storage/         # hills-storage 分片節點（§15.6）
+packages/
+  swarm/           # SwarmStorage 前端管線（TypeScript）：RS(8,5)、逐條帶加密、manifest（§15）
+poc/
+  net-echo/        # iroh 連線 PoC 工具（§12），PoC 後保留作為網路診斷工具
+  automerge-sync/  # Automerge 離線合併 PoC（§12），PoC 後保留作為回歸測試
 deploy/
   docker-compose.yml  .env.example
+  poc/             # PoC 用的 iroh-relay 部署片段
 ```
+
+工具鏈：Rust stable（`rust-toolchain.toml`）、Node 22、pnpm 10；Tauri 使用 2.x 穩定版。
 
 ## 2. 密碼學基礎
 

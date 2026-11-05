@@ -1,6 +1,6 @@
 # Hills 自架部署（M0）
 
-> 版本：v0.2 · 2026-11-05 · 對應 [technical-design.md](./technical-design.md) §10、§16.9
+> 版本：v0.3 · 2026-11-06 · 對應 [technical-design.md](./technical-design.md) §10、§16.9
 > M0 部署 **relay**（iroh-relay，NAT 穿透與中繼）與 **mailbox**（離線信箱、roster 分發、邀請、封裝金鑰、位址簿）。tsa、storage 隨 M1 加入。
 
 伺服器只看得到加密後的資料與技術中繼資料（technical-design §5.2、§16.7），看不到訊息或文件內容。
@@ -22,15 +22,16 @@ TCP 80 用於 LetsEncrypt 自動取得憑證，需要保持開放。
 git clone https://github.com/CAFECA-IO/hills.cafeca.io.git
 cd hills.cafeca.io/deploy
 
-cp relay.toml.example relay.toml   # 填入 [tls] hostname 與 contact（必須在 up 之前建立，否則 Docker 會建立同名資料夾）
-cp .env.example .env               # 填入 HILLS_RELAY_HOST、HILLS_PUBLIC_IP
+cp .env.example .env               # 填入 HILLS_RELAY_HOST、HILLS_RELAY_CONTACT、HILLS_PUBLIC_IP
 
 docker compose up -d --build       # 第一次建置約 10–20 分鐘
 docker compose ps                  # relay 與 mailbox 皆為 running / healthy
 curl -s http://127.0.0.1:18080/v1/health   # mailbox 健康檢查（埠為 HILLS_HEALTH_PORT）
 ```
 
-`relay.toml` 與 `.env` 已列入 `.gitignore`，不要提交。
+`.env` 已列入 `.gitignore`，不要提交。
+
+relay 的設定檔由容器啟動時依 `.env` 產生（LetsEncrypt、TCP 80 / 443、UDP 7842），compose 不掛載任何主機檔案，因此在開發容器、遠端 Docker context 等「docker 指令與 Docker daemon 不在同一個檔案系統」的環境也能使用。需要進階設定時，可另以 named volume 提供 `/config/relay.toml`，存在時優先使用（格式見 `relay.toml.example`）。
 
 ## 3. 取得 mailbox 連線碼
 
@@ -93,7 +94,7 @@ docker compose up -d --build
 
 | 狀況 | 檢查 |
 |------|------|
-| relay 日誌 `Error: config-path must be a file` | 啟動前沒有 `deploy/relay.toml`，Docker 自動建立了同名**資料夾**。執行 `docker compose down`、`rm -rf relay.toml`、`cp relay.toml.example relay.toml` 並填寫後再 `docker compose up -d` |
+| relay 日誌 `Error: config-path must be a file`（v0.2 以前的部署方式） | docker 指令所在環境與 Docker daemon 不同（例如在開發容器內操作），主機上看不到 `relay.toml`，Docker 自動建立了空資料夾。更新到最新版後不再需要 `relay.toml`，`docker compose down` 後重新 `up -d --build` |
 | app 一直顯示「離線」 | 防火牆 UDP 7843 是否開放；`.env` 的 `HILLS_PUBLIC_IP` 是否正確；`docker compose logs mailbox` |
 | relay 無法取得憑證 | DNS 是否已生效（`dig relay.example.com`）；TCP 80 是否開放 |
 | mailbox 連線碼不含 relay（只能經 mailbox 輪詢同步） | relay 未正常啟動或憑證未取得；先修好 relay（`docker compose logs relay`），再 `docker compose restart mailbox` 取得新連線碼 |

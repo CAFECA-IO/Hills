@@ -11,7 +11,13 @@ services:
       - "443:443" # HTTPS relay
       - "7842:7842/udp" # QUIC address discovery
     volumes:
-      - ./relay.toml:/config/relay.toml:ro
+      # 檔案不存在時直接報錯，避免 Docker 自動建立同名資料夾
+      - type: bind
+        source: ./relay.toml
+        target: /config/relay.toml
+        read_only: true
+        bind:
+          create_host_path: false
       - relay-data:/data
 
   mailbox:

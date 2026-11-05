@@ -1,0 +1,22 @@
+# gitleaks 設定：使用預設規則，另外攔截 Hills 專屬的敏感資料
+[extend]
+useDefault = true
+
+[[rules]]
+id = "hills-recovery-phrase"
+description = "疑似 BIP39 24 字復原詞"
+regex = '''(?i)(recovery|mnemonic|復原詞)[^\n]{0,20}[:=]\s*["']?([a-z]+\s+){23}[a-z]+'''
+
+[allowlist]
+description = "測試向量與範本"
+paths = [
+  '''crates/hills-identity/src/lib\.rs''',
+  '''crates/hills-identity/tests/vectors/''',
+  '''packages/swarm/test/fixtures/''',
+  '''\.env\.example$''',
+  '''relay\.toml\.example$''',
+  '''pnpm-lock\.yaml''',
+  '''Cargo\.lock''',
+  '''(^|/)target/''',
+  '''node_modules/''',
+]

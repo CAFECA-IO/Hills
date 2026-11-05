@@ -1,0 +1,17 @@
+# PoC：自架 iroh-relay。正式部署見 deploy/docker-compose.yml（M0 Issue「Docker Compose 部署」）。
+services:
+  relay:
+    build:
+      context: .
+      dockerfile: Dockerfile.relay
+    restart: unless-stopped
+    ports:
+      - "80:80"          # HTTP（LetsEncrypt 驗證）
+      - "443:443"        # HTTPS relay
+      - "7842:7842/udp"  # QUIC address discovery
+    volumes:
+      - ./relay.toml:/config/relay.toml:ro
+      - relay-data:/data
+
+volumes:
+  relay-data:

@@ -6,6 +6,8 @@ members = [
   "apps/tsa",
   "apps/storage",
   "apps/desktop/src-tauri",
+  "poc/net-echo",
+  "poc/automerge-sync",
 ]
 
 [workspace.package]

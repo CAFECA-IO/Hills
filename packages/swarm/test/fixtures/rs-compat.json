@@ -1,0 +1,86 @@
+{
+  "source": "CAFECA-IO/swarmstorage",
+  "commit": "5a073e7b7781c11b289bf02bbe9a832029b152eb",
+  "cases": [
+    {
+      "seed": 1212763212,
+      "size": 1,
+      "data": [
+        "d03502c43d74a30b936740a9517dc4ea2b2ad7168caa0a774cefe793ce0b33e7",
+        "8e35c2cd3bf6641bdb0e2050b76932cbb2e6034a0ddacc1d9bea82a6ba57f7cf",
+        "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+        "32ebb1abcc1c601ceb9c4e3c4faba0caa5b85bb98c4f1e6612c40faa528a91c9",
+        "04d6c0c946716aac894fc1653383543a91faab601302cf011607c82f06304651"
+      ],
+      "parity": [
+        "cd0aa9856147b6c5b4ff2b7dfee5da20aa38253099ef1b4a64aced233c9afe29",
+        "4d6a8e90039fc9782a1bbbd3cced923633e38eb83cf857d2e795e9ea13ef7d4d",
+        "d03502c43d74a30b936740a9517dc4ea2b2ad7168caa0a774cefe793ce0b33e7"
+      ]
+    },
+    {
+      "seed": 1212763213,
+      "size": 7,
+      "data": [
+        "589a827a5693d4b3750a6c99cf3ca128b15f28cd0da9785486f9baf9b90d7d28",
+        "2a2df6460b847b213a8fa68ae942500c5d4bc147cedfae7e2bea28be731878a5",
+        "1b0df68dedee467ef4f4efc823c0ba0a3977a1516793253d2f2b6ea5b24d06c5",
+        "b488fef1650f8bbd915597c9858de598cd01b5bdc85cf13bf141866ca67bdf9c",
+        "4f6c574c5c5303c964d557c1dd30d925699c16f07d7ff4fc359ae0311c3a109f"
+      ],
+      "parity": [
+        "cf9955b5dca1ea8bb1f1b53fdd756a094aeff15da228ce1feed0df4c61d38ea8",
+        "6d0768e8737d565caf01b532c665a0dc498bd4e5ff57ecc68f0499626ff906f7",
+        "5eae0b0567e1a8cce7d3c998a86ebbcb9063ff2ca2db249c7e7916a52f7703b4"
+      ]
+    },
+    {
+      "seed": 1212763214,
+      "size": 4096,
+      "data": [
+        "7b459a13cf87777c86112041cff30ead021ba0651e5c2e55ee47289b7a11d835",
+        "e611fb47d8560dd4b6b37701cd0448234c51b717032cbee8d3453bea461a66b9",
+        "f8860567725f73b90ef130952393928b0f9406dee29f736d72d11ddd7548c35a",
+        "f658f182daa51ae84097bea06c6c8ff3797046beb5eccf5d25734a210ab2cc31",
+        "6d7a4f7762b2c998f018bae010c39b940d7ac6ae4211dc617abec6eb6722dfa7"
+      ],
+      "parity": [
+        "aa2dc6165d741cf69dca750b58cb1681b08d4725c78320dde908937391ed1139",
+        "2a44aced6a60d2b6b7b0d203606d0d95c54258ee5407c3eb952bbcb0cc836c4b",
+        "1e5d8be1ef1a8a94ad694984613f6aeb68dd01d0d846a5a5765d1432229483f8"
+      ]
+    },
+    {
+      "seed": 1212763215,
+      "size": 65537,
+      "data": [
+        "8ca679981e3f8ac10fceddc4058f314c9ea7084b366440fae6bfb2dd989ebfb1",
+        "da93f6dc4e41d2b84903bc85ac09d69d5d7dbb972478ad444f7765e5dcf21573",
+        "8ea4812226e352f36974c08179144886c42184808011552dad7a04a8ea6c80f4",
+        "5018ca44c4491235b3a9a161437eb66f6e4daf3b4c5ba3cdb205d03b8ee72ee1",
+        "70d5701bbed224c7041d1033be877caf13834010c6c02f973b36e818e871564e"
+      ],
+      "parity": [
+        "f65c92ee1a25e937536f3067134751c1ecbc25f1785047d3ae4556180fdf336b",
+        "99e5a6c20d890c1927b5ade7f9bce59d4c551823fd01f4ccb1849c9164a787af",
+        "45979308f2ac391b37b38b6979df5432f237b7f19ada571a932858a7fa8b9b4c"
+      ]
+    },
+    {
+      "seed": 1212763216,
+      "size": 4194308,
+      "data": [
+        "26ecfb4f7128812d94ecf574214b46d0102b95d984ca9ef816882b716e31db9d",
+        "7c9d6b0ef3a43de97718ef250b8b4c662478db3f9d90742f5639685806179f10",
+        "93dba385f3bb46ec4fac12fe5acb14f29a901a1e1a1f1664c57a89a0bc6632e2",
+        "628c245884343b2b519a96a61df4e22579b97915a3567f2b6acbef3bdab69766",
+        "5ab5515b94374b05c65e593ee0d444e963de29151a7753e6f732361787c1677a"
+      ],
+      "parity": [
+        "163b83c129cb4500f798c599776c197d321ba5cd8baef841953815b7b38eb5cd",
+        "0bab37cc1ce73cf5feeed9711ae393157be512bb0bc8bd4923b12a3c5ccd4df3",
+        "2ea634518f16133600449ba793fbc4c27acb8f51edbdb6355a0a0f2c0df44637"
+      ]
+    }
+  ]
+}

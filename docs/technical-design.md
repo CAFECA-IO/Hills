@@ -744,5 +744,6 @@ org = {
 
 - `deploy/docker-compose.yml`：`relay`（iroh-relay，自帶 LetsEncrypt；TCP 80 / 443、UDP 7842）與 `mailbox`（固定 UDP 埠、`HILLS_RELAY` 指向自架 relay）；tsa、storage 隨 M1 加入。
 - mailbox 啟動時印出 **mailbox 連線碼**（`hills-mbx1-` + base32(EndpointAddr)），建立組織時貼上。
+- **綁定組織**：mailbox 未設定 `HILLS_ORG_ROOT_PUB` 時為「未綁定」狀態，第一位以組織根金鑰簽發之管理者憑證連線者即完成綁定（寫入資料庫，之後不可更換），未綁定前其他請求一律拒絕。部署後應立即建立組織；若要事先固定組織，可設定 `HILLS_ORG_ROOT_PUB`。
 - 步驟見 [deploy.md](./deploy.md)。
 

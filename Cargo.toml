@@ -5,6 +5,7 @@ members = [
   "apps/mailbox",
   "apps/tsa",
   "apps/storage",
+  "apps/desktop/src-tauri",
 ]
 
 [workspace.package]

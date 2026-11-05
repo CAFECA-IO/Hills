@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "主視窗的最小權限。檔案存取等權限於 M1 依需要逐項加入（只限使用者選擇的路徑）。",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

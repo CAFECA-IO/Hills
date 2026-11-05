@@ -1,0 +1,22 @@
+[package]
+name = "hills-desktop"
+description = "Hills 桌機 app（Tauri 2）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "hills_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde_json.workspace = true
+
+[lints]
+workspace = true

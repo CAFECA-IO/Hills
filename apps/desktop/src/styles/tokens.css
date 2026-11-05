@@ -1,0 +1,42 @@
+/*
+ * 設計 token（D22、development-guidelines §4.2）。元件只能使用這些變數，不得寫死色碼。
+ * 主題色 --hills-primary 可由組織設定覆寫（D20）。目前為 M0 暫定值，M1「設計系統」Issue 定稿。
+ */
+@import 'tailwindcss';
+
+:root {
+  --hills-primary: oklch(55% 0.13 160);
+  --hills-bg: oklch(98.5% 0.005 160);
+  --hills-surface: oklch(100% 0 0);
+  --hills-text: oklch(25% 0.02 160);
+  --hills-muted: oklch(50% 0.02 160);
+  --hills-border: oklch(90% 0.01 160);
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --hills-bg: oklch(20% 0.01 160);
+    --hills-surface: oklch(25% 0.012 160);
+    --hills-text: oklch(94% 0.01 160);
+    --hills-muted: oklch(70% 0.015 160);
+    --hills-border: oklch(35% 0.015 160);
+  }
+}
+
+@theme inline {
+  --color-primary: var(--hills-primary);
+  --color-bg: var(--hills-bg);
+  --color-surface: var(--hills-surface);
+  --color-fg: var(--hills-text);
+  --color-muted: var(--hills-muted);
+  --color-line: var(--hills-border);
+  --font-sans: 'Noto Sans TC', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+}

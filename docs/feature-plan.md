@@ -366,6 +366,7 @@ Hills 是 CAFECA 團隊的工作通訊與協作工具，安裝於桌機、筆電
 |------|------|------|
 | v0.1–v0.8 | 2026-11-05 | 五輪問答確認 D1–D32 |
 | v0.9 | 2026-11-05 | 新增 D33 文件優先；加入 AGENTS.md、M2–M5 技術設計、介面規格、開發規範、M2–M5 backlog |
+| v1.0.6 | 2026-11-05 | poc-report v0.3：macOS WKWebView 檔案管線 366 MB/s（256 MB） |
 | v1.0.5 | 2026-11-05 | poc-report v0.2：加密 bundle + mailbox 補同步通過（本機） |
 | v1.0.4 | 2026-11-05 | technical-design v0.6：本地文件以檔名為 AAD 並內含 docId；投影資料庫只存在記憶體、啟動時重建 |
 | v1.0.3 | 2026-11-05 | technical-design v0.5：簽章 domain separation、裝置金鑰、keyId 格式與 bundle AAD、mailbox 連線驗證與 roster、本地儲存加密與原子寫入 |

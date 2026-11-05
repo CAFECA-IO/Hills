@@ -1,6 +1,6 @@
 # M0 PoC 報告
 
-> 版本：v0.2 · 2026-11-05 · 對應 technical-design §12、§15.8；Issue「[M0][PoC] …」各項
+> 版本：v0.3 · 2026-11-05 · 對應 technical-design §12、§15.8；Issue「[M0][PoC] …」各項
 > 狀態：**部分完成**。雲端 Linux 已測項目有結果；NAT 矩陣、macOS / Windows WebView、安裝檔需在實機上測試（§5）。
 
 ## 1. 結論摘要
@@ -11,7 +11,7 @@
 | Automerge 同步 | 一致、無遺失、合併 < 1 秒 | 一致；100 次 / 副本合併 3.4 ms | ✅ 通過 |
 | 加密 bundle + mailbox | 補同步 ≤ 5 秒 | 3 份 bundle 補同步 77–90 ms（debug）、6 ms（release），本機直連 | ✅ 通過（跨網路待 §5.1 一併實測） |
 | RS 與 SwarmStorage 相容 | 逐位元組一致 | 5 組向量全部一致 | ✅ 通過 |
-| 前端加密 / 編碼效能 | 每平台 ≥ 50 MB/s、記憶體 < 200 MB | Node 192 MB/s、Chromium Worker 123 MB/s；存活記憶體 100 MB | ✅ 代理環境通過，⏳ WKWebView / WebView2 待測 |
+| 前端加密 / 編碼效能 | 每平台 ≥ 50 MB/s、記憶體 < 200 MB | **macOS WKWebView 366 MB/s**；Node 192 MB/s、Chromium Worker 123 MB/s；存活記憶體 100 MB | ✅ macOS 吞吐通過，⏳ macOS 記憶體峰值、Windows WebView2 待測 |
 | 桌機打包 | macOS、Windows 可安裝啟動 | Linux 可建置並啟動；CI 已設定 macOS / Windows 打包 | ⏳ 待 CI / 實機 |
 
 **go / no-go**：待 §5 實測完成後填寫。目前沒有任何項目顯示需要更換 iroh 或 Automerge。
@@ -138,7 +138,7 @@ pnpm --filter @hills/desktop tauri dev
 
 | 平台 | WebView | 大小 | encodeMBps | decodeMBps | 記憶體峰值 |
 |------|---------|---:|---:|---:|---:|
-| macOS | WKWebView | 256 MB | | | |
+| macOS（MacBook Air M4） | WKWebView | 256 MB | 366.2 | 1857.1 | 待記錄 |
 | macOS | WKWebView | 1024 MB | | | |
 | Windows | WebView2 | 256 MB | | | |
 | Windows | WebView2 | 1024 MB | | | |

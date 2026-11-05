@@ -16,6 +16,7 @@ edition = "2024"
 license = "MIT"
 repository = "https://github.com/CAFECA-IO/hills.cafeca.io"
 rust-version = "1.91"
+publish = false
 
 [workspace.dependencies]
 # 內部 crate

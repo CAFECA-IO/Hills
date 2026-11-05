@@ -329,6 +329,8 @@ pub fn open_bundle(
     Ok(changes)
 }
 
+pub mod exchange;
+
 #[cfg(test)]
 mod tests {
     use super::*;

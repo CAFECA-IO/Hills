@@ -5,7 +5,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{DeviceCert, EncryptedBundle, MemberCert, OrgId, Roster, Signed};
+use crate::{
+    DeviceCert, EncryptedBundle, JoinRequest, MemberCert, MemberId, OrgId, PeerAddr, Pub32,
+    Revocation, Roster, Signed, Timestamp, WrappedKey,
+};
 
 pub const ALPN: &[u8] = b"hills/mailbox/1";
 /// 單一訊息上限（bundle 由同步引擎控制大小）。
@@ -23,7 +26,30 @@ pub struct Hello {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Request {
     Hello(Box<Hello>),
+    GetRoster,
     PutRoster(Box<Signed<Roster>>),
+    PutDevice(Box<Signed<DeviceCert>>),
+    PutRevocation(Box<Signed<Revocation>>),
+    RegisterInvite {
+        invite_id: [u8; 8],
+        expires_at: Timestamp,
+    },
+    CloseInvite {
+        invite_id: [u8; 8],
+    },
+    /// 不需 Hello（technical-design §16.2）
+    Join {
+        org_id: OrgId,
+        invite_id: [u8; 8],
+        request: Box<JoinRequest>,
+    },
+    FetchJoins,
+    PutKeys(Vec<Signed<WrappedKey>>),
+    FetchKeys {
+        since: u64,
+    },
+    Announce(PeerAddr),
+    Peers,
     Put(EncryptedBundle),
     List {
         org_id: OrgId,
@@ -56,6 +82,30 @@ pub struct ListItem {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingJoin {
+    pub invite_id: [u8; 8],
+    pub request: JoinRequest,
+    pub received_at: Timestamp,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeyItem {
+    pub cursor: u64,
+    pub wrapped: Signed<WrappedKey>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PeerInfo {
+    pub member: MemberId,
+    pub device: Pub32,
+    pub addr: PeerAddr,
+    pub last_seen: Timestamp,
+}
+
+/// 每個邀請最多保留的待處理申請數。
+pub const MAX_PENDING_JOINS: usize = 5;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Response {
     Ok,
     /// PUT 成功；`duplicate` 表示同一 bundle_hash 已存在
@@ -68,6 +118,13 @@ pub enum Response {
         next: u64,
     },
     Bundle(Box<EncryptedBundle>),
+    Roster(Box<Roster>),
+    Joins(Vec<PendingJoin>),
+    Keys {
+        items: Vec<KeyItem>,
+        next: u64,
+    },
+    Peers(Vec<PeerInfo>),
     Error {
         code: ErrorCode,
         message: String,

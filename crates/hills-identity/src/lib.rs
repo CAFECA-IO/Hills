@@ -121,6 +121,18 @@ impl RecoveryPhrase {
         Zeroizing::new(words)
     }
 
+    /// 由熵還原（裝置綁定時由舊裝置傳來，technical-design §16.3）。
+    pub fn from_entropy(entropy: &[u8; 32]) -> Self {
+        Self {
+            entropy: Zeroizing::new(*entropy),
+        }
+    }
+
+    /// 熵（寫入安全儲存區或傳給新裝置時使用）。
+    pub fn entropy(&self) -> Zeroizing<[u8; 32]> {
+        self.entropy.clone()
+    }
+
     /// 推導成員金鑰。
     pub fn derive_keys(&self) -> MemberKeys {
         MemberKeys::derive(&self.entropy)

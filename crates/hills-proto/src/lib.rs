@@ -10,7 +10,11 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
+pub mod gossip;
+pub mod link;
 pub mod mailbox;
+pub mod sync;
+pub mod ticket;
 
 /// 目前的協定 / 資料格式版本。
 pub const FORMAT_VERSION: u8 = 1;
@@ -235,6 +239,8 @@ pub struct Roster {
     pub v: u8,
     pub org_id: OrgId,
     pub member_certs: Vec<Signed<MemberCert>>,
+    /// v0.7（technical-design §16.7）：mailbox 也分發裝置憑證
+    pub device_certs: Vec<Signed<DeviceCert>>,
     pub revocations: Vec<Signed<Revocation>>,
     pub issued_at: Timestamp,
 }
@@ -346,6 +352,42 @@ pub struct EncryptedBundle {
     pub bundle_hash: [u8; 32],
 }
 
+impl Signable for WrappedKey {
+    const SIGN_TYPE: &'static str = "wrapped-key";
+}
+
+/// iroh 端點位址，不依賴 iroh 型別（轉換在 hills-net）。
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PeerAddr {
+    pub node: Pub32,
+    pub relay: Option<String>,
+    pub direct: Vec<String>,
+}
+
+/// 加入申請（technical-design §16.2）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JoinRequest {
+    pub v: u8,
+    pub ik_pub: Pub32,
+    pub ek_pub: Pub32,
+    pub device_cert: Signed<DeviceCert>,
+    pub name: String,
+    pub mac: [u8; 32],
+}
+
+impl JoinRequest {
+    /// MAC 的輸入：mac 以外的全部欄位。
+    pub fn mac_input(&self) -> Result<Vec<u8>, ProtoError> {
+        encode(&(
+            self.v,
+            &self.ik_pub,
+            &self.ek_pub,
+            &self.device_cert,
+            &self.name,
+        ))
+    }
+}
+
 versioned!(
     DeviceCert,
     MemberCert,
@@ -353,7 +395,8 @@ versioned!(
     Roster,
     SignedChangeBody,
     WrappedKey,
-    EncryptedBundle
+    EncryptedBundle,
+    JoinRequest
 );
 
 #[cfg(test)]

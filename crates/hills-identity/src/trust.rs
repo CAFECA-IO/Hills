@@ -42,6 +42,7 @@ pub struct TrustStore {
     devices: HashMap<Pub32, Signed<DeviceCert>>,
     revoked_members: HashSet<MemberId>,
     revoked_devices: HashSet<Pub32>,
+    revocations: Vec<Signed<Revocation>>,
 }
 
 impl TrustStore {
@@ -54,6 +55,7 @@ impl TrustStore {
             devices: HashMap::new(),
             revoked_members: HashSet::new(),
             revoked_devices: HashSet::new(),
+            revocations: Vec::new(),
         }
     }
 
@@ -139,6 +141,9 @@ impl TrustStore {
                 self.revoked_devices.insert(*d);
             }
         }
+        if !self.revocations.iter().any(|r| r.sig == rev.sig) {
+            self.revocations.push(rev.clone());
+        }
         Ok(())
     }
 
@@ -156,10 +161,76 @@ impl TrustStore {
                 break;
             }
         }
+        let mut rejected = pending.len();
+        for d in &roster.device_certs {
+            if self.add_device_cert(d.clone()).is_err() {
+                rejected += 1;
+            }
+        }
         for r in &roster.revocations {
             self.add_revocation(r)?;
         }
-        Ok(pending.len())
+        Ok(rejected)
+    }
+
+    /// 匯出目前的完整 roster（成員憑證、裝置憑證、撤銷），供推送給 mailbox 或保存。
+    pub fn to_roster(&self, issued_at: hills_proto::Timestamp) -> Roster {
+        Roster {
+            v: hills_proto::FORMAT_VERSION,
+            org_id: self.org_id,
+            member_certs: self.member_certs(),
+            device_certs: self.devices.values().cloned().collect(),
+            revocations: self.revocations.clone(),
+            issued_at,
+        }
+    }
+
+    /// 某位成員目前有效的裝置。
+    pub fn devices_of(&self, member: &MemberId) -> Vec<&DeviceCert> {
+        self.devices
+            .values()
+            .filter(|c| {
+                &c.body.member_id == member && !self.revoked_devices.contains(&c.body.device_pub)
+            })
+            .map(|c| &c.body)
+            .collect()
+    }
+
+    /// 目前有效的成員。
+    pub fn active_members(&self) -> Vec<&MemberCert> {
+        self.members
+            .values()
+            .filter(|c| !self.revoked_members.contains(&c.body.member_id))
+            .map(|c| &c.body)
+            .collect()
+    }
+
+    pub fn member_cert(&self, id: &MemberId) -> Option<&Signed<MemberCert>> {
+        self.members.get(id)
+    }
+
+    pub fn device_cert(&self, device: &Pub32) -> Option<&Signed<DeviceCert>> {
+        self.devices.get(device)
+    }
+
+    pub fn is_revoked_device(&self, device: &Pub32) -> bool {
+        self.revoked_devices.contains(device)
+    }
+
+    /// 合併另一份 roster 快照（來自 mailbox 或其他節點）；回傳是否有變更。
+    pub fn merge_roster(&mut self, roster: &Roster) -> Result<bool, IdentityError> {
+        let before = (
+            self.members.len(),
+            self.devices.len(),
+            self.revocations.len(),
+        );
+        self.import_roster(roster)?;
+        Ok(before
+            != (
+                self.members.len(),
+                self.devices.len(),
+                self.revocations.len(),
+            ))
     }
 
     /// 匯出目前的 roster 內容（供推送給 mailbox）。
@@ -485,12 +556,42 @@ mod tests {
             v: FORMAT_VERSION,
             org_id: o.trust.org_id(),
             member_certs: certs,
+            device_certs: vec![],
             revocations: vec![],
             issued_at: 10,
         };
         let mut fresh = TrustStore::new(o.ok.public());
         assert_eq!(fresh.import_roster(&roster).unwrap(), 0);
         assert!(fresh.is_active_member(&x.member_id()));
+    }
+
+    #[test]
+    fn full_roster_roundtrip_with_devices_and_revocations() {
+        let mut o = org();
+        let m = add_member(&mut o, vec![Role::Member]);
+        let d1 = add_device(&mut o, &m);
+        let d2 = add_device(&mut o, &m);
+        let r = m
+            .issue_revocation(
+                o.trust.org_id(),
+                RevocationTarget::Device(d1.public()),
+                "lost",
+                6,
+            )
+            .unwrap();
+        o.trust.add_revocation(&r).unwrap();
+        let roster = o.trust.to_roster(10);
+        assert_eq!(roster.revocations.len(), 1);
+        let mut fresh = TrustStore::new(o.ok.public());
+        assert_eq!(fresh.import_roster(&roster).unwrap(), 0);
+        assert!(fresh.verify_device(&d2.public()).is_ok());
+        assert!(matches!(
+            fresh.verify_device(&d1.public()),
+            Err(IdentityError::Revoked)
+        ));
+        assert_eq!(fresh.devices_of(&m.member_id()).len(), 1);
+        // 重複合併不算變更
+        assert!(!fresh.merge_roster(&roster).unwrap());
     }
 
     #[test]

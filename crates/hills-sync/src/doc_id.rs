@@ -29,6 +29,8 @@ pub enum MemberSection {
     Attendance(String),
     Requests,
     Reports,
+    /// 本人的私密設定，例如邀請 secret（technical-design §16.2）
+    Secrets,
 }
 
 fn is_month(s: &str) -> bool {
@@ -68,6 +70,7 @@ impl DocKind {
                     ["attendance", ym] if is_month(ym) => MemberSection::Attendance((*ym).into()),
                     ["requests"] => MemberSection::Requests,
                     ["reports"] => MemberSection::Reports,
+                    ["secrets"] => MemberSection::Secrets,
                     _ => return None,
                 };
                 DocKind::Member { owner, section }

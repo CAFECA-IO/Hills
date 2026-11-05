@@ -1,4 +1,5 @@
-# 複製為 relay.toml 並填入你的網域與聯絡信箱（relay.toml 已列入 .gitignore）
+# 選填的進階設定參考。預設由 relay-entrypoint.sh 依 .env 產生，不需要此檔。
+# 若要自訂，請以 volume 提供容器內的 /config/relay.toml（存在時優先使用）。
 enable_relay = true
 http_bind_addr = "[::]:80"
 enable_quic_addr_discovery = true

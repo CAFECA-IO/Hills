@@ -10,14 +10,11 @@ services:
       - "80:80" # HTTP（LetsEncrypt 驗證）
       - "443:443" # HTTPS relay
       - "7842:7842/udp" # QUIC address discovery
+    # 設定由 relay-entrypoint.sh 依環境變數產生，不掛載主機檔案（docs/deploy.md §2）
+    environment:
+      HILLS_RELAY_HOST: ${HILLS_RELAY_HOST:?請在 .env 設定 HILLS_RELAY_HOST}
+      HILLS_RELAY_CONTACT: ${HILLS_RELAY_CONTACT:?請在 .env 設定 HILLS_RELAY_CONTACT}
     volumes:
-      # 檔案不存在時直接報錯，避免 Docker 自動建立同名資料夾
-      - type: bind
-        source: ./relay.toml
-        target: /config/relay.toml
-        read_only: true
-        bind:
-          create_host_path: false
       - relay-data:/data
 
   mailbox:

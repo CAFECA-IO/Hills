@@ -1,6 +1,7 @@
 # 山丘上的卡菲卡（Hills）功能規劃
 
-> 版本：v0.8 草案 · 2026-11-05 · 狀態：方針確認中（見 §10 待確認問題）
+> 版本：v0.9 · 2026-11-05 · 狀態：方針已確認，進入 M0
+> 本文件是專案的最高層事實來源；修改專案前先修改本文件（見 [AGENTS.md](../AGENTS.md)、[docs/README.md](./README.md)）。
 
 ## 1. 產品定位
 
@@ -47,6 +48,7 @@ Hills 是 CAFECA 團隊的工作通訊與協作工具，安裝於桌機、筆電
 | D30 | 加班 | **加班需申請核准**，與請假共用多層核准引擎；可選加班費或補休 | 符合台灣實務 |
 | D31 | 假別 | **台灣勞基法假別範本**，特休依年資自動計算（週年制），組織可增刪假別 | 法定天數與規則實作前需再對照現行法規 |
 | D32 | 報表欄位 | 日 / 週報固定欄位：**完成 / 進行中 / 阻礙、OKR 進度、工時與出勤摘要、下期計劃** | — |
+| D33 | 文件優先 | **規劃文件為唯一事實來源**；專案調整先改文件再改程式碼，AI Agent 依 AGENTS.md 執行 | 決策表只新增不覆寫；〔提案〕不得實作 |
 
 ## 3. 使用者角色
 
@@ -273,7 +275,7 @@ Hills 是 CAFECA 團隊的工作通訊與協作工具，安裝於桌機、筆電
 |------|------|---------|
 | **M0 基礎** | 身分 / 裝置金鑰、邀請碼、組織與小組、P2P + Signaling + 信箱節點、CRDT 同步骨架、Docker Compose 部署 | 兩台桌機跨網路同步資料 |
 | **M1 計劃與 Scrum（MVP）** | 桌機三平台：即時狀態、打卡、請假核准、台灣假日曆、團隊看板、五層計劃（OKR）、任務、每日 Scrum、日 / 週報 | 團隊內部試用（dogfooding） |
-| **M2 通訊 + 行動端** | 一對一 / 群組訊息、歷史訊息分享、檔案傳遞、通知；iOS / Android 上架與推播 | 取代現有內部聊天工具 |
+| **M2 通訊 + 行動端** | 一對一 / 群組訊息、歷史訊息分享、檔案傳遞、通知；iOS / Android 上架與推播（設計見 technical-design-m2-m5） | 取代現有內部聊天工具 |
 | **M3 AI 助理與整合** | AI Gateway、個人 / 群組助理、主動提醒、報表 AI 摘要、Google Calendar、GitHub | 週報撰寫時間明顯縮短 |
 | **M4 會議** | 語音 / 視訊、螢幕分享、LiveKit SFU、錄影、會議摘要 | 內部會議改用 Hills |
 | **M5 完善與開源** | 月 / 年報、工時報表匯出、管理後台進階功能、訪客、Jira / Linear、對外開源發佈（文件、自架指南） | — |
@@ -316,10 +318,19 @@ Hills 是 CAFECA 團隊的工作通訊與協作工具，安裝於桌機、筆電
 - **公開 repo 的資安**：開發中的協定與加密設計公開可見；需設定 secret scanning、`.env` 範本化，並在 M5 前完成一次加密設計審查。
 - **CRDT 資料成長**：長期訊息歷史需設計快照與修剪策略。
 
-## 10. 相關文件與下一步
+## 10. 相關文件
 
-主要方針已確認完成。
+完整索引與變更流程見 [docs/README.md](./README.md)。
 
-- 技術設計：[technical-design.md](./technical-design.md)（協定、資料模型、金鑰流程）
-- M0 / M1 待辦：[backlog/m0-m1.md](./backlog/m0-m1.md)，以 `scripts/create-github-backlog.sh` 建立 GitHub Milestones 與 Issues
-- 後續可產出：設計系統與主要畫面線框稿
+- AI Agent 守則：[AGENTS.md](../AGENTS.md)（Claude Code 經 [CLAUDE.md](../CLAUDE.md) 匯入）
+- 技術設計：[technical-design.md](./technical-design.md)（M0 / M1）、[technical-design-m2-m5.md](./technical-design-m2-m5.md)（M2–M5，含待確認提案 P1–P3）
+- 介面規格：[ui-spec.md](./ui-spec.md)
+- 開發規範：[development-guidelines.md](./development-guidelines.md)
+- 待辦：[backlog/m0-m1.md](./backlog/m0-m1.md)、[backlog/m2-m5.md](./backlog/m2-m5.md)
+
+## 11. 文件版本紀錄
+
+| 版本 | 日期 | 變更 |
+|------|------|------|
+| v0.1–v0.8 | 2026-11-05 | 五輪問答確認 D1–D32 |
+| v0.9 | 2026-11-05 | 新增 D33 文件優先；加入 AGENTS.md、M2–M5 技術設計、介面規格、開發規範、M2–M5 backlog |

@@ -1,0 +1,461 @@
+{
+  "milestones": [
+    {
+      "title": "M2 通訊 + 行動端",
+      "due": "2027-08-31",
+      "desc": "一對一 / 群組訊息、歷史訊息分享、檔案傳遞、通知；iOS / Android 上架與推播。見 docs/technical-design-m2-m5.md §1–3。"
+    },
+    {
+      "title": "M3 AI 助理與整合",
+      "due": "2027-10-31",
+      "desc": "AI Gateway、個人 / 群組助理、主動提醒、報表 AI 摘要、Google Calendar、GitHub。見 docs/technical-design-m2-m5.md §4–5。"
+    },
+    {
+      "title": "M4 會議",
+      "due": "2027-12-31",
+      "desc": "語音 / 視訊、螢幕分享、LiveKit SFU、錄影、會議摘要。見 docs/technical-design-m2-m5.md §6。"
+    },
+    {
+      "title": "M5 完善與開源",
+      "due": "2028-03-31",
+      "desc": "月 / 年報、工時報表進階、管理後台進階、訪客、Jira / Linear、資安審查與對外開源發佈。見 docs/technical-design-m2-m5.md §7。"
+    }
+  ],
+  "labels": [
+    {
+      "name": "area:chat",
+      "color": "5319e7"
+    },
+    {
+      "name": "area:files",
+      "color": "5319e7"
+    },
+    {
+      "name": "area:mobile",
+      "color": "0052cc"
+    },
+    {
+      "name": "area:ai",
+      "color": "8b5cf6"
+    },
+    {
+      "name": "area:integration",
+      "color": "0e8a16"
+    },
+    {
+      "name": "area:call",
+      "color": "f9d0c4"
+    },
+    {
+      "name": "area:admin",
+      "color": "bfd4f2"
+    },
+    {
+      "name": "type:decision",
+      "color": "000000"
+    }
+  ],
+  "issues": [
+    {
+      "title": "[M2] 決策：確認提案 P1（聊天金鑰機制）與 P2（推播內容）",
+      "milestone": "M2 通訊 + 行動端",
+      "labels": [
+        "type:decision",
+        "priority:high"
+      ],
+      "body": "## 目標\n\nM2 開工前先把提案轉為正式決策（AGENTS.md 文件優先規則）。\n\n## 工作項目\n\n- [ ] 與負責人確認 P1、P2\n- [ ] 更新 feature-plan 決策表與 technical-design-m2-m5 §9\n\n## 驗收條件\n\n- 決策表新增對應 D 編號，提案狀態改為已確認或已否決\n\n## 參考\n\ntechnical-design-m2-m5 §9\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M2] 對話模型與對話金鑰",
+      "milestone": "M2 通訊 + 行動端",
+      "labels": [
+        "type:feature",
+        "area:chat",
+        "area:crypto",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n建立 dm / group / team 三種對話與 CK epoch。\n\n## 工作項目\n\n- [ ] conv/<id>/meta 文件與對話管理員權限\n- [ ] CK 產生、封裝、成員移出時輪替\n- [ ] 小組頻道沿用 TK\n\n## 驗收條件\n\n- 成員移出後無法解密新訊息（測試）\n\n## 參考\n\ntechnical-design-m2-m5 §1.1\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M2] 訊息儲存：月份分片 log 與投影",
+      "milestone": "M2 通訊 + 行動端",
+      "labels": [
+        "type:feature",
+        "area:chat",
+        "area:sync",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n附加為主的訊息儲存。\n\n## 工作項目\n\n- [ ] conv/<id>/log/<yyyy-mm> 文件\n- [ ] Message 結構（編輯、撤回、討論串、提及）\n- [ ] SQLite 投影與分頁載入\n\n## 驗收條件\n\n- 10 萬則訊息的對話開啟 < 1 秒\n\n## 參考\n\ntechnical-design-m2-m5 §1.2\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M2] 聊天 UI：對話列表、訊息、討論串、Markdown",
+      "milestone": "M2 通訊 + 行動端",
+      "labels": [
+        "type:feature",
+        "area:chat",
+        "area:ui",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n主要聊天介面。\n\n## 工作項目\n\n- [ ] 對話列表與未讀數\n- [ ] 訊息輸入（Markdown、程式碼區塊、表情回應）\n- [ ] 討論串側欄\n- [ ] 編輯、撤回、釘選、書籤\n\n## 驗收條件\n\n- 符合 ui-spec 聊天畫面規格\n\n## 參考\n\nui-spec §聊天\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M2] 已讀狀態與提及",
+      "milestone": "M2 通訊 + 行動端",
+      "labels": [
+        "type:feature",
+        "area:chat"
+      ],
+      "body": "## 目標\n\n已讀游標與 @ 提及。\n\n## 工作項目\n\n- [ ] state/<memberId> 已讀游標\n- [ ] @成員、@all（限管理員）\n- [ ] 提及觸發通知\n\n## 驗收條件\n\n- 多裝置已讀同步正確\n\n## 參考\n\ntechnical-design-m2-m5 §1.3\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M2] 本機全文搜尋（FTS5 trigram）",
+      "milestone": "M2 通訊 + 行動端",
+      "labels": [
+        "type:feature",
+        "area:chat"
+      ],
+      "body": "## 目標\n\n支援中文的加密本機搜尋。\n\n## 工作項目\n\n- [ ] FTS5 + trigram tokenizer\n- [ ] 索引靜態加密\n- [ ] 搜尋 UI：依對話、成員、日期篩選\n\n## 驗收條件\n\n- 中文子字串搜尋正確\n- 10 萬則訊息搜尋 < 300 ms\n\n## 參考\n\ntechnical-design-m2-m5 §1.2\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M2] 歷史訊息分享與「僅加入後」群組",
+      "milestone": "M2 通訊 + 行動端",
+      "labels": [
+        "type:feature",
+        "area:chat",
+        "area:crypto"
+      ],
+      "body": "## 目標\n\nD19 實作。\n\n## 工作項目\n\n- [ ] 加入時封裝歷史 epoch CK\n- [ ] 「僅加入後」設定\n- [ ] 稽核紀錄與提示\n\n## 驗收條件\n\n- 兩種模式下新成員可見範圍正確（測試）\n\n## 參考\n\ntechnical-design-m2-m5 §1.4\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M2] 訊息與任務互轉",
+      "milestone": "M2 通訊 + 行動端",
+      "labels": [
+        "type:feature",
+        "area:chat",
+        "area:scrum"
+      ],
+      "body": "## 目標\n\n把訊息轉成任務或計劃項目。\n\n## 工作項目\n\n- [ ] 訊息選單：轉為任務 / 計劃項目\n- [ ] 任務保留來源訊息連結\n\n## 驗收條件\n\n- 轉換後雙向可跳轉\n\n## 參考\n\nfeature-plan §5.6\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M2] 檔案傳遞：iroh-blobs + 分塊加密",
+      "milestone": "M2 通訊 + 行動端",
+      "labels": [
+        "type:feature",
+        "area:files",
+        "priority:high"
+      ],
+      "body": "## 目標\n\nP2P 檔案傳輸與續傳。\n\n## 工作項目\n\n- [ ] 分塊加密與 FileRef\n- [ ] iroh-blobs 匯入、傳輸、續傳\n- [ ] 多來源下載（傳送者、其他成員、mailbox）\n\n## 驗收條件\n\n- 1 GB 檔案中斷後可續傳\n- 雜湊驗證失敗時拒收\n\n## 參考\n\ntechnical-design-m2-m5 §2\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M2] mailbox blob 儲存與保留政策",
+      "milestone": "M2 通訊 + 行動端",
+      "labels": [
+        "type:feature",
+        "area:files",
+        "area:server"
+      ],
+      "body": "## 目標\n\n離線時的小檔暫存與 1 年清除（D16）。\n\n## 工作項目\n\n- [ ] 單檔上限（預設 100 MB，可設定）\n- [ ] 到期清除排程\n- [ ] 配額與用量顯示\n\n## 驗收條件\n\n- 到期檔案被清除，已下載副本不受影響\n\n## 參考\n\ntechnical-design-m2-m5 §2\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M2] 群組檔案區與預覽",
+      "milestone": "M2 通訊 + 行動端",
+      "labels": [
+        "type:feature",
+        "area:files",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n列出對話內所有檔案並預覽。\n\n## 工作項目\n\n- [ ] 檔案區列表、篩選\n- [ ] 圖片縮圖、PDF / 影片預覽\n\n## 驗收條件\n\n- 預覽於本機解密，不寫出明文暫存檔\n\n## 參考\n\ntechnical-design-m2-m5 §2\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M2] Tauri 行動端建置（iOS / Android）",
+      "milestone": "M2 通訊 + 行動端",
+      "labels": [
+        "type:infra",
+        "area:mobile",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n行動端可安裝執行。\n\n## 工作項目\n\n- [ ] Tauri mobile 專案設定\n- [ ] 響應式 UI 與底部分頁導覽\n- [ ] TestFlight / Google Play 內部測試軌道\n\n## 驗收條件\n\n- 行動端可完成 M1 主要流程\n\n## 參考\n\ntechnical-design-m2-m5 §3.1\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M2] hills-push 推播服務",
+      "milestone": "M2 通訊 + 行動端",
+      "labels": [
+        "type:feature",
+        "area:mobile",
+        "area:server"
+      ],
+      "body": "## 目標\n\n背景喚醒與通用通知（提案 P2）。\n\n## 工作項目\n\n- [ ] 裝置註冊 API\n- [ ] mailbox → hills-push → APNs / FCM\n- [ ] 推播內容不含訊息資料\n\n## 驗收條件\n\n- App 在背景時收到通知，開啟後 ≤ 5 秒顯示新訊息\n\n## 參考\n\ntechnical-design-m2-m5 §3.2\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M2] 行動端 Wi-Fi 打卡識別",
+      "milestone": "M2 通訊 + 行動端",
+      "labels": [
+        "type:feature",
+        "area:mobile",
+        "area:attendance"
+      ],
+      "body": "## 目標\n\n行動端的辦公室 / 遠端標註。\n\n## 工作項目\n\n- [ ] iOS entitlement 與位置權限\n- [ ] Android 位置權限\n- [ ] 拒絕授權時標為遠端\n\n## 驗收條件\n\n- 兩平台在公司 Wi-Fi 下標為辦公室\n\n## 參考\n\ntechnical-design-m2-m5 §3.1\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M2] 通知設定與勿擾",
+      "milestone": "M2 通訊 + 行動端",
+      "labels": [
+        "type:feature",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n依類型設定通知（feature-plan §5.11）。\n\n## 工作項目\n\n- [ ] 各類型開關\n- [ ] 勿擾時段、專注模式\n- [ ] 桌機與行動端一致\n\n## 驗收條件\n\n- 設定跨裝置同步\n\n## 參考\n\nfeature-plan §5.11\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M3] hills-ai-gateway 服務",
+      "milestone": "M3 AI 助理與整合",
+      "labels": [
+        "type:feature",
+        "area:ai",
+        "area:server",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n組織統一 API Key 的 AI 入口（D9）。\n\n## 工作項目\n\n- [ ] 憑證鏈驗證與請求簽章\n- [ ] 供應商抽象層，預設 Claude API\n- [ ] 串流回應\n\n## 驗收條件\n\n- 客戶端不持有 API Key\n\n## 參考\n\ntechnical-design-m2-m5 §4.1\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M3] AI 政策、用量上限與稽核",
+      "milestone": "M3 AI 助理與整合",
+      "labels": [
+        "type:feature",
+        "area:ai",
+        "area:admin"
+      ],
+      "body": "## 目標\n\n管理者控管 AI 使用（D2）。\n\n## 工作項目\n\n- [ ] 對話層級雲端模型開關\n- [ ] 每月用量上限（組織 / 成員 / 對話）\n- [ ] 稽核中繼資料、內容保留開關\n\n## 驗收條件\n\n- 超過上限時明確提示並拒絕\n\n## 參考\n\ntechnical-design-m2-m5 §4.1\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M3] 本地模型支援（Ollama）",
+      "milestone": "M3 AI 助理與整合",
+      "labels": [
+        "type:feature",
+        "area:ai"
+      ],
+      "body": "## 目標\n\n敏感對話使用本地模型。\n\n## 工作項目\n\n- [ ] 偵測本機 Ollama 與可用模型\n- [ ] 與雲端共用同一助理介面\n\n## 驗收條件\n\n- 禁止雲端的對話只能選本地模型\n\n## 參考\n\ntechnical-design-m2-m5 §4.1\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M3] 助理設定與建議動作卡框架",
+      "milestone": "M3 AI 助理與整合",
+      "labels": [
+        "type:feature",
+        "area:ai",
+        "area:ui",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n人在迴路中的共用基礎（D17）。\n\n## 工作項目\n\n- [ ] Assistant 設定結構與 UI\n- [ ] 建議動作卡：CreateTask、UpdateKeyResult、PublishReport 等\n- [ ] 確認後才寫入\n\n## 驗收條件\n\n- 任何 AI 產生的變更都需使用者確認\n\n## 參考\n\ntechnical-design-m2-m5 §4.2–4.3\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M3] 個人助理：計劃教練、Scrum 草稿、訊息摘要",
+      "milestone": "M3 AI 助理與整合",
+      "labels": [
+        "type:feature",
+        "area:ai"
+      ],
+      "body": "## 目標\n\n個人助理主要能力。\n\n## 工作項目\n\n- [ ] 目標拆解與可衡量性檢查\n- [ ] Scrum 草稿\n- [ ] 「我不在時發生了什麼」摘要\n\n## 驗收條件\n\n- 只讀取本人有權讀取的資料\n\n## 參考\n\nfeature-plan §5.9\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M3] 群組助理：@ 回應、摘要、決策與待辦擷取",
+      "milestone": "M3 AI 助理與整合",
+      "labels": [
+        "type:feature",
+        "area:ai",
+        "area:chat"
+      ],
+      "body": "## 目標\n\n由呼叫者裝置執行的群組助理。\n\n## 工作項目\n\n- [ ] @助理 觸發\n- [ ] 角色與自訂指令\n- [ ] 討論摘要、決策紀錄、待辦擷取（動作卡）\n\n## 驗收條件\n\n- 助理無法讀取呼叫者讀不到的內容\n\n## 參考\n\ntechnical-design-m2-m5 §4.3\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M3] 主動提醒規則引擎",
+      "milestone": "M3 AI 助理與整合",
+      "labels": [
+        "type:feature",
+        "area:ai"
+      ],
+      "body": "## 目標\n\n本機規則判斷、必要時才呼叫模型。\n\n## 工作項目\n\n- [ ] 四條預設規則\n- [ ] 個別關閉\n- [ ] 只有產生草稿時呼叫模型\n\n## 驗收條件\n\n- 待辦逾期提醒不消耗模型用量\n\n## 參考\n\ntechnical-design-m2-m5 §4.4\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M3] 報表 AI 摘要",
+      "milestone": "M3 AI 助理與整合",
+      "labels": [
+        "type:feature",
+        "area:ai",
+        "area:report"
+      ],
+      "body": "## 目標\n\n日 / 週報加入摘要、亮點、風險、下期建議。\n\n## 工作項目\n\n- [ ] 在 D32 四欄之上加 AI 摘要區塊\n- [ ] 發佈前可編輯\n\n## 驗收條件\n\n- 使用者評估「只需小幅修改」≥ 70%\n\n## 參考\n\nfeature-plan §5.5\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M3] Google Calendar 整合",
+      "milestone": "M3 AI 助理與整合",
+      "labels": [
+        "type:feature",
+        "area:integration"
+      ],
+      "body": "## 目標\n\n自動會議中狀態、請假寫入行事曆（D15）。\n\n## 工作項目\n\n- [ ] 客戶端 OAuth（PKCE）\n- [ ] 會議時段 → Presence\n- [ ] 核准請假寫入行事曆\n\n## 驗收條件\n\n- refresh token 只存在本機 keychain\n\n## 參考\n\ntechnical-design-m2-m5 §5.1\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M3] hills-integrations 與 GitHub App",
+      "milestone": "M3 AI 助理與整合",
+      "labels": [
+        "type:feature",
+        "area:integration",
+        "area:server"
+      ],
+      "body": "## 目標\n\nGitHub 事件帶入 Scrum 與任務（D15）。\n\n## 工作項目\n\n- [ ] GitHub App 與 webhook 接收\n- [ ] 整合機器人身分與 IK_int\n- [ ] integration/github 文件\n\n## 驗收條件\n\n- 機器人無法解密整合文件以外的資料\n\n## 參考\n\ntechnical-design-m2-m5 §5.2\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M3] GitHub 活動帶入 Scrum、任務連結與頻道推送",
+      "milestone": "M3 AI 助理與整合",
+      "labels": [
+        "type:feature",
+        "area:integration",
+        "area:scrum"
+      ],
+      "body": "## 目標\n\n成員端使用 GitHub 資料。\n\n## 工作項目\n\n- [ ] 成員綁定 GitHub 帳號\n- [ ] PR / Issue / Commit 帶入 Scrum 草稿\n- [ ] PR 合併 → 任務完成建議動作卡\n- [ ] Repo 事件轉貼到頻道\n\n## 驗收條件\n\n- PR 合併後對應任務出現完成建議\n\n## 參考\n\ntechnical-design-m2-m5 §5.2\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M4] 決策：確認提案 P3（通話媒體路徑）",
+      "milestone": "M4 會議",
+      "labels": [
+        "type:decision",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n決定全部走 LiveKit 或維持 D10 P2P mesh。\n\n## 工作項目\n\n- [ ] 評估 Linux WebKitGTK 與 LiveKit Rust SDK\n- [ ] 更新決策表\n\n## 驗收條件\n\n- D10 更新或維持，並記錄理由\n\n## 參考\n\ntechnical-design-m2-m5 §6.1、§9\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M4] LiveKit 部署與 hills-call token 服務",
+      "milestone": "M4 會議",
+      "labels": [
+        "type:infra",
+        "area:call",
+        "area:server"
+      ],
+      "body": "## 目標\n\n自架 SFU。\n\n## 工作項目\n\n- [ ] docker-compose 加入 livekit、egress、hills-call\n- [ ] 憑證鏈換取 access token\n- [ ] 房間名稱雜湊化\n\n## 驗收條件\n\n- 50 人會議穩定 60 分鐘\n\n## 參考\n\ntechnical-design-m2-m5 §6.2–6.3\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M4] 語音 / 視訊通話",
+      "milestone": "M4 會議",
+      "labels": [
+        "type:feature",
+        "area:call",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n一對一與群組通話。\n\n## 工作項目\n\n- [ ] 依 P3 決策實作媒體路徑\n- [ ] 通話中自動「會議中」狀態\n- [ ] 從對話或行事曆發起\n\n## 驗收條件\n\n- 通話建立 ≤ 3 秒\n\n## 參考\n\ntechnical-design-m2-m5 §6\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M4] 螢幕分享與會議控制",
+      "milestone": "M4 會議",
+      "labels": [
+        "type:feature",
+        "area:call",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n螢幕分享、舉手、靜音控制、會議中聊天。\n\n## 工作項目\n\n- [ ] 三平台螢幕分享\n- [ ] 主持人控制\n\n## 驗收條件\n\n- 符合 ui-spec 通話畫面規格\n\n## 參考\n\nfeature-plan §5.8\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M4] 通話端對端加密",
+      "milestone": "M4 會議",
+      "labels": [
+        "type:feature",
+        "area:call",
+        "area:crypto"
+      ],
+      "body": "## 目標\n\nLiveKit E2EE。\n\n## 工作項目\n\n- [ ] 發起者產生金鑰並以 CK 加密分送\n- [ ] 錄影時切換為非 E2EE 並提示\n\n## 驗收條件\n\n- SFU 端無法解出媒體（E2EE 模式）\n\n## 參考\n\ntechnical-design-m2-m5 §6.2\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M4] 錄影與同意流程",
+      "milestone": "M4 會議",
+      "labels": [
+        "type:feature",
+        "area:call"
+      ],
+      "body": "## 目標\n\n錄影需全員同意提示。\n\n## 工作項目\n\n- [ ] LiveKit Egress 錄製\n- [ ] 同意提示與錄影中標示\n- [ ] 錄影檔以檔案傳遞機制分享\n\n## 驗收條件\n\n- 未同意者可離開會議\n\n## 參考\n\ntechnical-design-m2-m5 §6.2\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M4] 會議摘要與待辦",
+      "milestone": "M4 會議",
+      "labels": [
+        "type:feature",
+        "area:call",
+        "area:ai"
+      ],
+      "body": "## 目標\n\n轉文字、摘要、待辦轉任務。\n\n## 工作項目\n\n- [ ] 語音轉文字（經 AI Gateway）\n- [ ] 摘要與待辦建議動作卡\n\n## 驗收條件\n\n- 待辦可一鍵轉為任務\n\n## 參考\n\ntechnical-design-m2-m5 §6.2\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M5] 月報與年報",
+      "milestone": "M5 完善與開源",
+      "labels": [
+        "type:feature",
+        "area:report"
+      ],
+      "body": "## 目標\n\n彙總報表。\n\n## 工作項目\n\n- [ ] 月報：D32 四欄 + 目標達成率 + 回顧\n- [ ] 年報：季度演進圖表\n\n## 驗收條件\n\n- 年報可回顧年度 OKR 達成率\n\n## 參考\n\ntechnical-design-m2-m5 §7\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M5] 工時報表進階與匯出",
+      "milestone": "M5 完善與開源",
+      "labels": [
+        "type:feature",
+        "area:attendance",
+        "area:report"
+      ],
+      "body": "## 目標\n\n跨月份、跨小組統計。\n\n## 工作項目\n\n- [ ] 小組與組織彙總\n- [ ] 自訂期間匯出\n\n## 驗收條件\n\n- 匯出格式經人資確認\n\n## 參考\n\nfeature-plan §5.2\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M5] 訪客角色",
+      "milestone": "M5 完善與開源",
+      "labels": [
+        "type:feature",
+        "area:identity",
+        "area:chat"
+      ],
+      "body": "## 目標\n\n外部合作者只能存取受邀對話。\n\n## 工作項目\n\n- [ ] guest 角色與邀請流程\n- [ ] 只取得受邀對話 CK\n\n## 驗收條件\n\n- 訪客看不到看板、計劃、出勤\n\n## 參考\n\ntechnical-design-m2-m5 §7\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M5] 管理後台進階",
+      "milestone": "M5 完善與開源",
+      "labels": [
+        "type:feature",
+        "area:admin"
+      ],
+      "body": "## 目標\n\nAI 用量儀表板、稽核檢視、雙管理者確認、資料匯出。\n\n## 工作項目\n\n- [ ] 各項功能 UI\n- [ ] 雙管理者確認（選配）\n\n## 驗收條件\n\n- 稽核紀錄不含訊息內容\n\n## 參考\n\ntechnical-design-m2-m5 §7\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M5] Jira / Linear 整合",
+      "milestone": "M5 完善與開源",
+      "labels": [
+        "type:feature",
+        "area:integration"
+      ],
+      "body": "## 目標\n\n任務雙向同步。\n\n## 工作項目\n\n- [ ] 沿用整合機器人模式\n- [ ] 欄位對應設定\n\n## 驗收條件\n\n- 雙向同步無重複任務\n\n## 參考\n\ntechnical-design-m2-m5 §7\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M5] 評估 OpenMLS 與 iOS 背景解密",
+      "milestone": "M5 完善與開源",
+      "labels": [
+        "type:poc",
+        "area:crypto",
+        "area:mobile"
+      ],
+      "body": "## 目標\n\n提案 P1、P2 的後續升級評估。\n\n## 工作項目\n\n- [ ] OpenMLS 遷移成本\n- [ ] iOS Notification Service Extension 可行性\n\n## 驗收條件\n\n- 評估報告與決策\n\n## 參考\n\ntechnical-design-m2-m5 §9\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M5] 外部資安審查",
+      "milestone": "M5 完善與開源",
+      "labels": [
+        "type:docs",
+        "area:crypto",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n開源前審查加密設計與實作。\n\n## 工作項目\n\n- [ ] 委託或邀請外部審查\n- [ ] 修正所有高風險項目\n\n## 驗收條件\n\n- 審查報告公開於 docs/security/\n\n## 參考\n\ntechnical-design-m2-m5 §7\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M5] 開源發佈文件與治理",
+      "milestone": "M5 完善與開源",
+      "labels": [
+        "type:docs",
+        "priority:high"
+      ],
+      "body": "## 目標\n\nD25：開放外部貢獻。\n\n## 工作項目\n\n- [ ] SECURITY.md、CONTRIBUTING.md、Code of Conduct\n- [ ] 自架指南、升級指南、協定文件\n- [ ] 檢查 commit 歷史無機密\n\n## 驗收條件\n\n- 外部使用者可依文件完成自架\n\n## 參考\n\ntechnical-design-m2-m5 §7\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    }
+  ]
+}

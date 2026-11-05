@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.1 草案 · 2026-11-05 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v0.8
+> 版本：v0.1 草案 · 2026-11-05 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v0.9；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤）所需的協定、資料模型與金鑰流程。聊天、檔案、通話、AI 於後續版本補充。
 
 ## 1. 元件總覽

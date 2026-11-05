@@ -672,7 +672,7 @@ secret 不放在 org 文件，因為所有成員都能讀 org 文件；代價是
 
 ### 16.3 新裝置綁定
 
-1. 新裝置產生 DK 與臨時 X25519 `e_new`，顯示 `LinkTicket{v, device addr, e_new.pub}`（文字碼 + QR）。
+1. 新裝置先貼上舊裝置匯出的**組織連線碼**（§16.4 `OrgTicket`，取得自架 relay 與 mailbox 位址，跨網路時舊裝置才連得到新裝置），再產生 DK 與臨時 X25519 `e_new`，顯示 `LinkTicket{v, device addr, e_new.pub}`（文字碼 + QR）。
 2. 舊裝置以 ALPN `hills/link/1` 連線，送出臨時公鑰 `e_old.pub`。
 3. 雙方計算 `shared = X25519(e_old, e_new)`，`SAS = 6 位數(blake3("hills/v1/sas" ‖ shared ‖ e_old.pub ‖ e_new.pub))`，`K_link = HKDF(shared, "hills/v1/link")`。
 4. 兩邊顯示 SAS，使用者在**舊裝置**確認一致後，舊裝置以 `K_link`（XChaCha20-Poly1305）送出 `{復原詞熵, OK.pub, mailbox 位址}`，並以 IK 簽發新裝置的 DeviceCert、`PutDevice`。

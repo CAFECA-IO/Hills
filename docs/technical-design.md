@@ -455,7 +455,7 @@ M1 的對話範圍：一對一（`dm`）與群組（`group`），文字、Markdo
 ### 14.1 對話金鑰（D37）
 
 - 每個對話一把 epoch 對稱金鑰 `CK_conv`，沿用 §3.7 的 epoch 機制：建立者產生 `CK`，以 HPKE 封裝給每位成員的 EK。
-- 新增成員：封裝**目前** epoch 給新成員（M1 不分享歷史 epoch，新成員看不到加入前訊息；歷史分享為 M2 功能）。
+- 新增成員：輪替 epoch，新 epoch 封裝給全體現任成員（含新成員）；新成員看不到加入前訊息（M1 不分享歷史 epoch；歷史分享為 M2 功能，v0.9 說明見 §14.2）。
 - 移出成員：輪替 epoch，新訊息使用新 `CK`。
 - 對話設定存於 `conv/<convId>/meta`（寫入者：對話管理員）：名稱、成員、金鑰封裝紀錄。
 - **v0.9（M1）**：對話管理員只有**建立者**一人（指定其他管理員為 M2 功能）。`convId = <建立者 memberId>-<ULID>`（皆為小寫 base32，共 53 字元），因此不需先解密 meta 就能得知建立者：
@@ -468,9 +468,14 @@ M1 的對話範圍：一對一（`dm`）與群組（`group`），文字、Markdo
 ### 14.2 訊息文件
 
 ```
-conv/<convId>/meta            寫入者：對話管理員       金鑰：CK
-conv/<convId>/log/<yyyy-mm>   寫入者：對話成員（append） 金鑰：CK
+conv/<convId>/meta                 寫入者：對話管理員       金鑰：CK（最新 epoch）
+conv/<convId>/log/<yyyy-mm>-e<n>   寫入者：對話成員（append） 金鑰：CK epoch n
 ```
+
+> v0.9：紀錄文件**依 epoch 分開**（`-e<n>`）。Automerge 文件內的 change 互相依賴，若新舊 epoch 共用一份文件，新成員缺少舊 change 就無法套用之後的訊息；直連同步也會把整份文件交給對方。分開後：
+> - 新增或移出成員時，建立者都輪替 epoch；新成員只拿到新 epoch，也只會收到新 epoch 的紀錄文件（D37「看不到加入前訊息」）。
+> - meta 為每位成員記錄 `epoch`（加入時的 epoch）；直連同步回應 `log/…-e<n>` 前檢查請求者是現任成員且 `epoch ≤ n`。
+> - 送出訊息時寫入目前最新 epoch 的文件。
 
 ```ts
 Message {

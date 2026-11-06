@@ -1,7 +1,7 @@
 # M0 PoC 報告
 
-> 版本：v0.5 · 2026-11-05 · 對應 technical-design §12、§15.8；Issue「[M0][PoC] …」各項
-> 狀態：**部分完成**。雲端 Linux 已測項目有結果；NAT 矩陣、macOS / Windows WebView、安裝檔需在實機上測試（§5）。
+> 版本：v0.6 · 2026-11-06 · 對應 technical-design §12、§15.8；Issue「[M0][PoC] …」各項
+> 狀態：**部分完成**。macOS 與 Windows WebView 檔案管線通過；Windows 已經自架 mailbox + relay 加入組織。NAT 矩陣、安裝檔與 §5.4 其餘項目待實測。
 
 ## 1. 結論摘要
 
@@ -9,10 +9,10 @@
 |------|---------|---------|------|
 | iroh 穿透 | 各網路組合皆可連線 | 本機雙行程直連成功；NAT 矩陣待測 | ⏳ 待實測 |
 | Automerge 同步 | 一致、無遺失、合併 < 1 秒 | 一致；100 次 / 副本合併 3.4 ms | ✅ 通過 |
-| 多節點同步（hills-node） | 即時 ≤ 2 秒、離線補同步 ≤ 5 秒 | 本機：gossip + 直連 120 ms、離線補同步 209 ms；加入、presence、綁定、停用輪替、復原皆通過 | ✅ 本機通過，⏳ Mac + Windows 跨網路待 §5.4 |
+| 多節點同步（hills-node） | 即時 ≤ 2 秒、離線補同步 ≤ 5 秒 | 本機：gossip + 直連 120 ms、離線補同步 209 ms；加入、presence、綁定、停用輪替、復原皆通過 | ✅ 本機通過；Windows 已經自架部署加入組織，⏳ §5.4 其餘項目待測 |
 | 加密 bundle + mailbox | 補同步 ≤ 5 秒 | 3 份 bundle 補同步 77–90 ms（debug）、6 ms（release），本機直連 | ✅ 通過（跨網路待 §5.1 一併實測） |
 | RS 與 SwarmStorage 相容 | 逐位元組一致 | 5 組向量全部一致 | ✅ 通過 |
-| 前端加密 / 編碼效能 | 每平台 ≥ 50 MB/s、記憶體 < 200 MB | **macOS WKWebView 366–401 MB/s、WebContent 行程 78.5 MB**；Node 192 MB/s、Chromium Worker 123 MB/s | ✅ macOS 通過，⏳ Windows WebView2 待測 |
+| 前端加密 / 編碼效能 | 每平台 ≥ 50 MB/s、記憶體 < 200 MB | **macOS WKWebView 366–401 MB/s、WebContent 行程 78.5 MB；Windows WebView2 120–125 MB/s，記憶體在 200 MB 內**；Node 192 MB/s、Chromium Worker 123 MB/s | ✅ macOS、Windows 通過 |
 | 桌機打包 | macOS、Windows 可安裝啟動 | Linux 可建置並啟動；CI 已設定 macOS / Windows 打包 | ⏳ 待 CI / 實機 |
 
 **go / no-go**：待 §5 實測完成後填寫。目前沒有任何項目顯示需要更換 iroh 或 Automerge。
@@ -170,8 +170,8 @@ WebContent 行程 78.5 MB < 200 MB，通過。四個行程合計約 203 MB，為
 | macOS（MacBook Air M4） | WKWebView | 256 MB | 366.2 | 1857.1 | 待記錄 |
 | macOS（MacBook Air M4） | WKWebView | 1024 MB | 400.6 | 1969.1 | 78.5 MB（WebContent） |
 | macOS（MacBook Air M4） | Chrome 156 瀏覽器（Blink，與 WebView2 同引擎；非 Tauri 視窗） | 1024 MB | 288.5 | 1239.2 | 待記錄 |
-| Windows | WebView2 | 256 MB | | | |
-| Windows | WebView2 | 1024 MB | | | |
+| Windows | WebView2 | 256 MB | 120.5 | 401.4 | < 200 MB（使用者回報） |
+| Windows | WebView2 | 1024 MB | 124.7 | 383.2 | < 200 MB（使用者回報） |
 
 ### 5.3 安裝檔
 
@@ -183,7 +183,7 @@ push 後 CI 的「Desktop bundle」job 會產生未簽章的 `.dmg`、`.exe`、`
 
 | 項目 | 結果 |
 |------|------|
-| Mac 建立組織、Windows 以邀請碼加入（不同網路） | |
+| Mac 建立組織、Windows 以邀請碼加入（不同網路） | ✅ 2026-11-06，經自架 mailbox + relay（relay.cafeca.io）加入成功 |
 | 狀態文字同步時間 | |
 | 組織名稱即時同步時間 | |
 | Windows 關閉期間的變更，重新開啟後補同步 | |

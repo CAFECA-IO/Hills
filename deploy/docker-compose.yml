@@ -1,5 +1,22 @@
-# Hills 自架服務（M0）：relay + mailbox。technical-design §10、§16.9；步驟見 docs/deploy.md。
-# tsa、storage 隨 M1 加入。
+# Hills 自架服務：relay + mailbox + storage-0…7。technical-design §10、§15.6–15.7、§16.9；步驟見 docs/deploy.md。
+# tsa 隨假勤功能加入。
+# 8 個儲存節點共用的設定（D39：iroh 連線、各自獨立 volume 與 UDP 埠，不需網域或憑證）
+x-storage-env: &storage-env
+  HILLS_RELAY: https://${HILLS_RELAY_HOST:?請在 .env 設定 HILLS_RELAY_HOST}
+  HILLS_STORAGE_CODES_DIR: /storage-codes
+  HILLS_ORG_ROOT_PUB: ${HILLS_ORG_ROOT_PUB:-}
+  HILLS_QUOTA_BYTES: ${HILLS_QUOTA_BYTES:-21474836480}
+  RUST_LOG: info,iroh=warn
+
+x-storage: &storage
+  build:
+    context: ..
+    dockerfile: apps/storage/Dockerfile
+  image: hills-storage:local
+  restart: unless-stopped
+  depends_on:
+    - relay
+
 services:
   relay:
     build:
@@ -29,6 +46,7 @@ services:
       HILLS_PUBLIC_ADDR: ${HILLS_PUBLIC_IP:?請在 .env 設定 HILLS_PUBLIC_IP}:${HILLS_UDP_PORT:-7843}
       HILLS_UDP_PORT: ${HILLS_UDP_PORT:-7843}
       HILLS_ORG_ROOT_PUB: ${HILLS_ORG_ROOT_PUB:-}
+      HILLS_STORAGE_CODES_DIR: /storage-codes
       RUST_LOG: info,iroh=warn
     ports:
       - "${HILLS_UDP_PORT:-7843}:${HILLS_UDP_PORT:-7843}/udp"
@@ -36,7 +54,122 @@ services:
       - "127.0.0.1:${HILLS_HEALTH_PORT:-18080}:8080"
     volumes:
       - mailbox-data:/data
+      - storage-codes:/storage-codes:ro
+
+  storage-0:
+    <<: *storage
+    environment:
+      <<: *storage-env
+      HILLS_NODE_INDEX: "0"
+      HILLS_UDP_PORT: ${HILLS_STORAGE_PORT_0:-7850}
+      HILLS_PUBLIC_ADDR: ${HILLS_PUBLIC_IP:?請在 .env 設定 HILLS_PUBLIC_IP}:${HILLS_STORAGE_PORT_0:-7850}
+    ports:
+      - "${HILLS_STORAGE_PORT_0:-7850}:${HILLS_STORAGE_PORT_0:-7850}/udp"
+    volumes:
+      - storage-0-data:/data
+      - storage-codes:/storage-codes
+
+  storage-1:
+    <<: *storage
+    environment:
+      <<: *storage-env
+      HILLS_NODE_INDEX: "1"
+      HILLS_UDP_PORT: ${HILLS_STORAGE_PORT_1:-7851}
+      HILLS_PUBLIC_ADDR: ${HILLS_PUBLIC_IP:?請在 .env 設定 HILLS_PUBLIC_IP}:${HILLS_STORAGE_PORT_1:-7851}
+    ports:
+      - "${HILLS_STORAGE_PORT_1:-7851}:${HILLS_STORAGE_PORT_1:-7851}/udp"
+    volumes:
+      - storage-1-data:/data
+      - storage-codes:/storage-codes
+
+  storage-2:
+    <<: *storage
+    environment:
+      <<: *storage-env
+      HILLS_NODE_INDEX: "2"
+      HILLS_UDP_PORT: ${HILLS_STORAGE_PORT_2:-7852}
+      HILLS_PUBLIC_ADDR: ${HILLS_PUBLIC_IP:?請在 .env 設定 HILLS_PUBLIC_IP}:${HILLS_STORAGE_PORT_2:-7852}
+    ports:
+      - "${HILLS_STORAGE_PORT_2:-7852}:${HILLS_STORAGE_PORT_2:-7852}/udp"
+    volumes:
+      - storage-2-data:/data
+      - storage-codes:/storage-codes
+
+  storage-3:
+    <<: *storage
+    environment:
+      <<: *storage-env
+      HILLS_NODE_INDEX: "3"
+      HILLS_UDP_PORT: ${HILLS_STORAGE_PORT_3:-7853}
+      HILLS_PUBLIC_ADDR: ${HILLS_PUBLIC_IP:?請在 .env 設定 HILLS_PUBLIC_IP}:${HILLS_STORAGE_PORT_3:-7853}
+    ports:
+      - "${HILLS_STORAGE_PORT_3:-7853}:${HILLS_STORAGE_PORT_3:-7853}/udp"
+    volumes:
+      - storage-3-data:/data
+      - storage-codes:/storage-codes
+
+  storage-4:
+    <<: *storage
+    environment:
+      <<: *storage-env
+      HILLS_NODE_INDEX: "4"
+      HILLS_UDP_PORT: ${HILLS_STORAGE_PORT_4:-7854}
+      HILLS_PUBLIC_ADDR: ${HILLS_PUBLIC_IP:?請在 .env 設定 HILLS_PUBLIC_IP}:${HILLS_STORAGE_PORT_4:-7854}
+    ports:
+      - "${HILLS_STORAGE_PORT_4:-7854}:${HILLS_STORAGE_PORT_4:-7854}/udp"
+    volumes:
+      - storage-4-data:/data
+      - storage-codes:/storage-codes
+
+  storage-5:
+    <<: *storage
+    environment:
+      <<: *storage-env
+      HILLS_NODE_INDEX: "5"
+      HILLS_UDP_PORT: ${HILLS_STORAGE_PORT_5:-7855}
+      HILLS_PUBLIC_ADDR: ${HILLS_PUBLIC_IP:?請在 .env 設定 HILLS_PUBLIC_IP}:${HILLS_STORAGE_PORT_5:-7855}
+    ports:
+      - "${HILLS_STORAGE_PORT_5:-7855}:${HILLS_STORAGE_PORT_5:-7855}/udp"
+    volumes:
+      - storage-5-data:/data
+      - storage-codes:/storage-codes
+
+  storage-6:
+    <<: *storage
+    environment:
+      <<: *storage-env
+      HILLS_NODE_INDEX: "6"
+      HILLS_UDP_PORT: ${HILLS_STORAGE_PORT_6:-7856}
+      HILLS_PUBLIC_ADDR: ${HILLS_PUBLIC_IP:?請在 .env 設定 HILLS_PUBLIC_IP}:${HILLS_STORAGE_PORT_6:-7856}
+    ports:
+      - "${HILLS_STORAGE_PORT_6:-7856}:${HILLS_STORAGE_PORT_6:-7856}/udp"
+    volumes:
+      - storage-6-data:/data
+      - storage-codes:/storage-codes
+
+  storage-7:
+    <<: *storage
+    environment:
+      <<: *storage-env
+      HILLS_NODE_INDEX: "7"
+      HILLS_UDP_PORT: ${HILLS_STORAGE_PORT_7:-7857}
+      HILLS_PUBLIC_ADDR: ${HILLS_PUBLIC_IP:?請在 .env 設定 HILLS_PUBLIC_IP}:${HILLS_STORAGE_PORT_7:-7857}
+    ports:
+      - "${HILLS_STORAGE_PORT_7:-7857}:${HILLS_STORAGE_PORT_7:-7857}/udp"
+    volumes:
+      - storage-7-data:/data
+      - storage-codes:/storage-codes
 
 volumes:
   relay-data:
   mailbox-data:
+  storage-codes:
+  storage-0-data:
+  storage-1-data:
+  storage-2-data:
+  storage-3-data:
+  storage-4-data:
+  storage-5-data:
+  storage-6-data:
+  storage-7-data:
+

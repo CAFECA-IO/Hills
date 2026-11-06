@@ -10,7 +10,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home /data hills \
-    && mkdir -p /data && chown hills /data
+    && mkdir -p /data /storage-codes && chown hills /data /storage-codes
 COPY --from=build /hills-mailbox /usr/local/bin/hills-mailbox
 USER hills
 ENV HILLS_DATA_DIR=/data \

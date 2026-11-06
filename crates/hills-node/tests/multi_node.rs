@@ -34,6 +34,8 @@ fn store() -> Arc<dyn SecretStore> {
 struct MailboxServer {
     router: Router,
     code: String,
+    mb: Arc<Mailbox>,
+    addr: hills_proto::PeerAddr,
     _dir: tempfile::TempDir,
 }
 
@@ -47,12 +49,13 @@ async fn mailbox() -> MailboxServer {
         .bind()
         .await
         .unwrap();
-    let code = MailboxTicket::new(to_peer_addr(&ep.addr()))
-        .to_code()
-        .unwrap();
+    let addr = to_peer_addr(&ep.addr());
+    let code = MailboxTicket::new(addr.clone()).to_code().unwrap();
     MailboxServer {
-        router: serve(ep, mb),
+        router: serve(ep, mb.clone()),
         code,
+        mb,
+        addr,
         _dir: dir,
     }
 }
@@ -368,6 +371,53 @@ async fn recover_from_phrase() {
         .await
     );
     restored.shutdown().await;
+    admin.shutdown().await;
+    mb.router.shutdown().await.unwrap();
+}
+
+fn org_mailbox(n: &Node) -> hills_proto::PeerAddr {
+    hills_proto::ticket::OrgTicket::from_code(&n.org_ticket().unwrap())
+        .unwrap()
+        .mailbox
+}
+
+/// 7. mailbox 位址更新（technical-design §16.1）：以不含 relay 的連線碼建立組織，
+/// mailbox 之後回報含 relay 的位址 → node 更新已存位址，之後的組織連線碼帶 relay；
+/// NodeId 不同的位址被忽略。
+#[tokio::test]
+async fn mailbox_address_refresh() {
+    let mb = mailbox().await;
+    let d_admin = tempfile::tempdir().unwrap();
+    let ss = store();
+    let admin = create(d_admin.path(), ss.clone(), &mb.code).await;
+    assert_eq!(org_mailbox(&admin).relay, None);
+
+    // NodeId 不同：忽略
+    let mut other = mb.addr.clone();
+    other.node = hills_proto::Pub32([9; 32]);
+    other.relay = Some("https://evil.invalid/".into());
+    mb.mb.set_self_addr(other);
+    admin.sync_now().await.unwrap();
+    assert_eq!(org_mailbox(&admin).relay, None);
+
+    // 同一 mailbox 補上 relay
+    let mut fixed = mb.addr.clone();
+    fixed.relay = Some("https://relay.invalid/".into());
+    mb.mb.set_self_addr(fixed.clone());
+    admin.sync_now().await.unwrap();
+    assert_eq!(org_mailbox(&admin), fixed);
+    // 仍可與 mailbox 同步（直連位址未變）
+    admin.rename_org("更新位址後").await.unwrap();
+    admin.sync_now().await.unwrap();
+
+    // 重新啟動後沿用新位址
+    admin.shutdown().await;
+    drop(admin);
+    let admin = Node::open(d_admin.path(), ss, opts())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(org_mailbox(&admin), fixed);
     admin.shutdown().await;
     mb.router.shutdown().await.unwrap();
 }

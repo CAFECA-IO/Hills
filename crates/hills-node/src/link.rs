@@ -64,7 +64,8 @@ impl LinkListener {
         let eph = Ephemeral::generate()?;
         let relay = match &org.mailbox.relay {
             Some(u) => RelayMode::custom([u.parse().context("relay URL 無效")?]),
-            None => RelayMode::Disabled,
+            // 不用 Disabled：之後才取得的 relay 需能以 insert_relay 加入（§16.1）
+            None => RelayMode::Custom(iroh::RelayMap::empty()),
         };
         let endpoint = Endpoint::builder(presets::Minimal)
             .secret_key(SecretKey::from_bytes(&device.secret_bytes()))

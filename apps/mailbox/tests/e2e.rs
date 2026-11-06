@@ -685,3 +685,18 @@ async fn unclaimed_mailbox_is_claimed_by_first_admin() {
     drop(reopened);
     assert!(Mailbox::open(dir.path(), Some(other.ok.public())).is_err());
 }
+
+/// `Info`：位址就緒前回錯誤，設定後回傳（technical-design §16.7）；需先 Hello。
+#[tokio::test]
+async fn info_returns_self_addr() {
+    let o = org();
+    let (srv, mb) = server(&o).await;
+    let (admin, _ep) = connect(&srv, &o, &o.admin).await.unwrap();
+    assert!(admin.info().await.is_err(), "位址未設定時應回錯誤");
+    let mut addr = hills_net::to_peer_addr(&srv.addr);
+    addr.relay = Some("https://relay.example.com/".into());
+    assert!(mb.set_self_addr(addr.clone()));
+    assert!(!mb.set_self_addr(addr.clone()), "相同位址不算改變");
+    assert_eq!(admin.info().await.unwrap(), addr);
+    srv.router.shutdown().await.unwrap();
+}

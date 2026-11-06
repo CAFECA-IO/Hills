@@ -62,6 +62,8 @@ pub enum Request {
         org_id: OrgId,
         bundle_hash: [u8; 32],
     },
+    /// mailbox 目前的位址（technical-design §16.1、§16.7）。新增於列舉尾端以保持相容
+    Info,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -130,4 +132,6 @@ pub enum Response {
         code: ErrorCode,
         message: String,
     },
+    /// 回應 [`Request::Info`]
+    Info(PeerAddr),
 }

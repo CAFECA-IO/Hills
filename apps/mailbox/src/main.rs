@@ -65,6 +65,35 @@ fn node_key(dir: &std::path::Path) -> anyhow::Result<SecretKey> {
     Ok(key)
 }
 
+/// 目前對外位址：`HILLS_PUBLIC_ADDR` 在最前，其餘直連位址排序（避免順序變動被當成位址改變）。
+fn current_addr(endpoint: &Endpoint) -> hills_proto::PeerAddr {
+    let mut peer = hills_net::to_peer_addr(&endpoint.addr());
+    peer.direct.sort();
+    if let Ok(public) = std::env::var("HILLS_PUBLIC_ADDR") {
+        let public = public.trim().to_owned();
+        if !public.is_empty() {
+            peer.direct.retain(|a| a != &public);
+            peer.direct.insert(0, public);
+        }
+    }
+    peer
+}
+
+/// 更新 `Info` 的位址；改變時寫入 `mailbox-code.txt` 並印出連線碼（不是機密，只含位址）。
+fn publish_addr(
+    endpoint: &Endpoint,
+    mailbox: &Mailbox,
+    data: &std::path::Path,
+) -> anyhow::Result<()> {
+    let peer = current_addr(endpoint);
+    if mailbox.set_self_addr(peer.clone()) {
+        let code = MailboxTicket::new(peer).to_code()?;
+        std::fs::write(data.join("mailbox-code.txt"), format!("{code}\n"))?;
+        println!("mailbox 連線碼：{code}");
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -102,23 +131,26 @@ async fn main() -> anyhow::Result<()> {
     if !endpoint_relay_disabled() {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(15), endpoint.online()).await;
     }
-    let mut peer = hills_net::to_peer_addr(&endpoint.addr());
-    if let Ok(public) = std::env::var("HILLS_PUBLIC_ADDR") {
-        let public = public.trim().to_owned();
-        if !public.is_empty() {
-            peer.direct.retain(|a| a != &public);
-            peer.direct.insert(0, public);
-        }
-    }
-    let code = MailboxTicket::new(peer).to_code()?;
-    std::fs::write(data.join("mailbox-code.txt"), format!("{code}\n"))?;
     if mailbox.is_claimed() {
         tracing::info!(node_id = %endpoint.id(), org = %mailbox.org_id(), "{SERVICE} iroh endpoint ready");
     } else {
         tracing::info!(node_id = %endpoint.id(), "{SERVICE} iroh endpoint ready（尚未綁定組織）");
     }
-    // 連線碼不是機密（只含位址），印出供建立組織時貼上
-    println!("mailbox 連線碼：{code}");
+    publish_addr(&endpoint, &mailbox, &data)?;
+    // 定期更新自身位址：relay 較晚上線或位址改變時，連線碼與 `Info` 隨之更新（§16.1）
+    {
+        let endpoint = endpoint.clone();
+        let mailbox = mailbox.clone();
+        let data = data.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                if let Err(e) = publish_addr(&endpoint, &mailbox, &data) {
+                    tracing::warn!(error = %e, "無法更新 mailbox 位址");
+                }
+            }
+        });
+    }
     let router = serve(endpoint, mailbox);
 
     let addr = std::env::var("HILLS_LISTEN").unwrap_or_else(|_| "0.0.0.0:8080".into());

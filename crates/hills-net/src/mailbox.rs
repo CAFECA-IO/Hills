@@ -162,6 +162,14 @@ impl MailboxClient {
         }
     }
 
+    /// mailbox 目前的位址（§16.1「mailbox 位址更新」）。
+    pub async fn info(&self) -> Result<PeerAddr, NetError> {
+        match self.call(&Request::Info).await? {
+            Response::Info(a) => Ok(a),
+            other => Err(remote(other)),
+        }
+    }
+
     pub async fn put_roster(&self, roster: Signed<Roster>) -> Result<(), NetError> {
         match self.call(&Request::PutRoster(Box::new(roster))).await? {
             Response::Ok => Ok(()),

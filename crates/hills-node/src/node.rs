@@ -525,7 +525,8 @@ impl Node {
         memory.add_endpoint_info(to_endpoint_addr(&cfg.mailbox)?);
         let relay = match &cfg.mailbox.relay {
             Some(u) => RelayMode::custom([u.parse().context("relay URL 無效")?]),
-            None => RelayMode::Disabled,
+            // 不用 Disabled：之後才取得的 relay 需能以 insert_relay 加入（§16.1）
+            None => RelayMode::Custom(iroh::RelayMap::empty()),
         };
         let endpoint = Endpoint::builder(presets::Minimal)
             .secret_key(SecretKey::from_bytes(&secrets.device.secret_bytes()))

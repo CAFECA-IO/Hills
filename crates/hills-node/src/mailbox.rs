@@ -11,7 +11,7 @@ use hills_net::mailbox::MailboxClient;
 use hills_net::{to_endpoint_addr, to_peer_addr};
 use hills_proto::gossip::GossipMsg;
 use hills_proto::mailbox::{Hello, PendingJoin};
-use hills_proto::{KeyFamily, Role, Signed, WrappedKey};
+use hills_proto::{KeyFamily, PeerAddr, Role, Signed, WrappedKey};
 
 use crate::config::MemberStatus;
 use crate::node::{Event, Inner, SyncStatus, lock, now_ms};
@@ -137,6 +137,11 @@ async fn refresh(inner: &Arc<Inner>, mb: &MailboxClient) -> Result<()> {
         lock(&inner.cfg).bundle_cursor = next;
         inner.save_cfg()?;
     }
+    // mailbox 位址更新（§16.1）：舊版 mailbox 不支援 Info 時略過
+    match mb.info().await {
+        Ok(addr) => apply_mailbox_addr(inner, addr).await?,
+        Err(e) => tracing::debug!(error = %e, "mailbox 不支援 Info"),
+    }
     // 位址簿 → gossip 鄰居
     mb.announce(to_peer_addr(&inner.endpoint.addr())).await?;
     let me = inner.secrets.device.public();
@@ -163,6 +168,36 @@ async fn refresh(inner: &Arc<Inner>, mb: &MailboxClient) -> Result<()> {
                 tracing::debug!(error = %e, "略過加入申請");
             }
         }
+    }
+    Ok(())
+}
+
+/// 依 mailbox 回報的位址更新已存位址；NodeId 不同時忽略。新 relay 直接加入執行中的 endpoint。
+pub(crate) async fn apply_mailbox_addr(inner: &Inner, addr: PeerAddr) -> Result<()> {
+    let new_relay = {
+        let mut cfg = lock(&inner.cfg);
+        if addr.node != cfg.mailbox.node || addr == cfg.mailbox {
+            return Ok(());
+        }
+        let new_relay = addr
+            .relay
+            .clone()
+            .filter(|r| cfg.mailbox.relay.as_ref() != Some(r));
+        cfg.mailbox = addr.clone();
+        new_relay
+    };
+    inner.save_cfg()?;
+    if let Ok(ep) = to_endpoint_addr(&addr) {
+        inner.memory.add_endpoint_info(ep);
+    }
+    tracing::info!(relay = ?addr.relay, "mailbox 位址已更新");
+    if let Some(url) = new_relay.and_then(|r| r.parse::<iroh::RelayUrl>().ok()) {
+        inner
+            .endpoint
+            .insert_relay(url.clone(), Arc::new(url.into()))
+            .await;
+        // 等 relay 連上，讓接下來的 Announce 帶有 relay 位址
+        let _ = tokio::time::timeout(Duration::from_secs(5), inner.endpoint.online()).await;
     }
     Ok(())
 }

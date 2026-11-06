@@ -42,6 +42,8 @@ pub struct Mailbox {
     trust: Mutex<TrustStore>,
     db: Mutex<Db>,
     blobs: PathBuf,
+    /// 自己目前的位址（由執行檔在 endpoint 上線後設定，§16.7 `Info`）
+    self_addr: Mutex<Option<PeerAddr>>,
 }
 
 fn err(code: ErrorCode, message: &str) -> Response {
@@ -143,7 +145,27 @@ impl Mailbox {
             trust: Mutex::new(trust),
             db: Mutex::new(db),
             blobs: data_dir.join("blobs"),
+            self_addr: Mutex::new(None),
         }))
+    }
+
+    /// 設定 `Info` 回傳的自身位址；回傳是否與先前不同。
+    pub fn set_self_addr(&self, addr: PeerAddr) -> bool {
+        match self.self_addr.lock() {
+            Ok(mut cur) => {
+                let changed = cur.as_ref() != Some(&addr);
+                *cur = Some(addr);
+                changed
+            }
+            Err(_) => false,
+        }
+    }
+
+    fn info(&self) -> Response {
+        match self.self_addr.lock().map(|a| a.clone()) {
+            Ok(Some(a)) => Response::Info(a),
+            _ => err(ErrorCode::NotFound, "位址尚未就緒"),
+        }
     }
 
     /// 是否已綁定組織。
@@ -724,6 +746,7 @@ impl Mailbox {
                 org_id,
                 bundle_hash,
             } => self.get(org_id, bundle_hash),
+            Request::Info => self.info(),
         }
     }
 

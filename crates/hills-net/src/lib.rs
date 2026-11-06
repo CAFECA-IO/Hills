@@ -3,7 +3,9 @@
 //! 每個請求使用一條雙向 QUIC 串流：送出 postcard 編碼的請求後關閉送出端，對方讀到結尾、
 //! 處理後回傳一個回應並關閉。不需要額外的長度前綴。
 
+pub mod gate;
 pub mod mailbox;
+pub mod storage;
 
 use hills_proto::{PeerAddr, ProtoError, Pub32};
 use iroh::endpoint::{Connection, RecvStream, SendStream};

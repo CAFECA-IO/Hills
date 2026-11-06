@@ -11,13 +11,21 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 axum.workspace = true
+data-encoding.workspace = true
+hills-identity.workspace = true
+hills-net.workspace = true
+hills-proto.workspace = true
+iroh.workspace = true
+rusqlite.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
 http-body-util.workspace = true
+tempfile.workspace = true
 tower.workspace = true
 
 [lints]

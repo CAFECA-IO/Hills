@@ -170,6 +170,14 @@ impl MailboxClient {
         }
     }
 
+    /// 儲存節點位址（依編號排序，technical-design §15.6 v0.12）。
+    pub async fn services(&self) -> Result<Vec<(u8, PeerAddr)>, NetError> {
+        match self.call(&Request::Services).await? {
+            Response::Services(v) => Ok(v),
+            other => Err(remote(other)),
+        }
+    }
+
     pub async fn put_roster(&self, roster: Signed<Roster>) -> Result<(), NetError> {
         match self.call(&Request::PutRoster(Box::new(roster))).await? {
             Response::Ok => Ok(()),

@@ -2400,11 +2400,14 @@ dependencies = [
 name = "hills-net"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "hills-identity",
  "hills-proto",
  "iroh",
  "postcard",
  "serde",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -2455,8 +2458,16 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "data-encoding",
+ "hills-identity",
+ "hills-net",
+ "hills-proto",
  "http-body-util",
+ "iroh",
+ "rusqlite",
  "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
  "tokio",
  "tower",
  "tracing",

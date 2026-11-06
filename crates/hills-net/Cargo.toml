@@ -9,11 +9,14 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+anyhow.workspace = true
+hills-identity.workspace = true
 hills-proto.workspace = true
 iroh.workspace = true
 postcard.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 
 [lints]
 workspace = true

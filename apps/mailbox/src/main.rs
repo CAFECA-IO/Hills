@@ -10,6 +10,7 @@
 //! - `HILLS_LISTEN`：健康檢查 HTTP 位址（預設 `0.0.0.0:8080`）
 //! - `HILLS_RELAY`：自架 iroh-relay URL；未設定時使用 iroh 預設 relay
 //! - `HILLS_NO_RELAY=1`：停用 relay（本機測試）
+//! - `HILLS_STORAGE_CODES_DIR`（選填）：儲存節點連線碼所在資料夾，回應 `Services`（technical-design §15.6）
 
 use std::path::PathBuf;
 
@@ -113,6 +114,11 @@ async fn main() -> anyhow::Result<()> {
     let data = PathBuf::from(std::env::var("HILLS_DATA_DIR").unwrap_or_else(|_| "data".into()));
     std::fs::create_dir_all(&data)?;
     let mailbox = Mailbox::open(&data, org_root)?;
+    if let Ok(dir) = std::env::var("HILLS_STORAGE_CODES_DIR")
+        && !dir.trim().is_empty()
+    {
+        mailbox.set_storage_codes_dir(PathBuf::from(dir.trim()));
+    }
 
     let relay = if endpoint_relay_disabled() {
         RelayMode::Disabled

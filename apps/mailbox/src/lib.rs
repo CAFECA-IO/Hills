@@ -9,7 +9,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use hills_identity::trust::{TrustStore, Verified};
+use hills_identity::trust::Verified;
+use hills_net::gate::{GateError, TrustGate, TrustPersist};
 use hills_net::{recv_message, remote_node, send_message};
 use hills_proto::mailbox::{
     ALPN, ErrorCode, Hello, KeyItem, ListItem, MAX_FRAME, MAX_LIST, MAX_PENDING_JOINS, PeerInfo,
@@ -33,17 +34,49 @@ type PeerRow = (Vec<u8>, Vec<u8>, Vec<u8>, i64);
 /// 位址簿只回傳最近 7 天內上線過的裝置。
 const PEER_TTL_MS: i64 = 7 * 24 * 3600 * 1000;
 
-/// 尚未綁定組織時的佔位 OK（全 0，不是有效的 Ed25519 公鑰，無法通過任何驗證）。
-pub const UNCLAIMED: Pub32 = Pub32([0; 32]);
+pub use hills_net::gate::UNCLAIMED;
 
-/// mailbox 共享狀態。鎖的順序固定為 trust → db，避免死結。
+/// mailbox 共享狀態。鎖的順序固定為 trust（gate）→ db，避免死結。
 pub struct Mailbox {
-    /// 未綁定組織時，org_root 為 [`UNCLAIMED`]
-    trust: Mutex<TrustStore>,
-    db: Mutex<Db>,
+    /// 信任邏輯與儲存節點共用（technical-design §15.6 v0.12）
+    gate: TrustGate,
+    db: Arc<Mutex<Db>>,
     blobs: PathBuf,
     /// 自己目前的位址（由執行檔在 endpoint 上線後設定，§16.7 `Info`）
     self_addr: Mutex<Option<PeerAddr>>,
+    /// 儲存節點連線碼所在資料夾（`Services`，§15.6 v0.12）
+    storage_codes: Mutex<Option<PathBuf>>,
+}
+
+/// 信任狀態存在 mailbox 的 SQLite（`trust`、`meta` 表）。
+struct DbPersist(Arc<Mutex<Db>>);
+
+impl TrustPersist for DbPersist {
+    fn save_roster(&self, roster: &[u8]) -> Result<(), String> {
+        let db = self.0.lock().map_err(|_| "lock".to_string())?;
+        db.execute(
+            "INSERT OR REPLACE INTO trust (id, roster) VALUES (1, ?1)",
+            params![roster],
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+    }
+    fn save_org_root(&self, root: &Pub32) -> Result<(), String> {
+        let db = self.0.lock().map_err(|_| "lock".to_string())?;
+        db.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES ('org_root', ?1)",
+            params![&root.0[..]],
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+    }
+}
+
+fn gate_err(e: GateError) -> Response {
+    Response::Error {
+        code: e.code,
+        message: e.message,
+    }
 }
 
 fn err(code: ErrorCode, message: &str) -> Response {
@@ -133,19 +166,18 @@ impl Mailbox {
             }
             (a, b) => a.or(b).unwrap_or(UNCLAIMED),
         };
-        let mut trust = TrustStore::new(root);
         let saved: Option<Vec<u8>> = db
             .query_row("SELECT roster FROM trust WHERE id = 1", [], |r| r.get(0))
             .optional()?;
-        if let (Some(bytes), false) = (saved, root == UNCLAIMED) {
-            let roster: Roster = hills_proto::decode(&bytes)?;
-            trust.import_roster(&roster)?;
-        }
+        let roster: Option<Roster> = saved.map(|b| hills_proto::decode(&b)).transpose()?;
+        let db = Arc::new(Mutex::new(db));
+        let gate = TrustGate::new(root, roster.as_ref(), Box::new(DbPersist(db.clone())))?;
         Ok(Arc::new(Self {
-            trust: Mutex::new(trust),
-            db: Mutex::new(db),
+            gate,
+            db,
             blobs: data_dir.join("blobs"),
             self_addr: Mutex::new(None),
+            storage_codes: Mutex::new(None),
         }))
     }
 
@@ -168,160 +200,69 @@ impl Mailbox {
         }
     }
 
+    /// 設定儲存節點連線碼所在的資料夾（`HILLS_STORAGE_CODES_DIR`）。
+    pub fn set_storage_codes_dir(&self, dir: PathBuf) {
+        if let Ok(mut d) = self.storage_codes.lock() {
+            *d = Some(dir);
+        }
+    }
+
+    /// `storage-<n>.txt` 中的連線碼，依編號排序；讀不到或格式錯誤的略過。
+    fn services(&self) -> Response {
+        use hills_proto::ticket::{StorageTicket, Ticket};
+        let Some(dir) = self.storage_codes.lock().ok().and_then(|d| d.clone()) else {
+            return Response::Services(vec![]);
+        };
+        let mut out: Vec<(u8, PeerAddr)> = (0u8..32)
+            .filter_map(|i| {
+                let raw = std::fs::read_to_string(dir.join(format!("storage-{i}.txt"))).ok()?;
+                let t = StorageTicket::from_code(raw.trim()).ok()?;
+                (t.index == i).then_some((i, t.node))
+            })
+            .collect();
+        out.sort_by_key(|(i, _)| *i);
+        Response::Services(out)
+    }
+
     /// 是否已綁定組織。
     pub fn is_claimed(&self) -> bool {
-        self.trust
-            .lock()
-            .map(|t| t.org_root() != UNCLAIMED)
-            .unwrap_or(false)
+        self.gate.is_claimed()
     }
 
     pub fn org_id(&self) -> OrgId {
-        self.trust
-            .lock()
-            .map(|t| t.org_id())
-            .unwrap_or(Pub32([0; 32]))
+        self.gate.org_id()
     }
 
     fn blob_path(&self, hash: &[u8; 32]) -> PathBuf {
         self.blobs.join(data_encoding::HEXLOWER.encode(hash))
     }
 
-    fn save_trust(&self, trust: &TrustStore) -> Result<(), Response> {
-        let bytes = hills_proto::encode(&trust.to_roster(now_ms()))
-            .map_err(|_| err(ErrorCode::Internal, "encode"))?;
-        let db = self
-            .db
-            .lock()
-            .map_err(|_| err(ErrorCode::Internal, "lock"))?;
-        db.execute(
-            "INSERT OR REPLACE INTO trust (id, roster) VALUES (1, ?1)",
-            params![bytes],
-        )
-        .map_err(|_| err(ErrorCode::Internal, "無法保存信任狀態"))?;
-        Ok(())
-    }
-
-    /// 在信任狀態的副本上套用變更，成功保存後才取代（失敗時不留下半套狀態）。
-    fn update_trust(
-        &self,
-        f: impl FnOnce(&mut TrustStore) -> Result<(), Response>,
-    ) -> Result<(), Response> {
-        let mut trust = self
-            .trust
-            .lock()
-            .map_err(|_| err(ErrorCode::Internal, "lock"))?;
-        let mut next = trust.clone();
-        f(&mut next)?;
-        self.save_trust(&next)?;
-        *trust = next;
-        Ok(())
-    }
-
     fn hello(&self, h: &Hello, node: &Pub32) -> Result<Verified, Response> {
-        let mut verified = None;
-        let mut claim = None;
-        self.update_trust(|trust| {
-            if trust.org_root() == UNCLAIMED {
-                // 綁定：第一張由 OK 簽發的管理者憑證決定組織
-                let mc = h.member_cert.as_ref().ok_or_else(|| err(ErrorCode::Unauthorized, "mailbox 尚未綁定組織"))?;
-                let root = mc.signer;
-                if !mc.body.is_admin() || mc.body.org_id != hills_identity::cert::org_id_for(&root) {
-                    return Err(err(ErrorCode::Unauthorized, "mailbox 尚未綁定組織"));
-                }
-                let mut fresh = TrustStore::new(root);
-                fresh.add_member_cert(mc.clone()).map_err(|_| err(ErrorCode::Unauthorized, "成員憑證無效"))?;
-                *trust = fresh;
-                claim = Some(root);
-            }
-            let member_cert = match &h.member_cert {
-                Some(mc) => {
-                    if trust.member(&mc.body.member_id).is_none() {
-                        // bootstrap：尚未收到 roster 時，接受由 OK 或已知管理者簽發的有效憑證
-                        trust
-                            .add_member_cert(mc.clone())
-                            .map_err(|_| err(ErrorCode::Unauthorized, "成員憑證無效"))?;
-                    }
-                    mc.clone()
-                }
-                None => trust
-                    .member_cert(&h.device_cert.body.member_id)
-                    .cloned()
-                    .ok_or_else(|| err(ErrorCode::Unauthorized, "未知的成員"))?,
-            };
-            trust
-                .verify_hello(&h.device_cert, &member_cert, node)
-                .map_err(|e| err(ErrorCode::Unauthorized, &e.to_string()))?;
-            trust
-                .add_device_cert(h.device_cert.clone())
-                .map_err(|e| err(ErrorCode::Unauthorized, &e.to_string()))?;
-            verified = Some(
-                trust
-                    .verify_device(node)
-                    .map_err(|e| err(ErrorCode::Unauthorized, &e.to_string()))?,
-            );
-            // 綁定在全部驗證通過後才寫入（失敗的連線不會綁定組織）
-            if let Some(root) = claim {
-                let db = self.db.lock().map_err(|_| err(ErrorCode::Internal, "lock"))?;
-                db.execute("INSERT INTO meta (key, value) VALUES ('org_root', ?1)", params![&root.0[..]])
-                    .map_err(|_| err(ErrorCode::Internal, "無法綁定組織"))?;
-                tracing::info!(org = %hills_identity::cert::org_id_for(&root), "mailbox 已綁定組織");
-            }
-            Ok(())
-        })?;
-        verified.ok_or_else(|| err(ErrorCode::Internal, "hello"))
+        self.gate.hello(h, node).map_err(gate_err)
     }
 
     /// 每個請求都重新檢查（期間可能被撤銷）。
     fn still_valid(&self, node: &Pub32) -> Result<Verified, Response> {
-        let trust = self
-            .trust
-            .lock()
-            .map_err(|_| err(ErrorCode::Internal, "lock"))?;
-        trust
-            .verify_device(node)
-            .map_err(|_| err(ErrorCode::Unauthorized, "裝置已失效"))
+        self.gate.still_valid(node).map_err(gate_err)
     }
 
     fn get_roster(&self) -> Response {
-        match self.trust.lock() {
-            Ok(t) => Response::Roster(Box::new(t.to_roster(now_ms()))),
-            Err(_) => err(ErrorCode::Internal, "lock"),
+        match self.gate.roster() {
+            Ok(r) => Response::Roster(Box::new(r)),
+            Err(e) => gate_err(e),
         }
     }
 
     fn put_roster(&self, who: &Verified, roster: &Signed<Roster>) -> Response {
-        if !who.is_admin() || roster.signer != who.device {
-            return err(ErrorCode::Forbidden, "只有管理者裝置可推送 roster");
-        }
-        if hills_identity::cert::verify_signature(roster).is_err()
-            || roster.body.org_id != self.org_id()
-        {
-            return err(ErrorCode::BadRequest, "roster 簽章或組織不符");
-        }
-        to_resp(self.update_trust(|t| {
-            t.import_roster(&roster.body)
-                .map(|_| ())
-                .map_err(|_| err(ErrorCode::BadRequest, "roster 內容無效"))
-        }))
+        to_resp(self.gate.put_roster(who, roster).map_err(gate_err))
     }
 
     fn put_device(&self, who: &Verified, cert: &Signed<DeviceCert>) -> Response {
-        if cert.body.member_id != who.member_id {
-            return err(ErrorCode::Forbidden, "只能上傳自己的裝置憑證");
-        }
-        to_resp(self.update_trust(|t| {
-            t.add_device_cert(cert.clone())
-                .map_err(|e| err(ErrorCode::BadRequest, &e.to_string()))
-        }))
+        to_resp(self.gate.put_device(who, cert).map_err(gate_err))
     }
 
     fn put_revocation(&self, rev: &Signed<Revocation>) -> Response {
-        // 權限（管理者 / 裝置本人）由 TrustStore 依簽署者判斷
-        to_resp(self.update_trust(|t| {
-            t.add_revocation(rev)
-                .map_err(|e| err(ErrorCode::Forbidden, &e.to_string()))
-        }))
+        to_resp(self.gate.put_revocation(rev).map_err(gate_err))
     }
 
     fn register_invite(&self, who: &Verified, invite_id: [u8; 8], expires_at: i64) -> Response {
@@ -451,7 +392,7 @@ impl Mailbox {
     }
 
     fn put_keys(&self, wrapped: Vec<Signed<WrappedKey>>) -> Response {
-        let Ok(trust) = self.trust.lock() else {
+        let Ok(trust) = self.gate.lock() else {
             return err(ErrorCode::Internal, "lock");
         };
         let mut rows = Vec::with_capacity(wrapped.len());
@@ -549,7 +490,7 @@ impl Mailbox {
     }
 
     fn peers(&self) -> Response {
-        let Ok(trust) = self.trust.lock() else {
+        let Ok(trust) = self.gate.lock() else {
             return err(ErrorCode::Internal, "lock");
         };
         let Ok(db) = self.db.lock() else {
@@ -747,6 +688,7 @@ impl Mailbox {
                 bundle_hash,
             } => self.get(org_id, bundle_hash),
             Request::Info => self.info(),
+            Request::Services => self.services(),
         }
     }
 

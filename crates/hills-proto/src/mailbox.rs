@@ -64,6 +64,8 @@ pub enum Request {
     },
     /// mailbox 目前的位址（technical-design §16.1、§16.7）。新增於列舉尾端以保持相容
     Info,
+    /// 儲存節點位址（依編號排序，§15.6 v0.12）。新增於列舉尾端
+    Services,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -134,4 +136,6 @@ pub enum Response {
     },
     /// 回應 [`Request::Info`]
     Info(PeerAddr),
+    /// 回應 [`Request::Services`]：`(節點編號, 位址)`
+    Services(Vec<(u8, PeerAddr)>),
 }

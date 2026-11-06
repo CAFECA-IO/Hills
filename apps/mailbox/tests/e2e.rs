@@ -700,3 +700,41 @@ async fn info_returns_self_addr() {
     assert_eq!(admin.info().await.unwrap(), addr);
     srv.router.shutdown().await.unwrap();
 }
+
+/// `Services` 回傳儲存節點連線碼資料夾中的節點（technical-design §15.6 v0.12）。
+#[tokio::test]
+async fn services_lists_storage_codes() {
+    use hills_proto::PeerAddr;
+    use hills_proto::ticket::{StorageTicket, Ticket};
+    let o = org();
+    let (srv, mb) = server(&o).await;
+    let (admin, _aep) = connect(&srv, &o, &o.admin).await.unwrap();
+    admin.put_roster(roster(&o, vec![])).await.unwrap();
+    let (alice, _ep) = connect(&srv, &o, &o.alice).await.unwrap();
+    assert!(
+        alice.services().await.unwrap().is_empty(),
+        "未設定資料夾時為空"
+    );
+    let codes = tempfile::tempdir().unwrap();
+    let addr = |n: u8| PeerAddr {
+        node: Pub32([n; 32]),
+        relay: None,
+        direct: vec![format!("127.0.0.1:{}", 7850 + u16::from(n))],
+    };
+    for i in [2u8, 0] {
+        let code = StorageTicket::new(i, addr(i)).to_code().unwrap();
+        std::fs::write(
+            codes.path().join(format!("storage-{i}.txt")),
+            format!("{code}\n"),
+        )
+        .unwrap();
+    }
+    // 編號與檔名不符、格式錯誤的略過
+    let wrong = StorageTicket::new(5, addr(5)).to_code().unwrap();
+    std::fs::write(codes.path().join("storage-1.txt"), wrong).unwrap();
+    std::fs::write(codes.path().join("storage-3.txt"), "garbage").unwrap();
+    mb.set_storage_codes_dir(codes.path().to_path_buf());
+    let list = alice.services().await.unwrap();
+    assert_eq!(list, vec![(0, addr(0)), (2, addr(2))]);
+    srv.router.shutdown().await.unwrap();
+}

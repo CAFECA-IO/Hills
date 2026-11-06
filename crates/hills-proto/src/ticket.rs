@@ -28,6 +28,14 @@ pub struct MailboxTicket {
     pub mailbox: PeerAddr,
 }
 
+/// 儲存節點連線碼（technical-design §15.6 v0.12）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StorageTicket {
+    pub v: u8,
+    pub index: u8,
+    pub node: PeerAddr,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinkTicket {
     pub v: u8,
@@ -46,6 +54,11 @@ impl Versioned for OrgTicket {
     }
 }
 impl Versioned for MailboxTicket {
+    fn version(&self) -> u8 {
+        self.v
+    }
+}
+impl Versioned for StorageTicket {
     fn version(&self) -> u8 {
         self.v
     }
@@ -94,6 +107,9 @@ impl Ticket for OrgTicket {
 impl Ticket for MailboxTicket {
     const PREFIX: &'static str = "hills-mbx1-";
 }
+impl Ticket for StorageTicket {
+    const PREFIX: &'static str = "hills-sto1-";
+}
 impl Ticket for LinkTicket {
     const PREFIX: &'static str = "hills-link1-";
 }
@@ -107,9 +123,27 @@ impl MailboxTicket {
     }
 }
 
+impl StorageTicket {
+    pub fn new(index: u8, node: PeerAddr) -> Self {
+        Self {
+            v: FORMAT_VERSION,
+            index,
+            node,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn storage_ticket_roundtrip() {
+        let t = StorageTicket::new(3, addr());
+        let code = t.to_code().unwrap();
+        assert!(code.starts_with("hills-sto1-"));
+        assert_eq!(StorageTicket::from_code(&code).unwrap(), t);
+    }
 
     fn addr() -> PeerAddr {
         PeerAddr {

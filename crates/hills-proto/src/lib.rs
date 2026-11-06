@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 pub mod gossip;
 pub mod link;
 pub mod mailbox;
+pub mod storage;
 pub mod sync;
 pub mod ticket;
 

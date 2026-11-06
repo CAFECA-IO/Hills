@@ -12,7 +12,7 @@
 | 主機 | 1 vCPU、1 GB RAM、10 GB 磁碟起；Linux（Debian / Ubuntu 皆可）；有固定公網 IPv4 |
 | 軟體 | Docker Engine 24 以上、Docker Compose v2 |
 | 網域 | 一個子網域給 relay，例如 `relay.example.com`，DNS **A 記錄**指向主機公網 IP |
-| 防火牆 | TCP 80、TCP 443、UDP 7842（relay）、UDP 7843（mailbox，可用 `HILLS_UDP_PORT` 修改）、UDP 7850–7857（storage-0…7，可用 `HILLS_STORAGE_PORT_BASE` 修改） |
+| 防火牆 | TCP 80、TCP 443、UDP 7842（relay）、UDP 7843（mailbox，可用 `HILLS_UDP_PORT` 修改）、UDP 7850–7857（storage-0…7，可用 `HILLS_STORAGE_PORT_0` … `HILLS_STORAGE_PORT_7` 個別修改） |
 | 磁碟 | 檔案分享：每 1 GB 檔案約占 1.6 GB（RS 8/5）；建議把 8 個 storage volume 分散在不同磁碟（technical-design §15.7） |
 
 TCP 80 用於 LetsEncrypt 自動取得憑證，需要保持開放。
@@ -33,6 +33,17 @@ curl -s http://127.0.0.1:18080/v1/health   # mailbox 健康檢查（埠為 HILLS
 `.env` 已列入 `.gitignore`，不要提交。
 
 relay 的設定檔由容器啟動時依 `.env` 產生（LetsEncrypt、TCP 80 / 443、UDP 7842），compose 不掛載任何主機檔案，因此在開發容器、遠端 Docker context 等「docker 指令與 Docker daemon 不在同一個檔案系統」的環境也能使用。需要進階設定時，可另以 named volume 提供 `/config/relay.toml`，存在時優先使用（格式見 `relay.toml.example`）。
+
+### 儲存節點（M1 檔案分享）
+
+`docker compose up -d --build` 會一併啟動 `storage-0` … `storage-7`。每個節點啟動時把自己的連線碼寫進共用的 `storage-codes` volume，mailbox 從那裡回應 app 的 `Services` 請求，**不需要手動設定**。確認方式：
+
+```bash
+docker compose logs storage-0 | grep 連線碼
+docker compose exec mailbox ls /storage-codes      # 應有 storage-0.txt … storage-7.txt
+```
+
+建立組織後，管理者的 app 上線一次即會把成員名冊推送到每個節點；之後所有成員都能上傳與下載附件。
 
 ## 3. 取得 mailbox 連線碼
 

@@ -156,7 +156,7 @@ interface MockMsg {
   kind: string;
   body: string;
   mentions: string[];
-  attachments: null;
+  attachments: unknown;
 }
 const convs = [
   {
@@ -419,10 +419,10 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
       conv: String(a.conv),
       author: state.me,
       createdAt: Date.now(),
-      kind: 'text',
+      kind: a.attachments ? 'files' : 'text',
       body: String(a.body),
       mentions: a.mentions as string[],
-      attachments: null,
+      attachments: a.attachments ?? null,
     };
     msgs.push(m);
     emit('hills://node', 'message');
@@ -460,9 +460,84 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   },
 };
 
+// ── 檔案分享：假的檔案、8 個記憶體儲存節點（加密與 RS 編碼仍在前端真實執行） ──
+const MB = 1024 * 1024;
+const fakeFiles = new Map<string, { name: string; size: number; seed: number }>();
+let fileSeq = 0;
+const addFake = (name: string, size: number) => {
+  const token = `f${++fileSeq}`;
+  fakeFiles.set(token, { name, size, seed: fileSeq });
+  return { token, name, size, mtime: Date.now() - 86400_000 };
+};
+const shards = new Map<string, Uint8Array>();
+const writes = new Map<string, number>();
+const fileHandlers: Record<string, (args: Record<string, unknown>) => unknown> = {
+  pick_files: () => [addFake('季度報告.pdf', 3 * MB + 12345), addFake('會議紀錄.md', 2048)],
+  pick_folder: () => {
+    const a = addFake('hero@2x.png', 2 * MB);
+    const b = addFake('logo.svg', 40_000);
+    const c = addFake('說明.txt', 1200);
+    return {
+      root: '設計稿',
+      entries: [
+        { kind: 'dir', path: '首頁' },
+        { kind: 'file', path: '首頁/hero@2x.png', token: a.token, size: a.size, mtime: null },
+        { kind: 'file', path: '首頁/logo.svg', token: b.token, size: b.size, mtime: null },
+        { kind: 'file', path: '說明.txt', token: c.token, size: c.size, mtime: null },
+      ],
+      skipped: [{ path: '.DS_Store', reason: 'system' }],
+      totalSize: a.size + b.size + c.size,
+      fileCount: 3,
+    };
+  },
+  read_stripe: (a) => {
+    const f = fakeFiles.get(String(a.token));
+    if (!f) throw new Error('檔案未經選擇');
+    const off = Number(a.offset);
+    const len = Math.max(0, Math.min(Number(a.len), f.size - off));
+    const out = new Uint8Array(len);
+    for (let i = 0; i < len; i++) out[i] = (off + i + f.seed * 7) & 0xff;
+    return out;
+  },
+  storage_nodes: () => [0, 1, 2, 3, 4, 5, 6, 7],
+  has_shards: (a) => (a.ids as string[]).map((id) => shards.has(`${String(a.node)}/${id}`)),
+  get_shard: (a) => {
+    const d = shards.get(`${String(a.node)}/${String(a.id)}`);
+    if (!d) throw new Error('NotFound');
+    return d;
+  },
+  save_target_file: () => 'dl-file',
+  save_target_folder: () => ({ token: 'dl-dir', name: 'Downloads' }),
+  finish_download: (a) => {
+    const key = `${String(a.token)}/${String(a.path)}`;
+    writes.delete(key);
+    return String(a.path).split('/').pop() || '季度報告.pdf';
+  },
+  abort_download: () => undefined,
+  show_download: () => undefined,
+  save_upload_jobs: () => undefined,
+  upload_jobs: () => [],
+};
+Object.assign(handlers, fileHandlers);
+
 export const mockBackend = {
-  invoke: async <T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> => {
-    await delay();
+  invoke: async <T>(
+    cmd: string,
+    args: Record<string, unknown> | Uint8Array = {},
+    options?: { headers: Record<string, string> },
+  ): Promise<T> => {
+    await delay(
+      cmd.endsWith('_shard') || cmd === 'read_stripe' || cmd === 'write_partial' ? 5 : 200,
+    );
+    if (args instanceof Uint8Array) {
+      const h = options?.headers ?? {};
+      if (cmd === 'put_shard') shards.set(`${h['x-node']}/${h['x-id']}`, args.slice());
+      if (cmd === 'write_partial') {
+        const key = `${h['x-token']}/${decodeURIComponent(h['x-path'] ?? '')}`;
+        writes.set(key, (writes.get(key) ?? 0) + args.length);
+      }
+      return undefined as T;
+    }
     const h = handlers[cmd];
     if (!h) throw new Error(`mock: unknown command ${cmd}`);
     return h(args) as T;

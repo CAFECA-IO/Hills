@@ -177,7 +177,12 @@ export const EVENTS = {
   linkDone: 'hills://link-done',
 } as const;
 
-type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
+type InvokeOptions = { headers: Record<string, string> };
+type Invoke = <T>(
+  cmd: string,
+  args?: Record<string, unknown> | Uint8Array,
+  options?: InvokeOptions,
+) => Promise<T>;
 type Listen = <T>(event: string, cb: (payload: T) => void) => Promise<UnlistenFn>;
 
 interface Backend {
@@ -190,7 +195,7 @@ const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 let backend: Promise<Backend>;
 if (isTauri) {
   backend = Promise.resolve({
-    invoke: tauriInvoke,
+    invoke: (cmd, args, options) => tauriInvoke(cmd, args, options),
     listen: (event, cb) => tauriListen(event, (e) => cb(e.payload as never)),
   });
 } else if (import.meta.env.DEV) {
@@ -201,6 +206,43 @@ if (isTauri) {
 
 const call = async <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
   (await backend).invoke<T>(cmd, args);
+
+/** 二進位內容 + 標頭（Tauri raw request）。 */
+const callRaw = async <T>(cmd: string, body: Uint8Array, headers: Record<string, string>) =>
+  (await backend).invoke<T>(cmd, body, { headers });
+
+/** Rust 端以 tauri::ipc::Response 回傳的二進位。 */
+const callBytes = async (cmd: string, args: Record<string, unknown>): Promise<Uint8Array> => {
+  const r = await (await backend).invoke<ArrayBuffer | Uint8Array | number[]>(cmd, args);
+  return r instanceof Uint8Array ? r : new Uint8Array(r as ArrayBuffer);
+};
+
+// ── 檔案分享（technical-design §15、D39） ──────────────────
+
+export interface PickedFile {
+  token: string;
+  name: string;
+  size: number;
+  mtime: number | null;
+}
+
+export type FolderPickEntry =
+  | { kind: 'dir'; path: string }
+  | { kind: 'file'; path: string; token: string; size: number; mtime: number | null };
+
+export interface FolderPick {
+  root: string;
+  entries: FolderPickEntry[];
+  skipped: { path: string; reason: 'symlink' | 'system' | 'unreadable' }[];
+  totalSize: number;
+  fileCount: number;
+}
+
+export interface StoredUploadJob {
+  id: string;
+  tokens: (string | null)[];
+  state: unknown;
+}
 
 export const listen = async <T>(event: string, cb: (payload: T) => void) =>
   (await backend).listen<T>(event, cb);
@@ -246,6 +288,31 @@ export const api = {
   upsertOffice: (id: string | null, name: string) => call<string>('upsert_office', { id, name }),
   removeOffice: (id: string) => call<void>('remove_office', { id }),
   setLunchBreak: (start: string, end: string) => call<void>('set_lunch_break', { start, end }),
+  pickFiles: () => call<PickedFile[]>('pick_files'),
+  pickFolder: () => call<FolderPick | null>('pick_folder'),
+  readStripe: (token: string, offset: number, len: number) =>
+    callBytes('read_stripe', { token, offset, len }),
+  storageNodes: () => call<number[]>('storage_nodes'),
+  putShard: (node: number, id: string, data: Uint8Array) =>
+    callRaw<void>('put_shard', data, { 'x-node': String(node), 'x-id': id }),
+  hasShards: (node: number, ids: string[]) => call<boolean[]>('has_shards', { node, ids }),
+  getShard: (node: number, id: string) => callBytes('get_shard', { node, id }),
+  saveTargetFile: (name: string) => call<string | null>('save_target_file', { name }),
+  saveTargetFolder: () => call<{ token: string; name: string } | null>('save_target_folder'),
+  writePartial: (token: string, path: string, offset: number, data: Uint8Array) =>
+    callRaw<void>('write_partial', data, {
+      'x-token': token,
+      'x-path': encodeURIComponent(path),
+      'x-offset': String(offset),
+    }),
+  finishDownload: (token: string, path: string, size: number) =>
+    call<string>('finish_download', { token, path, size }),
+  abortDownload: (token: string, path: string) => call<void>('abort_download', { token, path }),
+  showDownload: (token: string, path: string, name: string, open: boolean) =>
+    call<void>('show_download', { token, path, name, open }),
+  saveUploadJobs: (jobs: { id: string; tokens: string[]; state: unknown }[]) =>
+    call<void>('save_upload_jobs', { jobs }),
+  uploadJobs: () => call<StoredUploadJob[]>('upload_jobs'),
   syncStatus: () => call<SyncStatus | null>('sync_status'),
   syncNow: () => call<void>('sync_now'),
   orgCode: () => call<Code>('org_code'),

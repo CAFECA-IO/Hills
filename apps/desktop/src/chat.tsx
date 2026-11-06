@@ -1,3 +1,5 @@
+import { AttachMenu, AttachmentCard, PendingUploads, UploadQueue } from './attachments';
+import { cancel, loadPending, parseAttachments, resume } from './share';
 /** M1 對話（ui-spec「聊天」M1 畫面、technical-design §14）。 */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import Markdown from 'react-markdown';
@@ -22,6 +24,13 @@ interface Props {
 
 export function Chat({ members, initial = null }: Props) {
   const convs = useLoad(api.conversations, ['convs', 'message', 'doc', 'roster']);
+  const [pending, setPending] = useState<string[]>([]);
+  useEffect(() => {
+    // 上次未完成的上傳（ui-spec「檔案分享」：下次開啟時詢問「繼續上傳？」）
+    void loadPending()
+      .then((list) => setPending(list.filter((j) => j.status === 'paused').map((j) => j.id)))
+      .catch(() => undefined);
+  }, []);
   const [current, setCurrent] = useState<string | null>(initial);
   const [creating, setCreating] = useState(false);
   const me = members.find((m) => m.isMe)?.id ?? '';
@@ -78,47 +87,60 @@ export function Chat({ members, initial = null }: Props) {
   };
 
   return (
-    <div className="flex h-full min-h-[480px] gap-4">
-      <aside className="flex w-60 shrink-0 flex-col gap-3">
-        <Button onClick={() => setCreating(true)}>{t('chat.new')}</Button>
-        <ErrorText message={convs.error} />
-        {list.length === 0 && <p className="text-sm text-muted">{t('chat.empty')}</p>}
-        {groups.length > 0 && (
-          <section>
-            <h2 className="px-3 text-xs font-medium text-muted">{t('chat.groups')}</h2>
-            <ul>{groups.map(row)}</ul>
-          </section>
-        )}
-        {dms.length > 0 && (
-          <section>
-            <h2 className="px-3 text-xs font-medium text-muted">{t('chat.dms')}</h2>
-            <ul>{dms.map(row)}</ul>
-          </section>
-        )}
-      </aside>
-      <section className="flex min-w-0 flex-1 flex-col rounded-card bg-surface shadow-sm">
-        {creating ? (
-          <NewConversation
-            members={members.filter((m) => !m.isMe)}
-            onCancel={() => setCreating(false)}
-            onDone={(id) => {
-              setCreating(false);
-              setCurrent(id);
-              convs.reload();
-            }}
-          />
-        ) : selected ? (
-          <Conversation
-            key={selected.id}
-            conv={selected}
-            me={me}
-            members={members}
-            nameOf={nameOf}
-          />
-        ) : (
-          <p className="m-auto text-sm text-muted">{t('chat.pick')}</p>
-        )}
-      </section>
+    <div className="flex flex-col gap-3">
+      <PendingUploads
+        count={pending.length}
+        onResume={() => {
+          pending.forEach(resume);
+          setPending([]);
+        }}
+        onDiscard={() => {
+          pending.forEach(cancel);
+          setPending([]);
+        }}
+      />
+      <div className="flex h-full min-h-[480px] gap-4">
+        <aside className="flex w-60 shrink-0 flex-col gap-3">
+          <Button onClick={() => setCreating(true)}>{t('chat.new')}</Button>
+          <ErrorText message={convs.error} />
+          {list.length === 0 && <p className="text-sm text-muted">{t('chat.empty')}</p>}
+          {groups.length > 0 && (
+            <section>
+              <h2 className="px-3 text-xs font-medium text-muted">{t('chat.groups')}</h2>
+              <ul>{groups.map(row)}</ul>
+            </section>
+          )}
+          {dms.length > 0 && (
+            <section>
+              <h2 className="px-3 text-xs font-medium text-muted">{t('chat.dms')}</h2>
+              <ul>{dms.map(row)}</ul>
+            </section>
+          )}
+        </aside>
+        <section className="flex min-w-0 flex-1 flex-col rounded-card bg-surface shadow-sm">
+          {creating ? (
+            <NewConversation
+              members={members.filter((m) => !m.isMe)}
+              onCancel={() => setCreating(false)}
+              onDone={(id) => {
+                setCreating(false);
+                setCurrent(id);
+                convs.reload();
+              }}
+            />
+          ) : selected ? (
+            <Conversation
+              key={selected.id}
+              conv={selected}
+              me={me}
+              members={members}
+              nameOf={nameOf}
+            />
+          ) : (
+            <p className="m-auto text-sm text-muted">{t('chat.pick')}</p>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
@@ -251,11 +273,13 @@ function Conversation({
                 mine={m.author === me}
                 nameOf={nameOf}
                 me={me}
+                author={members.find((x) => x.id === m.author)}
               />
             ))}
           </ul>
           <div ref={bottom} />
         </div>
+        <UploadQueue conv={conv.id} />
         <Composer conv={conv.id} candidates={candidates} onSent={msgs.reload} />
       </div>
       {panel && conv.kind === 'group' && (
@@ -270,13 +294,16 @@ function MessageItem({
   mine,
   me,
   nameOf,
+  author,
 }: {
   m: MessageView;
   mine: boolean;
   me: string;
   nameOf: (id: string) => string;
+  author: MemberView | undefined;
 }) {
   const mentioned = m.mentions.includes(me);
+  const attachments = m.kind === 'files' ? parseAttachments(m.attachments) : [];
   return (
     <li
       className={`rounded-control px-2 py-1 ${mentioned ? 'border-l-2 border-primary bg-bg' : ''}`}
@@ -308,6 +335,9 @@ function MessageItem({
           {m.body}
         </Markdown>
       </div>
+      {attachments.map((a, i) => (
+        <AttachmentCard key={i} a={a} author={author} createdAt={m.createdAt} />
+      ))}
     </li>
   );
 }
@@ -406,6 +436,7 @@ function Composer({
       )}
       <ErrorText message={error} />
       <div className="flex items-end gap-2">
+        <AttachMenu conv={conv} />
         <textarea
           ref={area}
           aria-label={t('chat.placeholder')}

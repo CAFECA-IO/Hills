@@ -6,8 +6,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use hills_node::{
-    ConvKind, CreateOrg, Event, LinkListener, LinkSession, MemberId, MemberStatus, Message, Node,
-    NodeOptions, PhraseLanguage, PresenceState, Pub32, Role, SecretStore, SyncStatus,
+    ConvKind, CreateOrg, Event, LinkListener, LinkSession, Location, Look, MemberId, MemberStatus,
+    Message, Node, NodeOptions, PhraseLanguage, PresenceState, Pub32, Role, SecretStore, StepInput,
+    SyncStatus, Task, TaskInput, TaskStatus,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -38,6 +39,8 @@ pub struct AppState {
     link_session: Mutex<Option<LinkSession>>,
     /// 前端目前開著的對話（該對話的新訊息不發通知）
     active_conv: std::sync::Mutex<Option<String>>,
+    /// 會議 / 午休 / 專注期間延後的通知數（technical-design §5.1 v0.11）
+    deferred: std::sync::Mutex<u32>,
 }
 
 impl AppState {
@@ -49,6 +52,7 @@ impl AppState {
             link_cancel: Mutex::new(None),
             link_session: Mutex::new(None),
             active_conv: std::sync::Mutex::new(None),
+            deferred: std::sync::Mutex::new(0),
         }
     }
 }
@@ -85,6 +89,9 @@ fn forward_events(app: &AppHandle, node: &Node) {
                     {
                         notify_message(&app, &node, conv, author, preview);
                     }
+                    if matches!(ev, Event::PresenceChanged) {
+                        flush_deferred(&app, &node);
+                    }
                     let _ = app.emit(events::NODE, name);
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
@@ -112,6 +119,12 @@ fn notify_message(app: &AppHandle, node: &Node, conv: &str, author: &MemberId, p
     if focused && viewing {
         return;
     }
+    if my_presence_defers(node) {
+        if let Ok(mut n) = app.state::<AppState>().deferred.lock() {
+            *n += 1;
+        }
+        return;
+    }
     let title = node
         .org()
         .members
@@ -124,6 +137,54 @@ fn notify_message(app: &AppHandle, node: &Node, conv: &str, author: &MemberId, p
         .title(title)
         .body(preview)
         .show();
+}
+
+/// 會議、午休、專注中，且回來時間未到（未設定則直到手動切換）時延後通知。
+pub(crate) fn defers(state: PresenceState, until: Option<i64>, now: i64) -> bool {
+    matches!(
+        state,
+        PresenceState::Meeting | PresenceState::Lunch | PresenceState::Focus
+    ) && until.is_none_or(|u| u > now)
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn my_presence_defers(node: &Node) -> bool {
+    node.presence()
+        .get(&node.member_id())
+        .is_some_and(|p| defers(p.state, p.until, now_ms()))
+}
+
+/// 狀態結束後，以一則摘要通知延後期間收到的訊息數。
+fn flush_deferred(app: &AppHandle, node: &Node) {
+    use tauri_plugin_notification::NotificationExt;
+    if my_presence_defers(node) {
+        return;
+    }
+    let count = app
+        .state::<AppState>()
+        .deferred
+        .lock()
+        .map(|mut n| std::mem::take(&mut *n))
+        .unwrap_or(0);
+    if count == 0 {
+        return;
+    }
+    let zh = node.org().locale.starts_with("zh");
+    let (title, body) = if zh {
+        ("Hills".to_string(), format!("剛才收到 {count} 則訊息"))
+    } else {
+        (
+            "Hills".to_string(),
+            format!("{count} messages arrived while you were away"),
+        )
+    };
+    let _ = app.notification().builder().title(title).body(body).show();
 }
 
 async fn install(app: &AppHandle, state: &AppState, node: Node) {
@@ -419,6 +480,45 @@ pub struct MemberView {
     /// None = 離線
     presence: Option<PresenceState>,
     note: String,
+    /// 回來時間（ms）
+    until: Option<i64>,
+    /// `hidden` / `remote` / `office:<id>`
+    location: String,
+    look: Option<Look>,
+}
+
+fn location_str(l: &Location) -> String {
+    match l {
+        Location::Hidden => "hidden".into(),
+        Location::Remote => "remote".into(),
+        Location::Office(id) => format!("office:{id}"),
+    }
+}
+
+fn parse_location(s: &str) -> CmdResult<Location> {
+    match s {
+        "hidden" => Ok(Location::Hidden),
+        "remote" => Ok(Location::Remote),
+        _ => s
+            .strip_prefix("office:")
+            .filter(|id| !id.is_empty() && id.len() <= 64)
+            .map(|id| Location::Office(id.to_owned()))
+            .ok_or_else(|| "地點格式錯誤".to_string()),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfficeView {
+    id: String,
+    name: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LunchView {
+    start: String,
+    end: String,
 }
 
 #[derive(Serialize)]
@@ -435,6 +535,8 @@ pub struct Overview {
     org_name: String,
     members: Vec<MemberView>,
     teams: Vec<TeamView>,
+    offices: Vec<OfficeView>,
+    lunch_break: Option<LunchView>,
 }
 
 #[tauri::command]
@@ -444,6 +546,7 @@ pub async fn overview(state: State<'_, AppState>) -> CmdResult<Overview> {
         let roles: std::collections::HashMap<MemberId, bool> = n.member_roles().into_iter().collect();
         let presence = n.presence();
         let me = n.member_id();
+        let looks = n.profiles().unwrap_or_default();
         let members = org
             .active_members()
             .map(|(id, m)| {
@@ -456,6 +559,9 @@ pub async fn overview(state: State<'_, AppState>) -> CmdResult<Overview> {
                     joined_at: m.joined_at,
                     presence: p.map(|p| p.state),
                     note: p.map(|p| p.note.clone()).unwrap_or_default(),
+                    until: p.and_then(|p| p.until),
+                    location: p.map(|p| location_str(&p.location)).unwrap_or_else(|| "hidden".into()),
+                    look: looks.get(id).copied(),
                 }
             })
             .collect();
@@ -468,7 +574,16 @@ pub async fn overview(state: State<'_, AppState>) -> CmdResult<Overview> {
                 members: t.members.iter().map(|m| m.to_string()).collect(),
             })
             .collect();
-        Ok(Overview { org_name: org.name, members, teams })
+        let offices = org
+            .offices
+            .iter()
+            .map(|(id, o)| OfficeView { id: id.clone(), name: o.name.clone() })
+            .collect();
+        let lunch_break = org
+            .lunch_break
+            .as_ref()
+            .map(|l| LunchView { start: l.start.clone(), end: l.end.clone() });
+        Ok(Overview { org_name: org.name, members, teams, offices, lunch_break })
     })
 }
 
@@ -477,11 +592,224 @@ pub async fn set_presence(
     state: State<'_, AppState>,
     presence: PresenceState,
     note: String,
+    until: Option<i64>,
+    location: Option<String>,
 ) -> CmdResult<()> {
+    let location = location.as_deref().map(parse_location).transpose()?;
     with_node!(state, n => {
-        n.set_presence(presence, &note).await;
+        match location {
+            Some(l) => n.set_presence_full(presence, &note, until, l).await,
+            // 舊介面（閒置自動暫離）：保留地點與回來時間
+            None => n.set_presence(presence, &note).await,
+        }
         Ok(())
     })
+}
+
+// ── 任務、焦點、角色外觀、辦公室（D40、technical-design §16.8 v0.11）──
+
+fn opt_member(s: &Option<String>) -> CmdResult<Option<MemberId>> {
+    s.as_deref()
+        .filter(|x| !x.is_empty())
+        .map(parse_member)
+        .transpose()
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StepView {
+    id: String,
+    title: String,
+    assignee: Option<String>,
+    done: bool,
+    done_at: Option<i64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskView {
+    id: String,
+    team: String,
+    title: String,
+    assignee: Option<String>,
+    status: TaskStatus,
+    due_at: Option<i64>,
+    steps: Vec<StepView>,
+    created_by: Option<String>,
+    created_at: i64,
+    updated_at: i64,
+}
+
+impl From<Task> for TaskView {
+    fn from(t: Task) -> Self {
+        Self {
+            id: t.id,
+            team: t.team,
+            title: t.title,
+            assignee: t.assignee.map(|m| m.to_string()),
+            status: t.status,
+            due_at: t.due_at,
+            steps: t
+                .steps
+                .into_iter()
+                .map(|s| StepView {
+                    id: s.id,
+                    title: s.title,
+                    assignee: s.assignee.map(|m| m.to_string()),
+                    done: s.done,
+                    done_at: s.done_at,
+                })
+                .collect(),
+            created_by: t.created_by.map(|m| m.to_string()),
+            created_at: t.created_at,
+            updated_at: t.updated_at,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StepArgs {
+    id: Option<String>,
+    title: String,
+    assignee: Option<String>,
+    #[serde(default)]
+    done: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskArgs {
+    title: String,
+    assignee: Option<String>,
+    status: Option<TaskStatus>,
+    due_at: Option<i64>,
+    #[serde(default)]
+    steps: Vec<StepArgs>,
+}
+
+impl TaskArgs {
+    fn into_input(self) -> CmdResult<TaskInput> {
+        Ok(TaskInput {
+            title: self.title,
+            assignee: opt_member(&self.assignee)?,
+            status: self.status,
+            due_at: self.due_at,
+            steps: self
+                .steps
+                .into_iter()
+                .map(|s| {
+                    Ok(StepInput {
+                        id: s.id,
+                        title: s.title,
+                        assignee: opt_member(&s.assignee)?,
+                        done: s.done,
+                    })
+                })
+                .collect::<CmdResult<_>>()?,
+        })
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FocusView {
+    task: Option<TaskView>,
+    manual: bool,
+}
+
+#[tauri::command]
+pub async fn tasks(state: State<'_, AppState>) -> CmdResult<Vec<TaskView>> {
+    with_node!(state, n => Ok(n.tasks().map_err(e)?.into_iter().map(Into::into).collect()))
+}
+
+#[tauri::command]
+pub async fn create_task(
+    state: State<'_, AppState>,
+    team: String,
+    input: TaskArgs,
+) -> CmdResult<String> {
+    let input = input.into_input()?;
+    with_node!(state, n => n.create_task(&team, input).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn update_task(
+    state: State<'_, AppState>,
+    team: String,
+    task: String,
+    input: TaskArgs,
+) -> CmdResult<()> {
+    let input = input.into_input()?;
+    with_node!(state, n => n.update_task(&team, &task, input).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn set_step_done(
+    state: State<'_, AppState>,
+    team: String,
+    task: String,
+    step: String,
+    done: bool,
+) -> CmdResult<()> {
+    with_node!(state, n => n.set_step_done(&team, &task, &step, done).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn delete_task(state: State<'_, AppState>, team: String, task: String) -> CmdResult<()> {
+    with_node!(state, n => n.delete_task(&team, &task).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn focus(state: State<'_, AppState>) -> CmdResult<FocusView> {
+    with_node!(state, n => {
+        let f = n.focus().map_err(e)?;
+        Ok(FocusView { task: f.task.map(Into::into), manual: f.manual })
+    })
+}
+
+/// 手動選擇焦點；`task` 為空時回到自動。
+#[tauri::command]
+pub async fn set_focus(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    team: Option<String>,
+    task: Option<String>,
+) -> CmdResult<()> {
+    with_node!(state, n => {
+        let choice = team.as_deref().zip(task.as_deref());
+        n.set_focus(choice).map_err(e)?;
+        let _ = app.emit(events::NODE, "doc");
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub async fn set_profile(state: State<'_, AppState>, look: Look) -> CmdResult<()> {
+    with_node!(state, n => n.set_profile(look).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn upsert_office(
+    state: State<'_, AppState>,
+    id: Option<String>,
+    name: String,
+) -> CmdResult<String> {
+    with_node!(state, n => n.upsert_office(id.as_deref(), &name).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn remove_office(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    with_node!(state, n => n.remove_office(&id).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn set_lunch_break(
+    state: State<'_, AppState>,
+    start: String,
+    end: String,
+) -> CmdResult<()> {
+    with_node!(state, n => n.set_lunch_break(&start, &end).await.map_err(e))
 }
 
 #[tauri::command]
@@ -796,6 +1124,24 @@ mod tests {
         assert_eq!(parse_pub(&hex).unwrap(), Pub32([0xab; 32]));
         assert!(parse_pub("abc").is_err());
         assert!(parse_pub(&"zz".repeat(32)).is_err());
+    }
+
+    #[test]
+    fn location_roundtrip() {
+        for s in ["hidden", "remote", "office:01ABC"] {
+            assert_eq!(location_str(&parse_location(s).unwrap()), s);
+        }
+        assert!(parse_location("office:").is_err());
+        assert!(parse_location("moon").is_err());
+    }
+
+    #[test]
+    fn notification_deferral() {
+        assert!(defers(PresenceState::Focus, None, 10));
+        assert!(defers(PresenceState::Lunch, Some(11), 10));
+        assert!(!defers(PresenceState::Meeting, Some(10), 10));
+        assert!(!defers(PresenceState::Online, None, 10));
+        assert!(!defers(PresenceState::Away, Some(99), 10));
     }
 
     #[test]

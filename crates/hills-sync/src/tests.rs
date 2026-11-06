@@ -154,6 +154,38 @@ fn team_members_only() {
 }
 
 #[test]
+fn team_profile_only_by_owner() {
+    let w = world();
+    let alice = w.alice.0.member_id();
+    let bob = w.bob.0.member_id();
+    let v = Validator::new(&w.trust, &w.dir);
+    let put = |doc: &mut AutoCommit, key: String, dev: &DeviceKey| {
+        doc.put(ROOT, key.as_str(), "{\"hair\":1}").unwrap();
+        doc.commit();
+        sign_change("team/t1", &doc.get_last_local_change().unwrap(), dev).unwrap()
+    };
+    let mut doc = AutoCommit::new();
+    let own = put(&mut doc, format!("profile:{alice}"), &w.alice.1);
+    assert!(v.check("team/t1", &own).is_ok());
+    let other = put(&mut doc, format!("profile:{alice}"), &w.bob.1);
+    assert_eq!(
+        v.check("team/t1", &other).unwrap_err(),
+        SyncError::NotOwnProfile
+    );
+    doc.delete(ROOT, format!("profile:{alice}").as_str())
+        .unwrap();
+    doc.commit();
+    let del = sign_change("team/t1", &doc.get_last_local_change().unwrap(), &w.bob.1).unwrap();
+    assert_eq!(
+        v.check("team/t1", &del).unwrap_err(),
+        SyncError::NotOwnProfile
+    );
+    // 其他 key 不受限制
+    let task = put(&mut doc, format!("task:{bob}"), &w.alice.1);
+    assert!(v.check("team/t1", &task).is_ok());
+}
+
+#[test]
 fn revoked_device_rejected() {
     let mut w = world();
     let mut doc = AutoCommit::new();

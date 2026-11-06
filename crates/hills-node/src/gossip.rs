@@ -140,11 +140,16 @@ pub(crate) async fn presence_loop(weak: Weak<Inner>) {
         let Some(inner) = weak.upgrade() else { return };
         let interval = inner.opts.presence_interval;
         let timeout = inner.opts.presence_timeout;
-        let p = {
+        let (p, expired) = {
             let mut p = lock(&inner.my_presence);
-            p.at = now_ms();
-            p.clone()
+            let now = now_ms();
+            let expired = expire(&mut p, now);
+            p.at = now;
+            (p.clone(), expired)
         };
+        if expired {
+            inner.emit(Event::PresenceChanged);
+        }
         let me = p.member;
         lock(&inner.presence).insert(me, (p.clone(), Instant::now()));
         broadcast(&inner, GossipMsg::Presence(p)).await;
@@ -159,5 +164,45 @@ pub(crate) async fn presence_loop(weak: Weak<Inner>) {
         }
         drop(inner);
         tokio::time::sleep(interval).await;
+    }
+}
+
+/// 回來時間已到：會議、午休、暫離、專注、忙碌、休假回到上線（technical-design §5.1 v0.11）。
+pub(crate) fn expire(p: &mut hills_proto::gossip::Presence, now: hills_proto::Timestamp) -> bool {
+    use hills_proto::gossip::PresenceState;
+    match p.until {
+        Some(u) if u <= now => {
+            p.until = None;
+            if p.state != PresenceState::Offline {
+                p.state = PresenceState::Online;
+            }
+            true
+        }
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use hills_proto::MemberId;
+    use hills_proto::gossip::{Location, Presence, PresenceState};
+
+    #[test]
+    fn until_expires_back_to_online() {
+        let mut p = Presence {
+            member: MemberId([1; 16]),
+            state: PresenceState::Lunch,
+            note: String::new(),
+            current_task: None,
+            at: 0,
+            until: Some(100),
+            location: Location::Remote,
+        };
+        assert!(!super::expire(&mut p, 99));
+        assert_eq!(p.state, PresenceState::Lunch);
+        assert!(super::expire(&mut p, 100));
+        assert_eq!(p.state, PresenceState::Online);
+        assert_eq!(p.until, None);
+        assert!(!super::expire(&mut p, 200));
     }
 }

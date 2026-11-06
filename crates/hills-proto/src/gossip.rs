@@ -18,6 +18,19 @@ pub enum PresenceState {
     Away,
     Leave,
     Offline,
+    /// 午休（D40）；加在最後，既有值的編號不變
+    Lunch,
+}
+
+/// 成員自己選擇的地點（technical-design §5.1 v0.11）。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Location {
+    /// 不顯示地點
+    #[default]
+    Hidden,
+    Remote,
+    /// org 文件 `offices/<id>`
+    Office(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,6 +40,9 @@ pub struct Presence {
     pub note: String,
     pub current_task: Option<String>,
     pub at: Timestamp,
+    /// 「幾點回來」；到期後回到上線
+    pub until: Option<Timestamp>,
+    pub location: Location,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -34,6 +34,19 @@ pub struct InviteRec {
     pub revoked: bool,
 }
 
+/// 辦公室（technical-design §16.8 v0.11；M1 不比對 Wi-Fi）。
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct OfficeRec {
+    pub name: String,
+}
+
+/// 午休時段（組織時區的 `HH:MM`）。
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct LunchBreak {
+    pub start: String,
+    pub end: String,
+}
+
 /// org 文件的唯讀快照。
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct OrgSnapshot {
@@ -43,6 +56,8 @@ pub struct OrgSnapshot {
     pub members: BTreeMap<MemberId, MemberRec>,
     pub teams: BTreeMap<String, TeamRec>,
     pub invites: BTreeMap<String, InviteRec>,
+    pub offices: BTreeMap<String, OfficeRec>,
+    pub lunch_break: Option<LunchBreak>,
     /// 對話現任成員（由本人可解密的 meta 投影，§14.1；不屬於 org 文件）
     #[serde(skip)]
     pub convs: BTreeMap<String, BTreeMap<MemberId, u32>>,
@@ -214,6 +229,24 @@ pub fn read(doc: &AutoCommit) -> OrgSnapshot {
             );
         }
     }
+    if let Some(offices) = get_obj(doc, &ROOT, "offices") {
+        for k in doc.keys(&offices) {
+            let Some(o) = get_obj(doc, &offices, &k) else {
+                continue;
+            };
+            s.offices.insert(
+                k.clone(),
+                OfficeRec {
+                    name: get_str(doc, &o, "name").unwrap_or_default(),
+                },
+            );
+        }
+    }
+    if let Some(l) = get_obj(doc, &ROOT, "lunchBreak")
+        && let (Some(start), Some(end)) = (get_str(doc, &l, "start"), get_str(doc, &l, "end"))
+    {
+        s.lunch_break = Some(LunchBreak { start, end });
+    }
     s
 }
 
@@ -336,6 +369,57 @@ pub fn revoke_invite(doc: &mut AutoCommit, id: &str) -> R<()> {
     Ok(())
 }
 
+/// 新增或改名辦公室。
+pub fn upsert_office(doc: &mut AutoCommit, id: &str, name: &str) -> R<()> {
+    let offices = ensure_map(doc, &ROOT, "offices")?;
+    let o = match get_obj(doc, &offices, id) {
+        Some(o) => o,
+        None => {
+            let o = doc.put_object(&offices, id, ObjType::Map)?;
+            doc.put_object(&o, "wifiHashes", ObjType::List)?;
+            o
+        }
+    };
+    doc.put(&o, "name", name)?;
+    Ok(())
+}
+
+pub fn remove_office(doc: &mut AutoCommit, id: &str) -> R<()> {
+    let offices = ensure_map(doc, &ROOT, "offices")?;
+    if get_obj(doc, &offices, id).is_some() {
+        doc.delete(&offices, id)?;
+    }
+    Ok(())
+}
+
+/// 設定或清除午休時段。
+pub fn set_lunch_break(doc: &mut AutoCommit, lunch: Option<&LunchBreak>) -> R<()> {
+    match lunch {
+        Some(l) => {
+            let m = doc.put_object(ROOT, "lunchBreak", ObjType::Map)?;
+            doc.put(&m, "start", l.start.as_str())?;
+            doc.put(&m, "end", l.end.as_str())?;
+        }
+        None => {
+            if get_obj(doc, &ROOT, "lunchBreak").is_some() {
+                doc.delete(ROOT, "lunchBreak")?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `HH:MM`（00:00–23:59）。
+pub fn valid_hhmm(s: &str) -> bool {
+    let Some((h, m)) = s.split_once(':') else {
+        return false;
+    };
+    h.len() == 2
+        && m.len() == 2
+        && h.parse::<u8>().is_ok_and(|h| h < 24)
+        && m.parse::<u8>().is_ok_and(|m| m < 60)
+}
+
 // ---------- member/<id>/secrets ----------
 
 pub fn put_invite_secret(doc: &mut AutoCommit, invite_id: &str, secret_hex: &str) -> R<()> {
@@ -401,6 +485,32 @@ mod tests {
         assert!(!s.is_team_member("general", &b));
         assert_eq!(s.members[&b].removed_at, Some(3));
         assert_eq!(s.active_members().count(), 1);
+    }
+
+    #[test]
+    fn offices_and_lunch() {
+        let mut doc = AutoCommit::new();
+        upsert_office(&mut doc, "tpe", "台北辦公室").unwrap();
+        upsert_office(&mut doc, "hsz", "新竹").unwrap();
+        upsert_office(&mut doc, "hsz", "新竹辦公室").unwrap();
+        set_lunch_break(
+            &mut doc,
+            Some(&LunchBreak {
+                start: "12:00".into(),
+                end: "13:30".into(),
+            }),
+        )
+        .unwrap();
+        let s = read(&doc);
+        assert_eq!(s.offices.len(), 2);
+        assert_eq!(s.offices["hsz"].name, "新竹辦公室");
+        assert_eq!(s.lunch_break.as_ref().unwrap().end, "13:30");
+        remove_office(&mut doc, "tpe").unwrap();
+        set_lunch_break(&mut doc, None).unwrap();
+        let s = read(&doc);
+        assert_eq!(s.offices.len(), 1);
+        assert!(s.lunch_break.is_none());
+        assert!(valid_hhmm("09:05") && !valid_hhmm("24:00") && !valid_hhmm("9:5"));
     }
 
     #[test]

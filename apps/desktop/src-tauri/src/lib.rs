@@ -54,6 +54,17 @@ pub fn run() {
             commands::remove_conv_member,
             commands::rename_conv,
             commands::set_active_conv,
+            commands::tasks,
+            commands::create_task,
+            commands::update_task,
+            commands::set_step_done,
+            commands::delete_task,
+            commands::focus,
+            commands::set_focus,
+            commands::set_profile,
+            commands::upsert_office,
+            commands::remove_office,
+            commands::set_lunch_break,
         ])
         .run(tauri::generate_context!());
     if let Err(err) = result {

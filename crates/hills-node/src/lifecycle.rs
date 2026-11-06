@@ -326,6 +326,52 @@ impl Node {
         self.change("org", |doc| Ok(org::rename(doc, &name)?)).await
     }
 
+    /// 管理者新增或改名辦公室（D40）；`id` 為空時新增。回傳辦公室 ID。
+    pub async fn upsert_office(&self, id: Option<&str>, name: &str) -> Result<String> {
+        let name = name.trim().to_owned();
+        if name.is_empty() || name.chars().count() > 40 {
+            bail!("辦公室名稱需為 1–40 字");
+        }
+        if !self.is_admin() {
+            bail!("只有管理者可以設定辦公室");
+        }
+        let id = match id {
+            Some(i) if !i.is_empty() => i.to_owned(),
+            _ => crate::conv::ulid(crate::node::now_ms())?,
+        };
+        self.change("org", |doc| Ok(org::upsert_office(doc, &id, &name)?))
+            .await?;
+        Ok(id)
+    }
+
+    pub async fn remove_office(&self, id: &str) -> Result<()> {
+        if !self.is_admin() {
+            bail!("只有管理者可以設定辦公室");
+        }
+        self.change("org", |doc| Ok(org::remove_office(doc, id)?))
+            .await
+    }
+
+    /// 管理者設定午休時段（`HH:MM`）；兩者皆空時清除。
+    pub async fn set_lunch_break(&self, start: &str, end: &str) -> Result<()> {
+        if !self.is_admin() {
+            bail!("只有管理者可以設定午休時段");
+        }
+        let lunch = if start.is_empty() && end.is_empty() {
+            None
+        } else {
+            if !org::valid_hhmm(start) || !org::valid_hhmm(end) || start >= end {
+                bail!("午休時段格式需為 HH:MM，且結束晚於開始");
+            }
+            Some(org::LunchBreak {
+                start: start.to_owned(),
+                end: end.to_owned(),
+            })
+        };
+        self.change("org", |doc| Ok(org::set_lunch_break(doc, lunch.as_ref())?))
+            .await
+    }
+
     /// 管理者停用成員：撤銷、輪替 GK 與其所屬小組 TK、從 org 文件移除（technical-design §3.7）。
     pub async fn revoke_member(&self, member: MemberId) -> Result<()> {
         let inner = &self.inner;

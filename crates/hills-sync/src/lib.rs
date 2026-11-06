@@ -42,6 +42,23 @@ pub fn append_only_by(change: &Change, author: &MemberId) -> bool {
     })
 }
 
+/// team 文件根物件上 `profile:` 開頭的 key 只能由本人放入字串（technical-design §16.8 v0.11）。
+pub fn own_profile_only(change: &Change, author: &MemberId) -> bool {
+    use automerge::ScalarValue;
+    use automerge::legacy::{Key, ObjectId, OpType};
+    let mine = format!("profile:{author}");
+    let decoded = change.decode();
+    decoded
+        .operations
+        .iter()
+        .all(|op| match (&op.obj, &op.key) {
+            (ObjectId::Root, Key::Map(k)) if k.starts_with("profile:") => {
+                *k == mine && !op.insert && matches!(&op.action, OpType::Put(ScalarValue::Str(_)))
+            }
+            _ => true,
+        })
+}
+
 /// 判斷驗證通過的成員可否寫入此類文件（technical-design §4.1 表格）。
 pub fn allowed(kind: &DocKind, who: &Verified, dir: &dyn Directory) -> bool {
     match kind {
@@ -70,6 +87,8 @@ pub enum SyncError {
     Forbidden,
     #[error("對話紀錄只能新增自己的訊息")]
     NotAppendOnly,
+    #[error("只能修改自己的角色外觀")]
+    NotOwnProfile,
     #[error("簽署裝置與宣告的作者不同")]
     AuthorMismatch,
     #[error("不支援的版本")]
@@ -160,6 +179,9 @@ impl<'a> Validator<'a> {
         }
         if matches!(kind, DocKind::ConvLog(_)) && !append_only_by(&change, &who.member_id) {
             return Err(SyncError::NotAppendOnly);
+        }
+        if matches!(kind, DocKind::Team(_)) && !own_profile_only(&change, &who.member_id) {
+            return Err(SyncError::NotOwnProfile);
         }
         Ok((change, who))
     }

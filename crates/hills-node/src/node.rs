@@ -12,7 +12,7 @@ use hills_identity::secret_store::SecretStore;
 use hills_identity::trust::TrustStore;
 use hills_net::mailbox::MailboxClient;
 use hills_net::to_endpoint_addr;
-use hills_proto::gossip::{Presence, PresenceState};
+use hills_proto::gossip::{Location, Presence, PresenceState};
 use hills_proto::{
     DeviceCert, EncryptedBundle, MemberId, Pub32, Roster, Signed, SignedChange, Timestamp,
     WrappedKey,
@@ -123,6 +123,8 @@ pub(crate) struct State {
 
 /// pending bundle 的上限（對話 bundle 無法事先判斷是否為本人所屬）。
 const MAX_PENDING: usize = 5000;
+/// 本人選擇的地點（secret 檔，重新啟動後沿用）
+const LOCATION_FILE: &str = "location";
 /// 暫存對話 change 的上限。
 const MAX_HELD: usize = 5000;
 
@@ -552,12 +554,35 @@ impl Node {
             .unwrap_or(false)
     }
 
-    /// 設定自己的上線狀態並立即廣播。
+    /// 設定自己的上線狀態並立即廣播（保留目前的回來時間與地點）。
     pub async fn set_presence(&self, state: PresenceState, note: &str) {
+        let (until, location) = {
+            let p = lock(&self.inner.my_presence);
+            (p.until, p.location.clone())
+        };
+        self.set_presence_full(state, note, until, location).await;
+    }
+
+    /// 設定狀態、回來時間與地點（technical-design §5.1 v0.11）；地點存在本機，重新啟動後沿用。
+    pub async fn set_presence_full(
+        &self,
+        state: PresenceState,
+        note: &str,
+        until: Option<Timestamp>,
+        location: Location,
+    ) {
+        if lock(&self.inner.my_presence).location != location
+            && let Ok(raw) = postcard::to_allocvec(&location)
+            && let Err(e) = self.inner.store.write_secret_file(LOCATION_FILE, &raw)
+        {
+            tracing::warn!("無法保存地點：{e}");
+        }
         let p = {
             let mut p = lock(&self.inner.my_presence);
             p.state = state;
             p.note = note.chars().take(140).collect();
+            p.until = until.filter(|u| *u > now_ms());
+            p.location = location;
             p.at = now_ms();
             p.clone()
         };
@@ -701,6 +726,12 @@ impl Node {
             SyncStatus::Offline
         };
         let (events, _) = broadcast::channel(256);
+        let location: Location = store
+            .read_secret_file(LOCATION_FILE)
+            .ok()
+            .flatten()
+            .and_then(|raw| postcard::from_bytes(&raw).ok())
+            .unwrap_or_default();
         let inner = Arc::new(Inner {
             dir: dir.to_owned(),
             opts,
@@ -723,6 +754,8 @@ impl Node {
                 note: String::new(),
                 current_task: None,
                 at: now_ms(),
+                until: None,
+                location,
             }),
             events,
             status: Mutex::new(status),

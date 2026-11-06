@@ -1,7 +1,7 @@
 # Hills 自架部署（M0）
 
-> 版本：v0.3 · 2026-11-06 · 對應 [technical-design.md](./technical-design.md) §10、§16.9
-> M0 部署 **relay**（iroh-relay，NAT 穿透與中繼）與 **mailbox**（離線信箱、roster 分發、邀請、封裝金鑰、位址簿）。tsa、storage 隨 M1 加入。
+> 版本：v0.5 · 2026-11-06 · 對應 [technical-design.md](./technical-design.md) §10、§15.6–15.7、§16.9
+> 部署 **relay**（iroh-relay，NAT 穿透與中繼）、**mailbox**（離線信箱、roster 分發、邀請、封裝金鑰、位址簿）與 M1 的 **storage-0…7**（檔案分片，D39）。tsa 隨假勤功能加入。
 
 伺服器只看得到加密後的資料與技術中繼資料（technical-design §5.2、§16.7），看不到訊息或文件內容。
 
@@ -12,7 +12,8 @@
 | 主機 | 1 vCPU、1 GB RAM、10 GB 磁碟起；Linux（Debian / Ubuntu 皆可）；有固定公網 IPv4 |
 | 軟體 | Docker Engine 24 以上、Docker Compose v2 |
 | 網域 | 一個子網域給 relay，例如 `relay.example.com`，DNS **A 記錄**指向主機公網 IP |
-| 防火牆 | TCP 80、TCP 443、UDP 7842（relay）、UDP 7843（mailbox，可用 `HILLS_UDP_PORT` 修改） |
+| 防火牆 | TCP 80、TCP 443、UDP 7842（relay）、UDP 7843（mailbox，可用 `HILLS_UDP_PORT` 修改）、UDP 7850–7857（storage-0…7，可用 `HILLS_STORAGE_PORT_BASE` 修改） |
+| 磁碟 | 檔案分享：每 1 GB 檔案約占 1.6 GB（RS 8/5）；建議把 8 個 storage volume 分散在不同磁碟（technical-design §15.7） |
 
 TCP 80 用於 LetsEncrypt 自動取得憑證，需要保持開放。
 
@@ -75,6 +76,8 @@ docker compose exec mailbox cat /data/mailbox-code.txt
 |------|------|------|
 | mailbox | volume `mailbox-data`（`/data`） | `index.sqlite`、`blobs/`、`node.key`（mailbox 身分，遺失後連線碼會改變） |
 | relay | volume `relay-data`（`/data/certs`） | LetsEncrypt 憑證，遺失時會自動重新申請 |
+| storage-0…7 | volume `storage-0-data` … `storage-7-data` | 檔案分片（密文）與 `node.key`；任 3 個遺失時檔案仍可下載，遺失的分片需由寄件者重新分享（修復流程 M2） |
+| storage-codes | volume `storage-codes` | 各節點的連線碼，由節點啟動時重新寫入，不需備份 |
 
 ```bash
 docker compose stop mailbox
@@ -103,3 +106,5 @@ docker compose up -d --build
 | 建立組織後一直「離線」，mailbox 日誌出現拒絕連線 | mailbox 已被其他組織綁定，或 `HILLS_ORG_ROOT_PUB` 與你的組織不同；重新部署時需清除 `mailbox-data` volume |
 | 啟動時 `Bind for …:8080 failed: port is already allocated` 之類的埠衝突 | 主機上已有服務占用該埠；在 `.env` 修改 `HILLS_HEALTH_PORT`（健康檢查，預設 18080）或 `HILLS_UDP_PORT` |
 | 加入後一直「等待核准」 | 建立該邀請的管理者裝置需上線一次 |
+| 附件一直「上傳中」或顯示「沒有可用的儲存節點」 | `docker compose ps` 確認 storage-0…7 都在執行；防火牆 UDP 7850–7857；`docker compose logs storage-0`；mailbox 需能讀到 `storage-codes` volume（`docker compose exec mailbox ls /storage-codes`） |
+| 附件顯示「檔案目前無法下載」 | 可用的 storage 節點少於 5 個；啟動停止的節點後重試 |

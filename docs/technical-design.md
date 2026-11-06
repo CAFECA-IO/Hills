@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.11 草案 · 2026-11-06 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.12 草案 · 2026-11-06 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15。
 
 ## 1. 元件總覽
@@ -630,6 +630,13 @@ M1 自行實作輕量物件節點（Rust），部署 8 個實例；日後可替�
 - **保留**：節點每日清除過期物件。
 - **配額**：每位成員在每個節點的總容量（預設 20 GB，可由環境變數調整）；單檔上限由前端檢查（預設 5 GB）。超過時回 `TooLarge`。
 - **節點看到的資訊**：分片密文、大小、上傳者的成員 ID 與時間；看不到檔名、目錄結構、內容。
+- **實作細節**（v0.12）：
+  - 協定定義在 `hills-proto::storage`：`Request = Hello | PutRoster | Has{ids} | Put{id, data, expires_at} | Get{id, offset, len} | Health`，回應 `Ok | Has(Vec<bool>) | Stored{duplicate} | Data(bytes) | Health{objects, bytes} | Error{code, message}`（錯誤碼與 mailbox 相同）。`Has` 一次最多 64 個 ID；`Get` 的 `len = 0` 表示到結尾。
+  - 信任邏輯（Hello、綁定組織、roster、每個請求重新檢查撤銷）與 mailbox 共用 `hills-net::gate::TrustGate`，兩者只差在持久化方式。
+  - 節點資料目錄：`node.key`、`index.sqlite`（`objects(id, size, uploader, created_at, expires_at)`、信任狀態）、`objects/<前 2 碼>/<sha256>`（先寫 `.tmp` 再改名）。
+  - **儲存節點連線碼**：`hills-sto1-` + base32(postcard(`StorageTicket{v, index, node: PeerAddr}`))；節點把它寫到 `HILLS_STORAGE_CODES_DIR/storage-<index>.txt`。mailbox 讀同一個資料夾回應 `Services`（依 `index` 排序，缺號略過）。
+  - 環境變數：`HILLS_NODE_INDEX`（0–7）、`HILLS_DATA_DIR`、`HILLS_UDP_PORT`、`HILLS_PUBLIC_ADDR`、`HILLS_RELAY`、`HILLS_STORAGE_CODES_DIR`、`HILLS_QUOTA_BYTES`（每位成員，預設 20 GB）、`HILLS_ORG_ROOT_PUB`（選填）。
+  - 客戶端（hills-node）：每次同步以 `Services` 更新節點清單並保存；對每個節點維持一條已 Hello 的連線；管理者裝置推送 roster 給 mailbox 時也推送給每個節點。
 
 ### 15.7 部署與容錯
 

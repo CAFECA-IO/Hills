@@ -766,15 +766,17 @@ org = {
 }
 
 team/<teamId> = {                                         // v0.11（D40）
-  tasks:    { <taskId ULID>: { title, assignee?, status: todo|doing|review|done, dueAt?,
-                               steps: [ { id, title, assignee?, done, doneAt? } ],
-                               createdBy, createdAt, updatedAt } },
-  profiles: { <memberId>: { hair, shirt, skin } },         // 角色外觀，固定色盤的索引
+  "task:<taskId ULID>": { title, assignee?, status: todo|doing|review|done, dueAt?,
+                          steps: [ { id, title, assignee?, done, doneAt? } ],
+                          createdBy, createdAt, updatedAt },
+  "profile:<memberId>": "{\"hair\":0,\"shirt\":3,\"skin\":1}",   // 角色外觀（JSON 字串，固定色盤的索引）
 }
 ```
 
+- 任務與外觀都放在根物件的獨立 key（不共用 `tasks` / `profiles` 容器），避免兩人同時建立第一個容器時 Automerge 只保留其中一個。
+
 - `offices`、`lunchBreak` 只有管理者可寫（org 文件規則）。
-- `team/<id>` 為多人寫入（§4）：任務全組可編輯；`profiles/<memberId>` 只有本人寫入，投影層只採用作者為該成員的變更，UI 也只讓本人編輯（M1 簡化）。成員把外觀寫進自己所屬的每個小組文件，讀取時取任一份。
+- `team/<id>` 為多人寫入（§4）：任務全組可編輯；`profile:<memberId>` 只有本人可寫，由驗證層檢查（根物件上 `profile:` 開頭的 key 必須是作者本人，且只能放入字串），他人的寫入整筆 change 拒絕。成員把外觀寫進自己所屬的每個小組文件，讀取時取任一份。
 - **焦點**（feature-plan §5.4）：候選為指派給我、或下一個未完成步驟指派給我的未完成任務；依「期限最近 → 卡住別人（下一步負責人不是我但我負責的步驟未完成）→ 指派給我 → 建立時間」排序。手動選擇的焦點只存在本機（secret 檔 `focus`），任務完成或刪除時回到自動。
 
 `Directory`（§4.2）由 org 文件投影提供。M0 建立組織時自動建立一個預設小組。

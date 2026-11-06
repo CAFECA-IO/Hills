@@ -226,3 +226,21 @@ impl Node {
             .await
     }
 }
+
+/// 未完成的上傳工作（含檔案金鑰，以儲存金鑰加密存在本機，technical-design §15.2 續傳）。
+const UPLOADS_FILE: &str = "uploads";
+
+impl Node {
+    pub fn save_upload_jobs(&self, data: &[u8]) -> Result<()> {
+        self.inner.store.write_secret_file(UPLOADS_FILE, data)?;
+        Ok(())
+    }
+
+    pub fn upload_jobs(&self) -> Result<Option<Vec<u8>>> {
+        Ok(self
+            .inner
+            .store
+            .read_secret_file(UPLOADS_FILE)?
+            .map(|z| z.to_vec()))
+    }
+}

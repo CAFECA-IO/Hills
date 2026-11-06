@@ -16,9 +16,9 @@ use tokio::sync::{Mutex, oneshot};
 
 use crate::keychain::Keychain;
 
-type CmdResult<T> = Result<T, String>;
+pub(crate) type CmdResult<T> = Result<T, String>;
 
-fn e(err: impl std::fmt::Display) -> String {
+pub(crate) fn e(err: impl std::fmt::Display) -> String {
     err.to_string()
 }
 
@@ -32,7 +32,9 @@ pub mod events {
 pub struct AppState {
     dir: PathBuf,
     secrets: Arc<dyn SecretStore>,
-    node: Mutex<Option<Node>>,
+    pub(crate) node: Mutex<Option<Node>>,
+    /// 使用者本次選擇的檔案與下載目標（technical-design §15.2–15.5）
+    pub(crate) files: std::sync::Mutex<crate::files::Registry>,
     /// 新裝置端：等待舊裝置（取消用）
     link_cancel: Mutex<Option<oneshot::Sender<()>>>,
     /// 舊裝置端：已計算 SAS、等待使用者確認
@@ -53,6 +55,7 @@ impl AppState {
             link_session: Mutex::new(None),
             active_conv: std::sync::Mutex::new(None),
             deferred: std::sync::Mutex::new(0),
+            files: std::sync::Mutex::new(crate::files::Registry::default()),
         }
     }
 }
@@ -193,6 +196,7 @@ async fn install(app: &AppHandle, state: &AppState, node: Node) {
     let _ = app.emit(events::NODE, "all");
 }
 
+#[macro_export]
 macro_rules! with_node {
     ($state:expr, $n:ident => $body:expr) => {{
         let guard = $state.node.lock().await;

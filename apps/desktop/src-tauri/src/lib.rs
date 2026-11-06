@@ -2,7 +2,9 @@
 //! （development-guidelines §4.2；前端不接觸金鑰）。
 
 mod commands;
+mod files;
 mod keychain;
+mod share;
 
 use tauri::Manager;
 
@@ -16,6 +18,8 @@ pub fn run() {
         .init();
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
@@ -65,6 +69,21 @@ pub fn run() {
             commands::upsert_office,
             commands::remove_office,
             commands::set_lunch_break,
+            share::pick_files,
+            share::pick_folder,
+            share::read_stripe,
+            share::storage_nodes,
+            share::put_shard,
+            share::has_shards,
+            share::get_shard,
+            share::save_target_file,
+            share::save_target_folder,
+            share::write_partial,
+            share::finish_download,
+            share::abort_download,
+            share::show_download,
+            share::save_upload_jobs,
+            share::upload_jobs,
         ])
         .run(tauri::generate_context!());
     if let Err(err) = result {

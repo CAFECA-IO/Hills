@@ -32,6 +32,9 @@ pub struct NodeConfig {
     pub bundle_cursor: u64,
     /// mailbox 封裝金鑰游標
     pub keys_cursor: u64,
+    /// 儲存節點（mailbox `Services`，technical-design §15.6 v0.12）
+    #[serde(default)]
+    pub storage: Vec<(u8, PeerAddr)>,
 }
 
 impl NodeConfig {

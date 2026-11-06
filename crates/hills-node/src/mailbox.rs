@@ -149,6 +149,11 @@ async fn refresh(inner: &Arc<Inner>, mb: &MailboxClient) -> Result<()> {
         Ok(addr) => apply_mailbox_addr(inner, addr).await?,
         Err(e) => tracing::debug!(error = %e, "mailbox 不支援 Info"),
     }
+    // 儲存節點清單（§15.6 v0.12）：舊版 mailbox 不支援 Services 時略過
+    match mb.services().await {
+        Ok(list) => inner.apply_services(list).await?,
+        Err(e) => tracing::debug!(error = %e, "mailbox 不支援 Services"),
+    }
     // 位址簿 → gossip 鄰居
     mb.announce(to_peer_addr(&inner.endpoint.addr())).await?;
     let me = inner.secrets.device.public();
@@ -169,6 +174,7 @@ async fn refresh(inner: &Arc<Inner>, mb: &MailboxClient) -> Result<()> {
         .verify_device(&me)
         .is_ok_and(|v| v.is_admin());
     if admin {
+        inner.push_roster_to_storage().await;
         let joins = mb.fetch_joins().await?;
         for j in joins {
             if let Err(e) = approve_join(inner, mb, &j).await {

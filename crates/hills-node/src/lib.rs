@@ -14,6 +14,7 @@ mod mailbox;
 mod node;
 pub mod org;
 mod policy;
+mod storage;
 mod syncproto;
 pub mod team;
 

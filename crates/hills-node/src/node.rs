@@ -148,6 +148,7 @@ pub(crate) struct Inner {
     pub events: broadcast::Sender<Event>,
     pub status: Mutex<SyncStatus>,
     pub tasks: Mutex<Vec<JoinHandle<()>>>,
+    pub storage: crate::storage::StoragePool,
 }
 
 /// Hills 節點：一台裝置上的一個成員身分。
@@ -760,6 +761,7 @@ impl Node {
             events,
             status: Mutex::new(status),
             tasks: Mutex::new(Vec::new()),
+            storage: Default::default(),
         });
         {
             let mut st = lock(&inner.st);

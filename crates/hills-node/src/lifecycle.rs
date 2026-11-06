@@ -97,6 +97,7 @@ impl Node {
             status: MemberStatus::Active,
             bundle_cursor: 0,
             keys_cursor: 0,
+            storage: vec![],
         };
         cfg.save(dir)?;
         let node = Self::start(
@@ -172,6 +173,7 @@ impl Node {
             status: MemberStatus::Pending,
             bundle_cursor: 0,
             keys_cursor: 0,
+            storage: vec![],
         };
         cfg.save(dir)?;
         let node = Self::start(
@@ -219,6 +221,7 @@ impl Node {
             status: MemberStatus::Active,
             bundle_cursor: 0,
             keys_cursor: 0,
+            storage: vec![],
         };
         cfg.save(dir)?;
         Self::start(

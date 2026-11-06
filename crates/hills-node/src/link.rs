@@ -177,6 +177,7 @@ async fn serve(
                         status: MemberStatus::Active,
                         bundle_cursor: 0,
                         keys_cursor: 0,
+                        storage: vec![],
                     };
                     // 寫入最小狀態，Node::open 會從 mailbox 補齊其餘資料
                     let store = hills_store::DocStore::open(dir, secrets.storage_key.clone())?;

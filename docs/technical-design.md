@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.10 草案 · 2026-11-06 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.11 草案 · 2026-11-06 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15。
 
 ## 1. 元件總覽
@@ -255,6 +255,8 @@ AAD = utf8(docId) ‖ 0x00 ‖ utf8(keyId)
 - 90 秒未收到 → 離線；同一成員多台裝置取最活躍的狀態。
 - 本機閒置 10 分鐘（可設定）→ 自動「暫離」。
 - `state`（D40）：`Online` 上線、`Busy` 忙碌、`Meeting` 會議、`Focus` 專注、`Away` 暫離、`Leave` 休假、`Offline` 離線、`Lunch` 午休。`Lunch` 加在列舉最後，既有值的序列化編號不變；舊版收到 `Lunch` 會解碼失敗並略過該則 presence（M1 前尚無正式使用者，可接受）。
+- v0.11 Presence 欄位：`{ member, state, note, current_task, at, until?, location }`；`until` 即 `expiresAt`，`location` = `Hidden`（不顯示）| `Remote` | `Office(officeId)`（D40，M1 由成員手動選擇，Wi-Fi 自動判斷隨打卡加入）。新增欄位改變 postcard 格式，舊版無法解碼新版 presence，Mac 與 Windows 需同時更新（M1 前可接受）。
+- **延後通知**（D40 敲門 / 專注）：本人狀態為會議、午休或專注且 `until` 未到時，新訊息的系統通知先暫存在本機；狀態結束（到期或手動切換）時以一則摘要通知「專注期間收到 N 則訊息」。訊息本身照常同步，未讀數照常更新；伺服器不參與延後。傳送者在對方會議 / 午休 / 專注時看到「敲門」字樣，語意相同。
 - `expiresAt` 是「幾點回來」：到期後回到上線（會議、午休、暫離、專注）或離線（休假以請假期間為準）。
 
 ### 5.2 Mailbox 服務 API
@@ -724,7 +726,7 @@ secret 不放在 org 文件，因為所有成員都能讀 org 文件；代價是
 - iroh-gossip topic = `blake3("hills/v1/gossip" ‖ orgId)`；bootstrap 節點來自 mailbox 位址簿（§16.7 `Peers`）。
 - 訊息 = GK 加密（AAD = `"hills/v1/gossip" ‖ keyId`）的 `Signed<GossipMsg>`（以 DK 簽章）：
   ```
-  GossipMsg::Presence { member, state, note, current_task, at }
+  GossipMsg::Presence { member, state, note, current_task, at, until, location }   // v0.11
   GossipMsg::Heads    { doc_id, heads }
   ```
 - Presence 每 30 秒一次、90 秒未收到視為離線（§5.1）；Heads 在本機文件變更後送出，收到比自己新的 heads 時向該裝置 `Pull`。
@@ -759,8 +761,21 @@ org = {
   members: { <memberId>: { name, joinedAt } },
   teams:   { <teamId>: { name, leadIds: [..], memberIds: [..] } },
   invites: { <inviteId>: { secretHash, role, teamIds, expiresAt, createdBy, usedBy?, revoked } },
+  offices: { <officeId>: { name, wifiHashes: [] } },     // v0.11（D40）；M1 wifiHashes 為空
+  lunchBreak?: { start: "12:00", end: "13:30" },          // v0.11；組織時區
+}
+
+team/<teamId> = {                                         // v0.11（D40）
+  tasks:    { <taskId ULID>: { title, assignee?, status: todo|doing|review|done, dueAt?,
+                               steps: [ { id, title, assignee?, done, doneAt? } ],
+                               createdBy, createdAt, updatedAt } },
+  profiles: { <memberId>: { hair, shirt, skin } },         // 角色外觀，固定色盤的索引
 }
 ```
+
+- `offices`、`lunchBreak` 只有管理者可寫（org 文件規則）。
+- `team/<id>` 為多人寫入（§4）：任務全組可編輯；`profiles/<memberId>` 只有本人寫入，投影層只採用作者為該成員的變更，UI 也只讓本人編輯（M1 簡化）。成員把外觀寫進自己所屬的每個小組文件，讀取時取任一份。
+- **焦點**（feature-plan §5.4）：候選為指派給我、或下一個未完成步驟指派給我的未完成任務；依「期限最近 → 卡住別人（下一步負責人不是我但我負責的步驟未完成）→ 指派給我 → 建立時間」排序。手動選擇的焦點只存在本機（secret 檔 `focus`），任務完成或刪除時回到自動。
 
 `Directory`（§4.2）由 org 文件投影提供。M0 建立組織時自動建立一個預設小組。
 

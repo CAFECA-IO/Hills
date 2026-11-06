@@ -34,7 +34,7 @@ function DevLink() {
   if (!SwarmBench) return null;
   return (
     <a
-      className="fixed right-3 bottom-3 rounded border border-line bg-surface px-2 py-1 text-xs text-primary underline"
+      className="fixed right-3 bottom-3 rounded-control border border-line bg-surface px-2 py-1 text-xs text-primary underline"
       href="#/dev/swarm-bench"
     >
       {t('nav.devBench')}

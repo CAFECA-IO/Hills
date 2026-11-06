@@ -37,6 +37,39 @@
   --hills-st-leave-text: #5b3fd6;
   --hills-st-offline: #8a94a3;
   --hills-st-offline-text: #576375;
+  /* 角色（D40）：插畫用色，淺 / 深模式相同；成員從色盤選擇（team.rs LOOK_PALETTE = 8） */
+  --hills-ink: #16202e;
+  --hills-ink-soft: #3b4656;
+  --hills-cloud: #ffffff;
+  --hills-sun: #ffe08a;
+  --hills-sun-halo: #fff3cf;
+  --hills-roof: #f07a3a;
+  --hills-laptop: #ffffff;
+  --hills-laptop-line: #8a94a3;
+  --hills-hair-0: #3b2a1e;
+  --hills-hair-1: #16202e;
+  --hills-hair-2: #5a3a22;
+  --hills-hair-3: #2b1d14;
+  --hills-hair-4: #8a5a3a;
+  --hills-hair-5: #c9973a;
+  --hills-hair-6: #7a8fb8;
+  --hills-hair-7: #b4483c;
+  --hills-shirt-0: #1f6feb;
+  --hills-shirt-1: #e5484d;
+  --hills-shirt-2: #1e9e6a;
+  --hills-shirt-3: #f2b32b;
+  --hills-shirt-4: #7c5cfc;
+  --hills-shirt-5: #0f6e63;
+  --hills-shirt-6: #f07a3a;
+  --hills-shirt-7: #8a94a3;
+  --hills-skin-0: #f6d2b0;
+  --hills-skin-1: #edbe94;
+  --hills-skin-2: #f3c9a5;
+  --hills-skin-3: #e2ae84;
+  --hills-skin-4: #c98f63;
+  --hills-skin-5: #a8714a;
+  --hills-skin-6: #8a5a3a;
+  --hills-skin-7: #f9dcc4;
   /* QR Code 一律白底，確保可掃描 */
   --hills-qr-bg: #ffffff;
   --hills-radius-card: 16px;
@@ -70,6 +103,9 @@
     --hills-st-focus-text: #b8c3d3;
     --hills-st-leave-text: #b7a6ff;
     --hills-st-offline-text: #a9b4c3;
+    --hills-cloud: #c9d6e6;
+    --hills-sun: #e6c86e;
+    --hills-sun-halo: #3a3a2a;
   }
 }
 

@@ -23,7 +23,7 @@ export function Welcome({ onPick }: { onPick: (s: Start) => void }) {
             key={k}
             type="button"
             onClick={() => onPick(k)}
-            className="flex flex-col gap-1 rounded-lg border border-line bg-surface p-4 text-left hover:border-primary focus-visible:outline-2 focus-visible:outline-primary"
+            className="flex flex-col gap-1 rounded-card bg-surface shadow-sm p-4 text-left hover:border-primary focus-visible:outline-2 focus-visible:outline-primary"
           >
             <span className="font-medium">{t(title)}</span>
             <span className="text-sm text-muted">{t(desc)}</span>
@@ -473,7 +473,10 @@ export function BackupForm({ onDone, onSkip }: { onDone?: () => void; onSkip?: (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted">{t('backup.desc')}</p>
       {saved ? (
-        <p role="status" className="rounded border border-primary px-3 py-2 text-sm break-all">
+        <p
+          role="status"
+          className="rounded-control border border-primary px-3 py-2 text-sm break-all"
+        >
           {t('backup.saved', { path: saved })}
         </p>
       ) : (

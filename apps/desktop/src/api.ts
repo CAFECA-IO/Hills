@@ -6,15 +6,27 @@ import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { listen as tauriListen, type UnlistenFn } from '@tauri-apps/api/event';
 
 export type SyncStatus = 'Pending' | 'Offline' | 'Syncing' | 'Synced';
-export type PresenceState = 'Online' | 'Busy' | 'Meeting' | 'Focus' | 'Away' | 'Leave' | 'Offline';
+export type PresenceState =
+  'Online' | 'Busy' | 'Meeting' | 'Focus' | 'Away' | 'Leave' | 'Offline' | 'Lunch';
+/** 狀態選單的順序（ui-spec「視覺語言」狀態表）。 */
 export const PRESENCE_STATES: readonly PresenceState[] = [
   'Online',
   'Busy',
   'Meeting',
-  'Focus',
+  'Lunch',
   'Away',
+  'Focus',
   'Leave',
 ];
+
+/** `hidden` / `remote` / `office:<id>`（technical-design §5.1 v0.11）。 */
+export type LocationCode = string;
+
+export interface Look {
+  hair: number;
+  shirt: number;
+  skin: number;
+}
 
 export interface AppInfo {
   phase: 'welcome' | 'pending' | 'ready';
@@ -33,6 +45,63 @@ export interface MemberView {
   joinedAt: number;
   presence: PresenceState | null;
   note: string;
+  /** 回來時間（ms） */
+  until: number | null;
+  location: LocationCode;
+  look: Look | null;
+}
+
+export interface OfficeView {
+  id: string;
+  name: string;
+}
+
+export interface LunchBreak {
+  start: string;
+  end: string;
+}
+
+export type TaskStatus = 'todo' | 'doing' | 'review' | 'done';
+
+export interface TaskStep {
+  id: string;
+  title: string;
+  assignee: string | null;
+  done: boolean;
+  doneAt: number | null;
+}
+
+export interface Task {
+  id: string;
+  team: string;
+  title: string;
+  assignee: string | null;
+  status: TaskStatus;
+  dueAt: number | null;
+  steps: TaskStep[];
+  createdBy: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface StepInput {
+  id?: string | null;
+  title: string;
+  assignee: string | null;
+  done: boolean;
+}
+
+export interface TaskInput {
+  title: string;
+  assignee: string | null;
+  status?: TaskStatus | null;
+  dueAt: number | null;
+  steps: StepInput[];
+}
+
+export interface FocusView {
+  task: Task | null;
+  manual: boolean;
 }
 
 export interface TeamView {
@@ -45,6 +114,8 @@ export interface Overview {
   orgName: string;
   members: MemberView[];
   teams: TeamView[];
+  offices: OfficeView[];
+  lunchBreak: LunchBreak | null;
 }
 
 export interface Code {
@@ -153,8 +224,28 @@ export const api = {
   linkDevice: (code: string) => call<string>('link_device', { code }),
   linkConfirm: (deviceName: string) => call<void>('link_confirm', { deviceName }),
   overview: () => call<Overview>('overview'),
+  /** 只改狀態與文字（保留回來時間與地點），供閒置自動暫離使用。 */
   setPresence: (presence: PresenceState, note: string) =>
     call<void>('set_presence', { presence, note }),
+  setPresenceFull: (
+    presence: PresenceState,
+    note: string,
+    until: number | null,
+    location: LocationCode,
+  ) => call<void>('set_presence', { presence, note, until, location }),
+  tasks: () => call<Task[]>('tasks'),
+  createTask: (team: string, input: TaskInput) => call<string>('create_task', { team, input }),
+  updateTask: (team: string, task: string, input: TaskInput) =>
+    call<void>('update_task', { team, task, input }),
+  setStepDone: (team: string, task: string, step: string, done: boolean) =>
+    call<void>('set_step_done', { team, task, step, done }),
+  deleteTask: (team: string, task: string) => call<void>('delete_task', { team, task }),
+  focus: () => call<FocusView>('focus'),
+  setFocus: (team: string | null, task: string | null) => call<void>('set_focus', { team, task }),
+  setProfile: (look: Look) => call<void>('set_profile', { look }),
+  upsertOffice: (id: string | null, name: string) => call<string>('upsert_office', { id, name }),
+  removeOffice: (id: string) => call<void>('remove_office', { id }),
+  setLunchBreak: (start: string, end: string) => call<void>('set_lunch_break', { start, end }),
   syncStatus: () => call<SyncStatus | null>('sync_status'),
   syncNow: () => call<void>('sync_now'),
   orgCode: () => call<Code>('org_code'),

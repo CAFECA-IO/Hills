@@ -1,21 +1,37 @@
-/** 應用外框、團隊看板、設定（ui-spec「應用外框」「團隊」「設定」M0 範圍）。 */
-import { useState } from 'react';
+/** 應用外框、團隊、狀態選單、設定（ui-spec「應用外框」「團隊」「設定」，D40）。 */
+import { useEffect, useId, useRef, useState } from 'react';
 import {
   api,
   PRESENCE_STATES,
   type AppInfo,
   type Code,
+  type Look,
   type MemberView,
+  type OfficeView,
+  type Overview,
   type PresenceState,
   type SyncStatus,
 } from './api';
 import { Chat } from './chat';
+import { Portrait, StatusBadge, stateLabel } from './figures';
+import { Home } from './home';
 import { useIdleAway, useLoad, useSyncStatus } from './hooks';
-import { formatTime, getLocale, LOCALES, setLocale, t, type MessageKey } from './i18n';
+import {
+  formatClock,
+  formatDate,
+  formatTime,
+  getLocale,
+  LOCALES,
+  setLocale,
+  t,
+  type MessageKey,
+} from './i18n';
 import { BackupForm, PhraseFlow } from './onboarding';
+import { LOOK_PALETTE, lookOf } from './summit';
+import { Tasks } from './tasks';
 import { Button, Card, CodeBox, ConfirmButton, ErrorText, Field, useAction } from './ui';
 
-type Page = 'team' | 'chat' | 'settings';
+type Page = 'home' | 'team' | 'tasks' | 'chat' | 'settings';
 
 const SYNC_ICON: Record<SyncStatus, string> = {
   Synced: '●',
@@ -30,11 +46,11 @@ export function SyncIndicator() {
   return (
     <button
       type="button"
-      className="flex items-center gap-1 text-sm text-muted hover:text-fg"
+      className="flex items-center gap-1 rounded-full bg-surface px-3 py-1 text-sm text-muted shadow-sm hover:text-fg"
       onClick={() => void api.syncNow().catch(() => undefined)}
       aria-live="polite"
     >
-      <span aria-hidden className={status === 'Synced' ? 'text-primary' : ''}>
+      <span aria-hidden className={status === 'Synced' ? 'text-st-online' : ''}>
         {SYNC_ICON[status]}
       </span>
       {t(`sync.${status}` as MessageKey)}
@@ -42,95 +58,130 @@ export function SyncIndicator() {
   );
 }
 
-const PRESENCE_ICON: Record<PresenceState, string> = {
-  Online: '●',
-  Busy: '◉',
-  Meeting: '◑',
-  Focus: '◎',
-  Away: '◌',
-  Leave: '○',
-  Offline: '○',
+const NAV_ICON: Record<Page, string> = {
+  home: 'M3 9.5L10 3.5l7 6V17H3zM8 17v-5h4v5',
+  team: 'M7 7m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M2 16c.8-3 3-4.5 5-4.5s4.2 1.5 5 4.5M14 8m-2.4 0a2.4 2.4 0 1 0 4.8 0a2.4 2.4 0 1 0 -4.8 0M12 15.5c.5-2 1.7-3 3-3s2.6 1 3 3',
+  tasks: 'M4 5h2M4 10h2M4 15h2M9 5h7M9 10h7M9 15h7',
+  chat: 'M3 4.5h14v9H8l-4 3v-3H3z',
+  settings:
+    'M10 7a3 3 0 1 0 0 6a3 3 0 1 0 0 -6M10 2v2M10 16v2M2 10h2M16 10h2M4.3 4.3l1.4 1.4M14.3 14.3l1.4 1.4M4.3 15.7l1.4-1.4M14.3 5.7l1.4-1.4',
 };
 
-function PresenceBadge({ state }: { state: PresenceState | null }) {
-  const s = state ?? 'Offline';
-  const color =
-    s === 'Online'
-      ? 'text-primary'
-      : s === 'Offline' || s === 'Leave'
-        ? 'text-muted'
-        : 'text-warning';
-  return (
-    <span className="flex items-center gap-1 text-sm">
-      <span aria-hidden className={color}>
-        {PRESENCE_ICON[s]}
-      </span>
-      {t(`presence.${s}` as MessageKey)}
-    </span>
-  );
-}
+const PAGE_TITLE: Record<Page, MessageKey> = {
+  home: 'nav.home',
+  team: 'team.title',
+  tasks: 'nav.tasks',
+  chat: 'chat.title',
+  settings: 'settings.title',
+};
 
 export function Shell({ info }: { info: AppInfo }) {
-  const [page, setPage] = useState<Page>('team');
-  const overview = useLoad(api.overview, ['org', 'roster', 'presence']);
+  const [page, setPage] = useState<Page>('home');
+  const [openConv, setOpenConv] = useState<string | null>(null);
+  const overview = useLoad(api.overview, ['org', 'roster', 'presence', 'doc']);
+  const tasks = useLoad(api.tasks, ['doc', 'org', 'roster']);
+  const focus = useLoad(api.focus, ['doc', 'org', 'roster']);
   const me = overview.data?.members.find((m) => m.isMe);
   useIdleAway(() => (me ? { state: me.presence ?? 'Online', note: me.note } : null));
   const convs = useLoad(api.conversations, ['convs', 'message', 'doc']);
   const unread = (convs.data ?? []).reduce((n, c) => n + c.unread, 0);
-  const nav: [Page, MessageKey, string][] = [
-    ['team', 'nav.team', '◉'],
-    ['chat', 'nav.chat', '✉'],
-    ['settings', 'nav.settings', '⚙'],
-  ];
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    // 倒數與回來時間每 30 秒更新
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const go = (p: Page) => {
+    setPage(p);
+    if (p !== 'chat') setOpenConv(null);
+  };
+  const nav: Page[] = ['home', 'team', 'tasks', 'chat', 'settings'];
   return (
-    <div className="flex min-h-screen">
-      <nav className="flex w-52 flex-col gap-1 border-r border-line bg-surface p-4">
-        <div className="mb-4">
-          <p className="text-lg font-semibold text-primary">{t('app.name')}</p>
-          <p className="truncate text-sm text-muted">{overview.data?.orgName ?? info.orgName}</p>
-        </div>
-        {nav.map(([p, label, icon]) => (
-          <button
-            key={p}
-            type="button"
-            aria-current={page === p ? 'page' : undefined}
-            onClick={() => setPage(p)}
-            className={`flex items-center gap-2 rounded px-3 py-2 text-left text-sm ${page === p ? 'bg-bg font-medium text-primary' : 'hover:bg-bg'}`}
-          >
-            <span aria-hidden>{icon}</span>
-            {t(label)}
-            {p === 'chat' && unread > 0 && (
-              <span
-                className="ml-auto rounded-full bg-primary px-2 text-xs text-on-primary"
-                aria-label={t('chat.unread', { count: unread })}
-              >
-                {unread}
-              </span>
-            )}
-          </button>
-        ))}
+    <div className="flex min-h-screen bg-bg">
+      <nav className="flex w-24 shrink-0 flex-col items-center gap-2 border-r border-line bg-surface py-4">
+        <span
+          className="mb-3 flex size-10 items-center justify-center rounded-control bg-primary font-bold text-on-primary"
+          title={overview.data?.orgName ?? info.orgName ?? ''}
+          aria-label={overview.data?.orgName ?? info.orgName ?? t('app.name')}
+        >
+          {(overview.data?.orgName ?? info.orgName ?? 'H').slice(0, 1)}
+        </span>
+        {nav.map((p) => {
+          const active = page === p;
+          return (
+            <button
+              key={p}
+              type="button"
+              aria-current={active ? 'page' : undefined}
+              onClick={() => go(p)}
+              className={`relative flex w-[72px] flex-col items-center gap-1 rounded-control py-2 text-xs ${active ? 'bg-primary-soft font-bold text-primary' : 'text-muted hover:text-fg'}`}
+            >
+              <svg width={20} height={20} viewBox="0 0 20 20" aria-hidden>
+                <path
+                  d={NAV_ICON[p]}
+                  stroke="currentColor"
+                  strokeWidth={1.6}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              {t(PAGE_TITLE[p])}
+              {p === 'chat' && unread > 0 && (
+                <span
+                  className="absolute top-1 right-3 min-w-[18px] rounded-full bg-st-busy px-1 text-[11px] leading-[18px] font-bold text-on-primary"
+                  aria-label={t('chat.unread', { count: unread })}
+                >
+                  {unread}
+                </span>
+              )}
+            </button>
+          );
+        })}
+        {me && overview.data && <StatusMenu me={me} overview={overview.data} />}
       </nav>
-      <div className="flex flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-line px-6 py-3">
-          <h1 className="text-lg font-semibold">
-            {t(page === 'team' ? 'team.title' : page === 'chat' ? 'chat.title' : 'settings.title')}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex items-center justify-between px-6 pt-5 pb-2">
+          <h1 className="text-sm font-semibold text-muted">
+            {overview.data?.orgName ?? info.orgName} · {t(PAGE_TITLE[page])}
           </h1>
           <SyncIndicator />
         </header>
-        <main className="flex-1 overflow-auto p-6">
-          {page === 'team' ? (
-            <TeamBoard
-              members={overview.data?.members ?? []}
-              teams={overview.data?.teams ?? []}
-              error={overview.error}
+        <main className="flex-1 overflow-auto px-6 pb-6">
+          <ErrorText message={overview.error} />
+          {page === 'home' && overview.data && (
+            <Home
+              overview={overview.data}
+              tasks={tasks.data ?? []}
+              focus={focus.data}
+              convs={convs.data ?? []}
+              onOpenConv={(c) => {
+                setOpenConv(c);
+                setPage('chat');
+              }}
+              onOpenTasks={() => go('tasks')}
+              now={now}
             />
-          ) : page === 'chat' ? (
-            <Chat members={overview.data?.members ?? []} />
-          ) : (
+          )}
+          {page === 'team' && overview.data && <TeamList overview={overview.data} />}
+          {page === 'tasks' && (
+            <Tasks
+              tasks={tasks.data ?? []}
+              teams={overview.data?.teams ?? []}
+              members={overview.data?.members ?? []}
+              focus={focus.data}
+              error={tasks.error}
+            />
+          )}
+          {page === 'chat' && (
+            <Chat key={openConv ?? ''} members={overview.data?.members ?? []} initial={openConv} />
+          )}
+          {page === 'settings' && (
             <Settings
               info={info}
               members={overview.data?.members ?? []}
               orgName={overview.data?.orgName ?? ''}
+              overview={overview.data}
             />
           )}
         </main>
@@ -139,55 +190,202 @@ export function Shell({ info }: { info: AppInfo }) {
   );
 }
 
-function MyStatus({ me }: { me: MemberView }) {
+// ── 狀態選單（ui-spec「設定」M1 補充） ───────────────────────
+
+const UNTIL_PRESETS = [15, 30, 60] as const;
+
+function inLunch(lunch: Overview['lunchBreak'], now: Date): boolean {
+  if (!lunch) return false;
+  const hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  return hm >= lunch.start && hm < lunch.end;
+}
+
+function todayAt(hm: string, now = new Date()): number {
+  const [h, m] = hm.split(':').map(Number);
+  const d = new Date(now);
+  d.setHours(h, m, 0, 0);
+  return d.getTime();
+}
+
+function locationLabel(code: string, offices: OfficeView[]): string {
+  if (code === 'remote') return t('location.remote');
+  const o = offices.find((x) => `office:${x.id}` === code);
+  return o ? o.name : t('location.hidden');
+}
+
+function StatusMenu({ me, overview }: { me: MemberView; overview: Overview }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener('mousedown', onDown);
+    return () => window.removeEventListener('mousedown', onDown);
+  }, [open]);
+  return (
+    <div ref={ref} className="relative mt-auto flex flex-col items-center">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        onClick={() => setOpen((o) => !o)}
+        className="flex flex-col items-center gap-1 rounded-control px-2 py-1 hover:bg-bg"
+      >
+        <Portrait look={lookOf(me)} state={me.presence} size={52} label={t('status.menu')} />
+        <StatusBadge state={me.presence} />
+      </button>
+      {open && (
+        <StatusPanel
+          key={`${me.presence}-${me.until}-${me.location}-${me.note}`}
+          me={me}
+          overview={overview}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function StatusPanel({
+  me,
+  overview,
+  onClose,
+}: {
+  me: MemberView;
+  overview: Overview;
+  onClose: () => void;
+}) {
   const [state, setState] = useState<PresenceState>(me.presence ?? 'Online');
+  const [until, setUntil] = useState<number | null>(me.until);
+  const [location, setLocation] = useState(me.location);
   const [note, setNote] = useState(me.note);
   const { busy, error, attempt } = useAction();
+  const ids = { state: useId(), loc: useId(), until: useId() };
+  const lunch = overview.lunchBreak;
+  const save = async (s = state, u = until) => {
+    if (await attempt(() => api.setPresenceFull(s, note, u, location))) onClose();
+  };
+  const select = 'w-full rounded-control border border-line bg-surface px-3 py-2 text-sm';
   return (
-    <Card className="flex flex-wrap items-end gap-3">
+    <div
+      role="dialog"
+      aria-label={t('status.menu')}
+      className="absolute bottom-0 left-full z-20 ml-3 flex w-80 flex-col gap-3 rounded-card bg-surface p-4 shadow-lg"
+      onKeyDown={(e) => e.key === 'Escape' && onClose()}
+    >
+      {lunch && inLunch(lunch, new Date()) && state !== 'Lunch' && (
+        <Button
+          variant="soft"
+          disabled={busy}
+          onClick={() => void save('Lunch', todayAt(lunch.end))}
+        >
+          {t('status.lunchNow', { end: lunch.end })}
+        </Button>
+      )}
       <div className="flex flex-col gap-1">
-        <label htmlFor="my-state" className="text-sm font-medium">
+        <label htmlFor={ids.state} className="text-sm font-medium">
           {t('team.myStatus')}
         </label>
         <select
-          id="my-state"
-          className="rounded border border-line bg-surface px-3 py-2 text-sm"
+          id={ids.state}
+          className={select}
           value={state}
           onChange={(e) => setState(e.target.value as PresenceState)}
         >
           {PRESENCE_STATES.map((s) => (
             <option key={s} value={s}>
-              {t(`presence.${s}` as MessageKey)}
+              {stateLabel(s)}
             </option>
           ))}
         </select>
       </div>
-      <div className="min-w-60 flex-1">
-        <Field
-          label={t('team.note')}
-          placeholder={t('team.note.placeholder')}
-          value={note}
-          onChange={setNote}
-        />
+      <div className="flex flex-col gap-1">
+        <span id={ids.until} className="text-sm font-medium">
+          {t('status.until')}
+        </span>
+        <div role="group" aria-labelledby={ids.until} className="flex flex-wrap gap-1">
+          <Button
+            variant={until === null ? 'soft' : 'secondary'}
+            className="px-3 py-1"
+            onClick={() => setUntil(null)}
+          >
+            {t('status.until.none')}
+          </Button>
+          {UNTIL_PRESETS.map((m) => (
+            <Button
+              key={m}
+              variant="secondary"
+              className="px-3 py-1"
+              onClick={() => setUntil(Date.now() + m * 60_000)}
+            >
+              {t('time.minutes', { m })}
+            </Button>
+          ))}
+          <input
+            type="time"
+            aria-label={t('status.until.at')}
+            className="rounded-control border border-line bg-surface px-2 py-1 text-sm"
+            value={until ? formatClock(until).slice(-5) : ''}
+            onChange={(e) => {
+              if (!e.target.value) return;
+              let ms = todayAt(e.target.value);
+              if (ms < Date.now()) ms += 86_400_000;
+              setUntil(ms);
+            }}
+          />
+        </div>
+        {until && (
+          <p className="text-xs text-muted">
+            {state === 'Leave'
+              ? t('home.leaveUntil', { date: formatDate(until) })
+              : t('home.until', { time: formatClock(until) })}
+          </p>
+        )}
       </div>
-      <Button disabled={busy} onClick={() => void attempt(() => api.setPresence(state, note))}>
-        {t('team.update')}
-      </Button>
-      {error && <ErrorText message={error} />}
-    </Card>
+      <div className="flex flex-col gap-1">
+        <label htmlFor={ids.loc} className="text-sm font-medium">
+          {t('status.location')}
+        </label>
+        <select
+          id={ids.loc}
+          className={select}
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+        >
+          {overview.offices.map((o) => (
+            <option key={o.id} value={`office:${o.id}`}>
+              {o.name}
+            </option>
+          ))}
+          <option value="remote">{t('location.remote')}</option>
+          <option value="hidden">{t('location.hidden')}</option>
+        </select>
+      </div>
+      <Field
+        label={t('team.note')}
+        placeholder={t('team.note.placeholder')}
+        value={note}
+        onChange={setNote}
+      />
+      <div className="flex gap-2">
+        <Button disabled={busy} onClick={() => void save()}>
+          {t('team.update')}
+        </Button>
+        <Button variant="secondary" onClick={onClose}>
+          {t('common.cancel')}
+        </Button>
+      </div>
+      <ErrorText message={error} />
+    </div>
   );
 }
 
-function TeamBoard({
-  members,
-  teams,
-  error,
-}: {
-  members: MemberView[];
-  teams: { id: string; name: string; members: string[] }[];
-  error: string | null;
-}) {
-  const me = members.find((m) => m.isMe);
+// ── 團隊（首頁山景的清單檢視） ─────────────────────────────
+
+function TeamList({ overview }: { overview: Overview }) {
+  const { members, teams, offices } = overview;
   const online = members.filter((m) => m.presence && m.presence !== 'Offline').length;
   const byId = new Map(members.map((m) => [m.id, m]));
   const grouped = teams.map((tm) => ({
@@ -199,26 +397,33 @@ function TeamBoard({
   if (loose.length) grouped.push({ id: '', name: t('team.noTeam'), members: [], list: loose });
   return (
     <div className="flex flex-col gap-4">
-      <ErrorText message={error} />
-      {me && <MyStatus key={`${me.presence}-${me.note}`} me={me} />}
       <p className="text-sm text-muted">{t('team.summary', { online, total: members.length })}</p>
       {members.length <= 1 && <p className="text-sm text-muted">{t('team.empty')}</p>}
       {grouped.map((g) => (
         <Card key={g.id || 'none'}>
-          <h2 className="mb-3 font-medium">{g.name}</h2>
+          <h2 className="mb-3 font-bold">{g.name}</h2>
           <ul className="flex flex-col divide-y divide-line">
             {g.list.map((m) => (
-              <li key={m.id} className="grid grid-cols-[10rem_8rem_1fr] items-center gap-3 py-2">
-                <span className="truncate">
+              <li
+                key={m.id}
+                className="grid grid-cols-[3rem_10rem_7rem_14rem_1fr] items-center gap-3 py-2"
+              >
+                <Portrait look={lookOf(m)} state={m.presence} size={40} label={m.name} />
+                <span className="truncate font-semibold">
                   {m.name}
                   {m.isMe && <span className="text-muted">{t('team.me')}</span>}
                   {m.isAdmin && (
-                    <span className="ml-2 rounded border border-line px-1 text-xs text-muted">
+                    <span className="ml-2 rounded-full border border-line px-2 text-xs font-normal text-muted">
                       {t('team.admin')}
                     </span>
                   )}
                 </span>
-                <PresenceBadge state={m.presence} />
+                <StatusBadge state={m.presence} />
+                <span className="truncate text-sm text-muted">
+                  {locationLabel(m.location, offices)}
+                  {m.until &&
+                    ` · ${m.presence === 'Leave' ? t('home.leaveUntil', { date: formatDate(m.until) }) : t('home.until', { time: formatClock(m.until) })}`}
+                </span>
                 <span className="truncate text-sm text-muted">{m.note}</span>
               </li>
             ))}
@@ -229,16 +434,198 @@ function TeamBoard({
   );
 }
 
+// ── 我的角色（設定 → 個人） ──────────────────────────────
+
+function MyLook({ me }: { me: MemberView }) {
+  const [look, setLook] = useState<Look>(lookOf(me));
+  const [saved, setSaved] = useState(false);
+  const { busy, error, attempt } = useAction();
+  const parts: { key: keyof Look; label: MessageKey; token: string; count: number }[] = [
+    { key: 'hair', label: 'look.hair', token: 'hair', count: LOOK_PALETTE },
+    { key: 'shirt', label: 'look.shirt', token: 'shirt', count: LOOK_PALETTE },
+    { key: 'skin', label: 'look.skin', token: 'skin', count: LOOK_PALETTE },
+  ];
+  return (
+    <Card className="flex flex-col gap-3">
+      <h2 className="font-bold">{t('look.title')}</h2>
+      <div className="flex flex-wrap items-center gap-6">
+        <Portrait
+          look={look}
+          state={me.presence ?? 'Online'}
+          size={110}
+          label={t('look.preview')}
+        />
+        <div className="flex flex-col gap-3">
+          {parts.map((p) => (
+            <div
+              key={p.key}
+              role="radiogroup"
+              aria-label={t(p.label)}
+              className="flex items-center gap-2"
+            >
+              <span className="w-12 text-sm font-medium">{t(p.label)}</span>
+              {Array.from({ length: p.count }, (_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  role="radio"
+                  aria-checked={look[p.key] === i}
+                  aria-label={t('look.option', { n: i + 1 })}
+                  onClick={() => {
+                    setLook({ ...look, [p.key]: i });
+                    setSaved(false);
+                  }}
+                  className={`size-7 rounded-full border-2 ${look[p.key] === i ? 'border-primary' : 'border-line'}`}
+                  style={{ background: `var(--hills-${p.token}-${i})` }}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <Button
+          disabled={busy}
+          onClick={async () => {
+            if (await attempt(() => api.setProfile(look))) setSaved(true);
+          }}
+        >
+          {t('common.save')}
+        </Button>
+        {saved && (
+          <span role="status" className="text-sm text-st-online-text">
+            {t('look.saved')}
+          </span>
+        )}
+      </div>
+      <ErrorText message={error} />
+    </Card>
+  );
+}
+
+// ── 辦公室與午休（設定 → 組織，管理者） ──────────────────────
+
+function OfficesCard({ overview }: { overview: Overview }) {
+  const [name, setName] = useState('');
+  const [start, setStart] = useState(overview.lunchBreak?.start ?? '12:00');
+  const [end, setEnd] = useState(overview.lunchBreak?.end ?? '13:30');
+  const { busy, error, attempt } = useAction();
+  return (
+    <Card className="flex flex-col gap-3">
+      <h2 className="font-bold">{t('offices.title')}</h2>
+      <p className="text-sm text-muted">{t('offices.desc')}</p>
+      <ul className="flex flex-col divide-y divide-line">
+        {overview.offices.map((o) => (
+          <OfficeRow key={o.id} office={o} />
+        ))}
+        {overview.offices.length === 0 && (
+          <li className="py-2 text-sm text-muted">{t('offices.empty')}</li>
+        )}
+      </ul>
+      <div className="flex items-end gap-2">
+        <div className="flex-1">
+          <Field
+            label={t('offices.new')}
+            value={name}
+            onChange={setName}
+            placeholder={t('offices.new.placeholder')}
+          />
+        </div>
+        <Button
+          variant="soft"
+          disabled={busy || !name.trim()}
+          onClick={async () => {
+            if (await attempt(() => api.upsertOffice(null, name))) setName('');
+          }}
+        >
+          {t('offices.add')}
+        </Button>
+      </div>
+      <h3 className="mt-2 font-bold">{t('lunch.title')}</h3>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-col gap-1 text-sm font-medium">
+          {t('lunch.start')}
+          <input
+            type="time"
+            className="rounded-control border border-line bg-surface px-3 py-2 text-sm"
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm font-medium">
+          {t('lunch.end')}
+          <input
+            type="time"
+            className="rounded-control border border-line bg-surface px-3 py-2 text-sm"
+            value={end}
+            onChange={(e) => setEnd(e.target.value)}
+          />
+        </label>
+        <Button
+          variant="soft"
+          disabled={busy}
+          onClick={() => void attempt(() => api.setLunchBreak(start, end))}
+        >
+          {t('common.save')}
+        </Button>
+        {overview.lunchBreak && (
+          <Button
+            variant="secondary"
+            disabled={busy}
+            onClick={() => void attempt(() => api.setLunchBreak('', ''))}
+          >
+            {t('lunch.clear')}
+          </Button>
+        )}
+      </div>
+      <ErrorText message={error} />
+    </Card>
+  );
+}
+
+function OfficeRow({ office }: { office: OfficeView }) {
+  const [name, setName] = useState(office.name);
+  const { busy, error, attempt } = useAction();
+  return (
+    <li className="flex flex-wrap items-center gap-2 py-2">
+      <input
+        aria-label={t('offices.name')}
+        className="min-w-40 flex-1 rounded-control border border-line bg-surface px-3 py-1.5 text-sm"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
+      <Button
+        variant="secondary"
+        className="px-3 py-1"
+        disabled={busy || !name.trim() || name === office.name}
+        onClick={() => void attempt(() => api.upsertOffice(office.id, name))}
+      >
+        {t('offices.rename')}
+      </Button>
+      <ConfirmButton
+        label={t('offices.remove')}
+        message={t('offices.remove.confirm', { name: office.name })}
+        onConfirm={async () => {
+          await attempt(() => api.removeOffice(office.id));
+        }}
+      />
+      <ErrorText message={error} />
+    </li>
+  );
+}
+
 type Tab = 'personal' | 'org' | 'members';
 
 function Settings({
   info,
   members,
   orgName,
+  overview,
 }: {
   info: AppInfo;
   members: MemberView[];
   orgName: string;
+  overview: Overview | null;
 }) {
   const [tab, setTab] = useState<Tab>('personal');
   const tabs: [Tab, MessageKey][] = [
@@ -262,14 +649,14 @@ function Settings({
           </button>
         ))}
       </div>
-      {tab === 'personal' && <PersonalTab />}
-      {tab === 'org' && <OrgTab info={info} orgName={orgName} />}
+      {tab === 'personal' && <PersonalTab me={members.find((m) => m.isMe)} />}
+      {tab === 'org' && <OrgTab info={info} orgName={orgName} overview={overview} />}
       {tab === 'members' && <MembersTab info={info} members={members} />}
     </div>
   );
 }
 
-function PersonalTab() {
+function PersonalTab({ me }: { me: MemberView | undefined }) {
   const devices = useLoad(api.devices, ['roster']);
   const [linking, setLinking] = useState(false);
   const [reverify, setReverify] = useState(false);
@@ -279,13 +666,14 @@ function PersonalTab() {
   }
   return (
     <>
+      {me && <MyLook me={me} />}
       <Card className="flex items-center justify-between gap-3">
         <label htmlFor="lang" className="text-sm font-medium">
           {t('settings.language')}
         </label>
         <select
           id="lang"
-          className="rounded border border-line bg-surface px-3 py-2 text-sm"
+          className="rounded-control border border-line bg-surface px-3 py-2 text-sm"
           value={getLocale()}
           onChange={(e) => setLocale(e.target.value as (typeof LOCALES)[number])}
         >
@@ -359,7 +747,7 @@ function LinkOldDevice({ onClose }: { onClose: () => void }) {
   };
   if (done) {
     return (
-      <div className="flex items-center justify-between rounded border border-primary p-3 text-sm">
+      <div className="flex items-center justify-between rounded-control border border-primary p-3 text-sm">
         <span role="status">{t('link.old.done')}</span>
         <Button variant="secondary" onClick={onClose}>
           {t('common.close')}
@@ -368,7 +756,7 @@ function LinkOldDevice({ onClose }: { onClose: () => void }) {
     );
   }
   return (
-    <div className="flex flex-col gap-3 rounded border border-line p-3">
+    <div className="flex flex-col gap-3 rounded-control border border-line p-3">
       {!sas ? (
         <>
           <p className="text-sm text-muted">{t('link.old.desc')}</p>
@@ -413,7 +801,15 @@ function LinkOldDevice({ onClose }: { onClose: () => void }) {
   );
 }
 
-function OrgTab({ info, orgName }: { info: AppInfo; orgName: string }) {
+function OrgTab({
+  info,
+  orgName,
+  overview,
+}: {
+  info: AppInfo;
+  orgName: string;
+  overview: Overview | null;
+}) {
   const [name, setName] = useState(orgName);
   const [code, setCode] = useState<Code | null>(null);
   const { busy, error, run, attempt } = useAction();
@@ -451,6 +847,7 @@ function OrgTab({ info, orgName }: { info: AppInfo; orgName: string }) {
           </div>
         )}
       </Card>
+      {info.isAdmin && overview && <OfficesCard overview={overview} />}
       {info.hasOrgRoot && (
         <Card className="flex flex-col gap-3">
           <h2 className="font-medium">{t('settings.backup')}</h2>
@@ -525,7 +922,7 @@ function MembersTab({ info, members }: { info: AppInfo; members: MemberView[] })
                 {m.name}
                 {m.isMe && <span className="text-muted">{t('team.me')}</span>}
                 {m.isAdmin && (
-                  <span className="ml-2 rounded border border-line px-1 text-xs text-muted">
+                  <span className="ml-2 rounded-control border border-line px-1 text-xs text-muted">
                     {t('team.admin')}
                   </span>
                 )}

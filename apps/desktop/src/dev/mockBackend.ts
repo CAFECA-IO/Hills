@@ -34,38 +34,112 @@ const state = {
   isAdmin: true,
   me: 'mem-me',
   note: '',
-  presence: 'Online' as PresenceState,
+  presence: 'Focus' as PresenceState,
+  until: (Date.now() + 50 * 60_000) as number | null,
+  location: 'remote',
 };
 
+const now0 = Date.now();
+const look = (hair: number, shirt: number, skin: number) => ({ hair, shirt, skin });
+const person = (
+  id: string,
+  name: string,
+  presence: PresenceState | null,
+  location: string,
+  lk: ReturnType<typeof look>,
+  until: number | null = null,
+  note = '',
+): MemberView => ({
+  id,
+  name,
+  isAdmin: false,
+  isMe: false,
+  joinedAt: 0,
+  presence,
+  note,
+  until,
+  location,
+  look: lk,
+});
+// 示範角色（虛構人物，與設計稿第四輪相同）
 const others: MemberView[] = [
+  person('mem-a', '王小明', 'Online', 'office:tpe', look(0, 0, 0)),
+  person('mem-b', '陳小華', 'Meeting', 'office:tpe', look(1, 1, 1), now0 + 50 * 60_000, '週會'),
+  person('mem-c', '周子安', 'Lunch', 'office:tpe', look(2, 2, 2), now0 + 50 * 60_000),
+  person('mem-d', '林小美', 'Online', 'office:hsz', look(3, 3, 0), null, 'Windows 驗收'),
+  person('mem-e', '黃宜靜', 'Away', 'office:hsz', look(1, 4, 3), now0 + 15 * 60_000),
+  person('mem-f', '張大同', null, 'hidden', look(1, 7, 1)),
+  person('mem-g', '李雅婷', 'Leave', 'office:tpe', look(2, 6, 0), now0 + 4 * 86400_000),
+];
+let offices = [
+  { id: 'tpe', name: '台北辦公室' },
+  { id: 'hsz', name: '新竹辦公室' },
+];
+let lunchBreak: { start: string; end: string } | null = { start: '12:00', end: '13:30' };
+interface MockStep {
+  id: string;
+  title: string;
+  assignee: string | null;
+  done: boolean;
+  doneAt: number | null;
+}
+interface MockTask {
+  id: string;
+  team: string;
+  title: string;
+  assignee: string | null;
+  status: string;
+  dueAt: number | null;
+  steps: MockStep[];
+  createdBy: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+const st = (id: string, title: string, assignee: string | null, done = false): MockStep => ({
+  id,
+  title,
+  assignee,
+  done,
+  doneAt: done ? now0 - 3600_000 : null,
+});
+let tasks: MockTask[] = [
   {
-    id: 'mem-a',
-    name: '王小明',
-    isAdmin: false,
-    isMe: false,
-    joinedAt: 0,
-    presence: 'Online',
-    note: '整理 M0 驗收清單',
+    id: 't1',
+    team: 'default',
+    title: 'Windows 驗收',
+    assignee: 'mem-d',
+    status: 'doing',
+    dueAt: now0 + 80 * 60_000,
+    steps: [
+      st('s1', 'Mac 驗收', 'mem-d', true),
+      st('s2', 'relay 更新', 'mem-me'),
+      st('s3', '通知測試', 'mem-d'),
+      st('s4', '簽核', 'mem-d'),
+    ],
+    createdBy: 'mem-me',
+    createdAt: now0 - 4 * 3600_000,
+    updatedAt: now0,
   },
   {
-    id: 'mem-b',
-    name: '陳小華',
-    isAdmin: false,
-    isMe: false,
-    joinedAt: 0,
-    presence: 'Meeting',
-    note: '週會',
-  },
-  {
-    id: 'mem-c',
-    name: '林小美',
-    isAdmin: false,
-    isMe: false,
-    joinedAt: 0,
-    presence: null,
-    note: '',
+    id: 't2',
+    team: 'default',
+    title: '撰寫檔案分享部署說明',
+    assignee: 'mem-me',
+    status: 'todo',
+    dueAt: null,
+    steps: [st('s5', '草稿', 'mem-me'), st('s6', '請小明校對', 'mem-a')],
+    createdBy: 'mem-me',
+    createdAt: now0 - 86400_000,
+    updatedAt: now0,
   },
 ];
+let manualFocus: string | null = null;
+let myLook = look(0, 5, 2);
+const syncStatus = (t: MockTask) => {
+  if (t.steps.length && t.steps.every((x) => x.done)) t.status = 'done';
+  else if (t.steps.some((x) => x.done)) t.status = 'doing';
+};
+const touch = (name = 'doc') => emit('hills://node', name);
 let invites: InviteView[] = [
   { id: 'a1b2c3d4', admin: false, expiresAt: Date.now() + 70 * 3600_000, mine: true },
 ];
@@ -183,15 +257,108 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
         joinedAt: 0,
         presence: state.presence,
         note: state.note,
+        until: state.until,
+        location: state.location,
+        look: myLook,
       },
       ...others,
     ],
     teams: [{ id: 'default', name: '全體成員', members: [state.me, ...others.map((m) => m.id)] }],
+    offices,
+    lunchBreak,
   }),
   set_presence: (a) => {
     state.presence = a.presence as PresenceState;
     state.note = String(a.note);
-    emit('hills://node', 'presence');
+    if (typeof a.location === 'string') {
+      state.location = a.location;
+      state.until = (a.until as number | null) ?? null;
+    }
+    touch('presence');
+  },
+  tasks: () => tasks,
+  create_task: (a) => {
+    const input = a.input as Omit<MockTask, 'id' | 'team' | 'steps'> & { steps: MockStep[] };
+    const id = 't' + (tasks.length + 1) + Math.random().toString(16).slice(2, 6);
+    tasks = [
+      ...tasks,
+      {
+        ...input,
+        id,
+        team: String(a.team),
+        status: 'todo',
+        steps: input.steps.map((x, i) => ({ ...x, id: x.id ?? `${id}-${i}`, doneAt: null })),
+        createdBy: state.me,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ];
+    touch();
+    return id;
+  },
+  update_task: (a) => {
+    const input = a.input as MockTask;
+    tasks = tasks.map((x) =>
+      x.id === a.task
+        ? {
+            ...x,
+            ...input,
+            status: x.status,
+            steps: input.steps.map((y, i) => ({ ...y, id: y.id ?? `${x.id}-n${i}`, doneAt: null })),
+          }
+        : x,
+    );
+    tasks.forEach(syncStatus);
+    touch();
+  },
+  set_step_done: (a) => {
+    const task = tasks.find((x) => x.id === a.task);
+    const stp = task?.steps.find((x) => x.id === a.step);
+    if (task && stp) {
+      stp.done = Boolean(a.done);
+      stp.doneAt = stp.done ? Date.now() : null;
+      syncStatus(task);
+    }
+    touch();
+  },
+  delete_task: (a) => {
+    tasks = tasks.filter((x) => x.id !== a.task);
+    touch();
+  },
+  focus: () => {
+    const open = tasks.filter(
+      (x) =>
+        x.status !== 'done' &&
+        (x.assignee === state.me || x.steps.find((y) => !y.done)?.assignee === state.me),
+    );
+    const manual = open.find((x) => x.id === manualFocus);
+    if (manual) return { task: manual, manual: true };
+    const pick = [...open].sort((p, q) => (p.dueAt ?? Infinity) - (q.dueAt ?? Infinity))[0];
+    return { task: pick ?? null, manual: false };
+  },
+  set_focus: (a) => {
+    manualFocus = (a.task as string | null) ?? null;
+    touch();
+  },
+  set_profile: (a) => {
+    myLook = a.look as typeof myLook;
+    touch();
+  },
+  upsert_office: (a) => {
+    const id = (a.id as string | null) ?? 'o' + Math.random().toString(16).slice(2, 8);
+    offices = offices.some((o) => o.id === id)
+      ? offices.map((o) => (o.id === id ? { ...o, name: String(a.name) } : o))
+      : [...offices, { id, name: String(a.name) }];
+    touch('org');
+    return id;
+  },
+  remove_office: (a) => {
+    offices = offices.filter((o) => o.id !== a.id);
+    touch('org');
+  },
+  set_lunch_break: (a) => {
+    lunchBreak = a.start ? { start: String(a.start), end: String(a.end) } : null;
+    touch('org');
   },
   sync_status: () => (state.phase === 'pending' ? 'Pending' : 'Synced'),
   sync_now: () => undefined,

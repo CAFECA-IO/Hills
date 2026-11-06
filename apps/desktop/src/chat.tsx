@@ -16,11 +16,13 @@ import { Button, ConfirmButton, ErrorText, Field, useAction } from './ui';
 
 interface Props {
   members: MemberView[];
+  /** 從首頁開啟時直接進入的對話 */
+  initial?: string | null;
 }
 
-export function Chat({ members }: Props) {
+export function Chat({ members, initial = null }: Props) {
   const convs = useLoad(api.conversations, ['convs', 'message', 'doc', 'roster']);
-  const [current, setCurrent] = useState<string | null>(null);
+  const [current, setCurrent] = useState<string | null>(initial);
   const [creating, setCreating] = useState(false);
   const me = members.find((m) => m.isMe)?.id ?? '';
   const nameOf = useMemo(() => {
@@ -47,7 +49,7 @@ export function Chat({ members }: Props) {
             setCurrent(c.id);
           }}
           aria-current={c.id === current ? 'true' : undefined}
-          className={`flex w-full items-center justify-between gap-2 rounded px-3 py-2 text-left text-sm ${c.id === current ? 'bg-bg font-medium text-primary' : 'hover:bg-bg'}`}
+          className={`flex w-full items-center justify-between gap-2 rounded-control px-3 py-2 text-left text-sm ${c.id === current ? 'bg-primary-soft font-semibold text-primary' : 'hover:bg-bg'}`}
         >
           <span className="flex min-w-0 items-center gap-2">
             {other && (
@@ -94,7 +96,7 @@ export function Chat({ members }: Props) {
           </section>
         )}
       </aside>
-      <section className="flex min-w-0 flex-1 flex-col rounded-lg border border-line bg-surface">
+      <section className="flex min-w-0 flex-1 flex-col rounded-card bg-surface shadow-sm">
         {creating ? (
           <NewConversation
             members={members.filter((m) => !m.isMe)}
@@ -276,7 +278,9 @@ function MessageItem({
 }) {
   const mentioned = m.mentions.includes(me);
   return (
-    <li className={`rounded px-2 py-1 ${mentioned ? 'border-l-2 border-primary bg-bg' : ''}`}>
+    <li
+      className={`rounded-control px-2 py-1 ${mentioned ? 'border-l-2 border-primary bg-bg' : ''}`}
+    >
       <p className="text-xs text-muted">
         <span className={`font-medium ${mine ? 'text-primary' : 'text-fg'}`}>
           {nameOf(m.author)}
@@ -382,7 +386,7 @@ function Composer({
       {options.length > 0 && (
         <ul
           role="listbox"
-          className="absolute bottom-full left-3 mb-1 w-56 rounded border border-line bg-surface py-1 shadow"
+          className="absolute bottom-full left-3 mb-1 w-56 rounded-control border border-line bg-surface py-1 shadow"
         >
           {options.map((c, i) => (
             <li key={c.id} role="option" aria-selected={i === hi}>
@@ -406,7 +410,7 @@ function Composer({
           ref={area}
           aria-label={t('chat.placeholder')}
           placeholder={t('chat.placeholder')}
-          className="min-h-12 flex-1 resize-y rounded border border-line bg-surface px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-primary"
+          className="min-h-12 flex-1 resize-y rounded-control border border-line bg-surface px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-primary"
           value={text}
           rows={2}
           onChange={(e) => {
@@ -450,7 +454,7 @@ function MembersPanel({
             <span className="truncate">
               {nameOf(id)}
               {id === conv.creator && (
-                <span className="ml-1 rounded border border-line px-1 text-xs text-muted">
+                <span className="ml-1 rounded-control border border-line px-1 text-xs text-muted">
                   {t('chat.panel.creator')}
                 </span>
               )}

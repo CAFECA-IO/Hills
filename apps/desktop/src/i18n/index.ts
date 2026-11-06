@@ -58,3 +58,19 @@ export const formatTime = (ms: number) =>
   new Intl.DateTimeFormat(current, { dateStyle: 'medium', timeStyle: 'short' }).format(ms);
 
 export type { MessageKey };
+
+/** 時:分（今天以外加上日期）。 */
+export const formatClock = (ms: number, now = Date.now()) => {
+  const d = new Date(ms);
+  const sameDay = new Date(now).toDateString() === d.toDateString();
+  return new Intl.DateTimeFormat(current, {
+    ...(sameDay ? {} : { month: 'numeric', day: 'numeric' }),
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(d);
+};
+
+/** 月/日。 */
+export const formatDate = (ms: number) =>
+  new Intl.DateTimeFormat(current, { month: 'numeric', day: 'numeric' }).format(ms);

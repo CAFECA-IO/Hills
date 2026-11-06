@@ -6,16 +6,20 @@ export function Button({
   variant = 'primary',
   className = '',
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: 'primary' | 'secondary' | 'soft' | 'danger';
+}) {
+  // 每頁只有一個主按鈕（ui-spec「視覺語言」）；其他用 secondary / soft
   const styles = {
-    primary: 'bg-primary text-on-primary hover:opacity-90',
-    secondary: 'border border-line bg-surface hover:bg-bg',
-    danger: 'border border-danger text-danger hover:bg-danger hover:text-on-primary',
+    primary: 'bg-primary font-bold text-on-primary hover:opacity-90',
+    secondary: 'border border-line bg-surface font-semibold hover:bg-bg',
+    soft: 'bg-primary-soft font-semibold text-primary hover:opacity-90',
+    danger: 'border border-danger font-semibold text-danger hover:bg-danger hover:text-on-primary',
   }[variant];
   return (
     <button
       type="button"
-      className={`rounded px-4 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50 ${styles} ${className}`}
+      className={`min-h-9 rounded-full px-4 py-2 text-sm transition-colors duration-(--hills-motion) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50 ${styles} ${className}`}
       {...rest}
     />
   );
@@ -44,7 +48,7 @@ export function Field({
 }) {
   const id = useId();
   const cls =
-    'w-full rounded border border-line bg-surface px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-primary';
+    'w-full rounded-control border border-line bg-surface px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-primary';
   return (
     <div className="flex flex-col gap-1">
       <label htmlFor={id} className="text-sm font-medium">
@@ -85,16 +89,14 @@ export function Field({
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
-    <section className={`rounded-lg border border-line bg-surface p-5 ${className}`}>
-      {children}
-    </section>
+    <section className={`rounded-card bg-surface p-5 shadow-sm ${className}`}>{children}</section>
   );
 }
 
 export function ErrorText({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <p role="alert" className="rounded border border-danger px-3 py-2 text-sm text-danger">
+    <p role="alert" className="rounded-control border border-danger px-3 py-2 text-sm text-danger">
       {t('common.error', { message })}
     </p>
   );
@@ -135,7 +137,7 @@ export function CodeBox({ code, qrSvg }: { code: string; qrSvg?: string }) {
           dangerouslySetInnerHTML={{ __html: qrSvg }}
         />
       )}
-      <code className="w-full break-all rounded border border-line bg-bg p-3 text-xs select-all">
+      <code className="w-full break-all rounded-control border border-line bg-bg p-3 text-xs select-all">
         {code}
       </code>
       <Button variant="secondary" onClick={copy}>
@@ -166,7 +168,7 @@ export function ConfirmButton({
   return (
     <div
       role="alertdialog"
-      className="flex flex-col gap-2 rounded border border-danger p-3 text-sm"
+      className="flex flex-col gap-2 rounded-control border border-danger p-3 text-sm"
     >
       <p>{message}</p>
       <div className="flex gap-2">

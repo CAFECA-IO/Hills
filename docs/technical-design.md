@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.8 草案 · 2026-11-06 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.9 草案 · 2026-11-06 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15。
 
 ## 1. 元件總覽
@@ -23,7 +23,7 @@
 │ hills-mailbox   常駐節點：保存加密 change bundle，供離線成員補同步            │
 │ hills-tsa       可信時間戳：對打卡雜湊簽發時間憑證                           │
 │ hills-storage×8 檔案分片儲存節點（SwarmStorage 原理，§15）                    │
-│ caddy           反向代理與自動 TLS                                           │
+│ （D39：不使用 caddy；儲存節點以 iroh 連線，§15.6）                          │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -409,8 +409,7 @@ services:
   relay:    # iroh-relay（含 QUIC address discovery）
   mailbox:  # hills-mailbox，volume: mailbox-data:/data
   tsa:      # hills-tsa，私鑰以 docker secret 掛載
-  storage-0 … storage-7:  # hills-storage，各自獨立 volume（§15.7）
-  caddy:    # 80/443，自動 TLS，反向代理 relay
+  storage-0 … storage-7:  # hills-storage，各自獨立 volume 與 UDP 埠（§15.7、D39）
 ```
 
 - 提供 `.env.example`；實際 `.env` 與所有私鑰不進版控（repo 為公開）。
@@ -458,7 +457,13 @@ M1 的對話範圍：一對一（`dm`）與群組（`group`），文字、Markdo
 - 每個對話一把 epoch 對稱金鑰 `CK_conv`，沿用 §3.7 的 epoch 機制：建立者產生 `CK`，以 HPKE 封裝給每位成員的 EK。
 - 新增成員：封裝**目前** epoch 給新成員（M1 不分享歷史 epoch，新成員看不到加入前訊息；歷史分享為 M2 功能）。
 - 移出成員：輪替 epoch，新訊息使用新 `CK`。
-- 對話設定存於 `conv/<convId>/meta`（寫入者：對話管理員 = 建立者與其指定者）：名稱、成員、金鑰封裝紀錄。
+- 對話設定存於 `conv/<convId>/meta`（寫入者：對話管理員）：名稱、成員、金鑰封裝紀錄。
+- **v0.9（M1）**：對話管理員只有**建立者**一人（指定其他管理員為 M2 功能）。`convId = <建立者 memberId>-<ULID>`（皆為小寫 base32，共 53 字元），因此不需先解密 meta 就能得知建立者：
+  - `KeyFamily::Conv(convId)` 的封裝金鑰只接受**建立者裝置**簽章者（取代 M0「任何成員皆可」），防止他人以假的較新 epoch 讓成員改用其金鑰加密。
+  - `meta` 的每筆 change 必須由建立者簽署；`log` 的作者必須在 meta 的現任成員中。
+  - 因同步順序造成「作者尚未出現在 meta」而被拒的 log change 暫存在本機，meta 更新後重試。
+- 一對一對話（`dm`）也是一般對話（kind = dm、兩位成員）；兩人同時建立時可能出現兩個 DM，介面優先開啟最近有訊息的那一個。
+- 未讀數只存在本機，不同步。
 
 ### 14.2 訊息文件
 
@@ -504,10 +509,10 @@ Reed-Solomon 實作直接移植 SwarmStorage 的 `src/lib/reed_solomon_erasure.t
 
 ```
 使用者選擇檔案 / 資料夾（Tauri dialog）
-  └► 主執行緒：列出檔案（Tauri fs plugin，權限只限所選路徑）→ 建立上傳佇列
+  └► 主執行緒：列出檔案（D39：Rust command，只接受本次以 dialog 選擇的路徑）→ 建立上傳佇列
        └► 逐一處理每個檔案（依序，一次一個檔案）
             └► 每個條帶 k（20 MiB 明文，最後一條帶可較短）：
-                 1. fs FileHandle 讀取 [k·20MiB, (k+1)·20MiB)   ──► 傳給 Web Worker（Transferable）
+                 1. Rust command 讀取 [k·20MiB, (k+1)·20MiB) 的明文，以二進位回傳 ──► 傳給 Web Worker（Transferable）
                  2. Worker：AES-256-GCM 加密
                       key = fileKey（每檔隨機 256-bit）
                       IV  = fileNonce(8 B 隨機) ‖ uint32_be(k)
@@ -515,7 +520,7 @@ Reed-Solomon 實作直接移植 SwarmStorage 的 `src/lib/reed_solomon_erasure.t
                       payload = ciphertext ‖ tag(16 B)
                  3. Worker：payload 以 0 補齊到 5 的倍數 → 切 5 個資料分片 → RS 計算 3 個同位分片
                  4. Worker：每個分片計算 SHA-256（物件 ID）
-                 5. 主執行緒：8 個分片平行上傳到 8 個儲存節點（§15.6）
+                 5. 主執行緒：8 個密文分片交給 Rust，平行上傳到 8 個儲存節點（§15.6，D39）
             └► 全部條帶完成 → 產生 FileManifest
   └► 資料夾：產生 FolderManifest → 以 manifestKey 加密後當作一般檔案上傳（同一流程）
   └► 送出對話訊息（Attachment）
@@ -538,6 +543,7 @@ Reed-Solomon 實作直接移植 SwarmStorage 的 `src/lib/reed_solomon_erasure.t
        3. 依 payloadLen 去除補齊 → AES-256-GCM 解密（同上 IV / AAD）
        4. 寫入 <name>.partial 的對應位置
   └► 全部條帶 tag 驗證通過 → 改名為正式檔名；任何條帶失敗 → 刪除 .partial 並回報
+（D39：分片由 Rust 從節點取回後以二進位交給前端；RS 解碼與解密在前端進行，明文再交給 Rust 寫入使用者所選位置的 `.partial`。）
 ```
 
 - 少於 5 片可用時回報「檔案無法還原」，並顯示可用分片數。
@@ -593,25 +599,29 @@ FolderManifest {
 
 ### 15.6 儲存節點 hills-storage
 
-M1 自行實作輕量 HTTPS 物件節點（Rust + axum），部署 8 個實例；日後可替換為 SwarmStorage 節點網路。
+> v0.9：依 D39 改為 iroh 連線，取代原 HTTPS 設計。
 
-```
-PUT    /v1/objects/{sha256}     body = 分片位元組；節點驗證 SHA-256 相符才存
-HEAD   /v1/objects/{sha256}     200 / 404（續傳用）
-GET    /v1/objects/{sha256}     回傳分片；支援 Range
-GET    /v1/health
-```
+M1 自行實作輕量物件節點（Rust），部署 8 個實例；日後可替換為 SwarmStorage 節點網路。每個節點是一個 iroh endpoint（自己的金鑰與固定 UDP 埠），ALPN `hills/storage/1`，訊息格式與 mailbox 相同（每條雙向串流一個請求、postcard、§16.7）：
 
-- **驗證**：每個請求帶 `Hills-Auth` 標頭：`DeviceCert`、`MemberCert` 與 DK 對 `method ‖ path ‖ date ‖ sha256(body)` 的簽章；節點持有 OK.pub 與成員憑證快照（同 mailbox，§5.2）以驗證。
-- **前端直接上傳**：前端以 Tauri http plugin（或設定 CORS 後使用 fetch）直接連線 8 個節點；不經過 Rust 核心轉送，以符合「前端切割加密後上傳」。
+| 請求 | 需 Hello | 權限 | 說明 |
+|------|:---:|------|------|
+| `Hello` | — | 有效裝置 | 與 mailbox 相同（裝置憑證 + 成員憑證）；未綁定組織時第一位 OK 簽發的管理者完成綁定（§16.9） |
+| `PutRoster` | ✓ | 管理者裝置 | 管理者裝置把 roster（含撤銷）推送到每個節點，與 mailbox 相同 |
+| `Has{ids}` | ✓ | 成員 | 回傳每個 SHA-256 是否已存在（續傳用） |
+| `Put{id, data, expires_at}` | ✓ | 成員 | 節點驗證 `SHA-256(data) == id` 才存；`expires_at` 最長為上傳後 1 年（D16），預設 1 年 |
+| `Get{id, offset, len}` | ✓ | 成員 | 回傳分片（可指定範圍） |
+
+- **單一分片上限**：4 MiB + 少量餘裕（20 MiB 條帶 / 5）；請求與回應上限 5 MiB。
+- **轉送**：前端完成加密與 RS 編碼後，把密文分片以二進位交給 Rust command；Rust 依分配規則連到對應節點上傳。Rust 不解密、不重新編碼，也不保存明文。
+- **節點位址**：每個節點啟動時把自己的連線碼寫到與 mailbox 共用的 `storage-codes` volume；mailbox 的 `Services` 請求（§16.7）回傳依編號排序的節點位址，node 每次同步時更新（同 §16.1「mailbox 位址更新」），不需管理者手動設定。
 - **分片分配**：分片 i 放到節點 `(i + fileNonce[0]) mod N`（N = 節點數，M1 為 8），讓負載分散。
-- **保留**：上傳時帶 `Hills-Expires`（預設上傳後 1 年，D16）；節點每日清除過期物件。
-- **配額**：每組織、每成員的總容量與單檔上限（預設 5 GB，可設定），超過時回 `413`。
+- **保留**：節點每日清除過期物件。
+- **配額**：每位成員在每個節點的總容量（預設 20 GB，可由環境變數調整）；單檔上限由前端檢查（預設 5 GB）。超過時回 `TooLarge`。
 - **節點看到的資訊**：分片密文、大小、上傳者的成員 ID 與時間；看不到檔名、目錄結構、內容。
 
 ### 15.7 部署與容錯
 
-- docker-compose 新增 `storage-0` … `storage-7`，每個實例使用獨立 volume；`caddy` 以 `storage-<n>.<domain>` 對外。
+- docker-compose 新增 `storage-0` … `storage-7`，每個實例使用獨立 volume 與固定 UDP 埠（預設 7850–7857，D39），不需網域或憑證，NAT 後的裝置經自架 relay 連線。
 - M1 單台主機時，請把 8 個 volume 分散在不同磁碟；正式環境建議分散到至少 3 台主機，讓任 1 台主機故障時仍保有 ≥ 5 片（每台最多放 3 個節點，且 3 台中任兩台合計 ≥ 5）。
 - 監控：每日抽查每個節點的分片 SHA-256，發現損壞時由持有檔案的成員裝置重新上傳缺少的分片（修復流程列為 M2）。
 
@@ -725,6 +735,7 @@ secret 不放在 org 文件，因為所有成員都能讀 org 文件；代價是
 | `PutKeys` | ✓ | 管理者（org、team、attendance）/ 本人（private） | `Signed<WrappedKey>`，由簽署裝置的權限決定 |
 | `FetchKeys{since}` | ✓ | 收件者本人 | 只回傳 `recipient == 本人` 的封裝 |
 | `Announce{addr}` / `Peers` | ✓ | 成員 | 自架位址簿：裝置的 iroh 位址與最後上線時間，取代 n0 DNS 探索（D1、D26 全自架） |
+| `Services` | ✓ | 成員 | v0.9：回傳儲存節點位址列表（依編號排序，§15.6）；尚未部署儲存節點時為空 |
 | `Info` | ✓ | 成員 | 回傳 mailbox 目前的 `PeerAddr`（NodeId、relay、對外位址優先），供 node 更新已存位址（§16.1）；內容與 mailbox 連線碼相同，不是機密 |
 | `Put` / `List` / `Get` | ✓ | 成員 | §5.2 |
 

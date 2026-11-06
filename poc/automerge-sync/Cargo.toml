@@ -1,0 +1,15 @@
+[package]
+name = "automerge-sync"
+description = "PoC：Automerge 離線編輯與同步驗證（technical-design §12）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+automerge.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

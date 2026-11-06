@@ -1,0 +1,11 @@
+# 選填的進階設定參考。預設由 relay-entrypoint.sh 依 .env 產生，不需要此檔。
+# 若要自訂，請以 volume 提供容器內的 /config/relay.toml（存在時優先使用）。
+enable_relay = true
+http_bind_addr = "[::]:80"
+enable_quic_addr_discovery = true
+
+[tls]
+hostname = "relay.example.com"
+cert_mode = "LetsEncrypt"
+contact = "admin@example.com"
+cert_dir = "/data/certs"

@@ -1,0 +1,129 @@
+//! 文件 ID 與寫入者規則（technical-design §4.1、§14.2）。
+
+use hills_proto::MemberId;
+
+/// 由文件 ID 解析出的文件類型與擁有者。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DocKind {
+    /// `org`：只有管理者可寫
+    Org,
+    /// `team/<teamId>`：小組成員
+    Team(String),
+    /// `member/<id>/…`：只有本人（plans、scrum、attendance、requests、reports）
+    Member {
+        owner: MemberId,
+        section: MemberSection,
+    },
+    /// `approvals/<approverId>`：只有核准者本人
+    Approvals(MemberId),
+    /// `conv/<convId>/meta`：對話管理員
+    ConvMeta(String),
+    /// `conv/<convId>/log/<yyyy-mm>`：對話成員
+    ConvLog(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MemberSection {
+    Plans(String),
+    Scrum(String),
+    Attendance(String),
+    Requests,
+    Reports,
+    /// 本人的私密設定，例如邀請 secret（technical-design §16.2）
+    Secrets,
+}
+
+fn is_month(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 7
+        && b[4] == b'-'
+        && b.iter()
+            .enumerate()
+            .all(|(i, c)| i == 4 || c.is_ascii_digit())
+}
+
+fn is_segment(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 64
+        && s.bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+}
+
+impl DocKind {
+    pub fn parse(doc_id: &str) -> Option<Self> {
+        let parts: Vec<&str> = doc_id.split('/').collect();
+        Some(match parts.as_slice() {
+            ["org"] => DocKind::Org,
+            ["team", t] if is_segment(t) => DocKind::Team((*t).into()),
+            ["approvals", m] => DocKind::Approvals(MemberId::parse(m).ok()?),
+            ["conv", c, "meta"] if is_segment(c) => DocKind::ConvMeta((*c).into()),
+            ["conv", c, "log", ym] if is_segment(c) && is_month(ym) => {
+                DocKind::ConvLog((*c).into())
+            }
+            ["member", m, rest @ ..] => {
+                let owner = MemberId::parse(m).ok()?;
+                let section = match rest {
+                    ["plans", v] if matches!(*v, "private" | "team" | "org") => {
+                        MemberSection::Plans((*v).into())
+                    }
+                    ["scrum", ym] if is_month(ym) => MemberSection::Scrum((*ym).into()),
+                    ["attendance", ym] if is_month(ym) => MemberSection::Attendance((*ym).into()),
+                    ["requests"] => MemberSection::Requests,
+                    ["reports"] => MemberSection::Reports,
+                    ["secrets"] => MemberSection::Secrets,
+                    _ => return None,
+                };
+                DocKind::Member { owner, section }
+            }
+            _ => return None,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_known_ids() {
+        let m = MemberId([3; 16]);
+        assert_eq!(DocKind::parse("org"), Some(DocKind::Org));
+        assert_eq!(
+            DocKind::parse("team/t-1"),
+            Some(DocKind::Team("t-1".into()))
+        );
+        assert_eq!(
+            DocKind::parse(&format!("member/{m}/attendance/2026-11")),
+            Some(DocKind::Member {
+                owner: m,
+                section: MemberSection::Attendance("2026-11".into())
+            })
+        );
+        assert_eq!(
+            DocKind::parse(&format!("approvals/{m}")),
+            Some(DocKind::Approvals(m))
+        );
+        assert_eq!(
+            DocKind::parse("conv/c1/log/2026-11"),
+            Some(DocKind::ConvLog("c1".into()))
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_ids() {
+        let m = MemberId([3; 16]);
+        for bad in [
+            "".to_string(),
+            "orgs".into(),
+            "team/".into(),
+            "team/a/b".into(),
+            "team/../org".into(),
+            format!("member/{m}/attendance/2026-1"),
+            format!("member/{m}/plans/public"),
+            "member/notbase32/requests".into(),
+            "conv/c1/log/202611".into(),
+        ] {
+            assert_eq!(DocKind::parse(&bad), None, "{bad}");
+        }
+    }
+}

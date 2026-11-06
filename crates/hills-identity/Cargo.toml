@@ -1,0 +1,32 @@
+[package]
+name = "hills-identity"
+description = "成員身分與金鑰：復原詞、IK / EK、成員 ID、裝置憑證。見 technical-design §3。"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+argon2.workspace = true
+chacha20poly1305.workspace = true
+postcard.workspace = true
+serde.workspace = true
+bip39.workspace = true
+blake3.workspace = true
+data-encoding.workspace = true
+ed25519-dalek.workspace = true
+getrandom.workspace = true
+hills-proto.workspace = true
+hkdf.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+x25519-dalek.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

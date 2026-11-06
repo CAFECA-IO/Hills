@@ -1,0 +1,9 @@
+# docker build 的 context 為 repo 根目錄；只需要 Rust 原始碼
+target
+**/node_modules
+**/dist
+.git
+docs
+.env
+.env.*
+deploy/relay.toml

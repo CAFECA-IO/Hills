@@ -1,0 +1,21 @@
+[package]
+name = "hills-sync"
+description = "文件同步與簽章 change 驗證層。見 technical-design §4.1、§4.2、§4.5。"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+automerge.workspace = true
+hills-identity.workspace = true
+hills-proto.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

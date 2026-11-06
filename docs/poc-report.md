@@ -1,13 +1,13 @@
 # M0 PoC 報告
 
-> 版本：v0.9 · 2026-11-06 · 對應 technical-design §12、§15.8；Issue「[M0][PoC] …」各項
+> 版本：v0.10 · 2026-11-06 · 對應 technical-design §12、§15.8；Issue「[M0][PoC] …」各項
 > 狀態：**部分完成**。macOS 與 Windows WebView 檔案管線通過；Windows 已經自架 mailbox + relay 加入組織。NAT 矩陣、安裝檔與 §5.4 其餘項目待實測。
 
 ## 1. 結論摘要
 
 | 項目 | 通過標準 | 目前結果 | 狀態 |
 |------|---------|---------|------|
-| iroh 穿透 | 各網路組合皆可連線 | 本機雙行程直連成功；NAT 矩陣待測 | ⏳ 待實測 |
+| iroh 穿透 | 各網路組合皆可連線 | 本機雙行程直連成功；**企業防火牆（Win11）↔ iPhone 熱點 CGNAT（Mac）經自架 relay 可連線**（Hills app 實測）；其餘組合待測 | ✅ 最嚴苛組合通過，⏳ 其餘組合 |
 | Automerge 同步 | 一致、無遺失、合併 < 1 秒 | 一致；100 次 / 副本合併 3.4 ms | ✅ 通過 |
 | 多節點同步（hills-node） | 即時 ≤ 2 秒、離線補同步 ≤ 5 秒 | 本機：gossip + 直連 120 ms、離線補同步 209 ms；加入、presence、綁定、停用輪替、復原皆通過 | ✅ 本機與 Mac + Windows 跨網路皆通過：加入、presence < 1 秒、綁定新裝置、重新開啟時離線補同步 |
 | 加密 bundle + mailbox | 補同步 ≤ 5 秒 | 3 份 bundle 補同步 77–90 ms（debug）、6 ms（release），本機直連 | ✅ 通過（跨網路經自架 mailbox 亦通過，§5.4） |
@@ -15,7 +15,7 @@
 | 前端加密 / 編碼效能 | 每平台 ≥ 50 MB/s、記憶體 < 200 MB | **macOS WKWebView 366–401 MB/s、WebContent 行程 78.5 MB；Windows WebView2 120–125 MB/s，記憶體在 200 MB 內**；Node 192 MB/s、Chromium Worker 123 MB/s | ✅ macOS、Windows 通過 |
 | 桌機打包 | macOS、Windows 可安裝啟動 | Linux 可建置並啟動；CI 已設定 macOS / Windows 打包 | ⏳ 待 CI / 實機 |
 
-**go / no-go**：**go**（2026-11-06）。M0 驗收「Mac 與 Windows 跨網路建立組織、加入、同步資料」已通過（§5.4），iroh、Automerge 與 SwarmStorage 前端管線皆符合標準，不需更換技術選型。尚餘兩項不阻擋進入 M1、在 M1 期間補測：§5.1 NAT 矩陣（企業防火牆、CGNAT 等組合）、§5.3 CI 安裝檔實機安裝。
+**go / no-go**：**go**（2026-11-06）。M0 驗收「Mac 與 Windows 跨網路建立組織、加入、同步資料」已通過（§5.4），iroh、Automerge 與 SwarmStorage 前端管線皆符合標準，不需更換技術選型。§5.4 的測試環境即為「企業防火牆（Windows 11）↔ iPhone 熱點 CGNAT（Mac）」，屬 NAT 矩陣中最嚴苛的組合之一。尚餘兩項不阻擋進入 M1、在 M1 期間補測：§5.1 其餘網路組合（以 net-echo 記錄 path 與延遲）、§5.3 CI 安裝檔實機安裝。
 
 ## 2. 測試環境（雲端）
 
@@ -142,6 +142,7 @@ cargo run --release -p net-echo -- dial <ticket> --count 20 --size 65536
 | 家用寬頻 | 手機熱點（CGNAT） | 官方 | | | |
 | 企業防火牆 | 家用寬頻 | 官方 | | | |
 | （以上重複） | | 自架 | | | |
+| 企業防火牆（Windows 11） | iPhone 手機熱點（CGNAT，Mac） | 自架（relay.cafeca.io） | 未記錄（Hills app 實測，非 net-echo） | — | — |
 
 ### 5.2 WebView 檔案管線效能
 
@@ -183,7 +184,7 @@ push 後 CI 的「Desktop bundle」job 會產生未簽章的 `.dmg`、`.exe`、`
 
 | 項目 | 結果 |
 |------|------|
-| Mac 建立組織、Windows 以邀請碼加入（不同網路） | ✅ 2026-11-06，經自架 mailbox + relay（relay.cafeca.io）加入成功 |
+| Mac 建立組織、Windows 以邀請碼加入（不同網路） | ✅ 2026-11-06，Windows 11 在企業防火牆後、Mac 使用 iPhone 熱點（CGNAT），經自架 mailbox + relay（relay.cafeca.io）加入成功 |
 | 狀態文字同步時間 | ✅ 修正後 < 1 秒（第一次試用 ✗：始終未同步，見下方原因） |
 | 組織名稱即時同步時間 | 約 2 秒（經 mailbox） |
 | Windows 關閉期間的變更，重新開啟後補同步 | ✅ 視窗啟動時組織名稱即完成同步 |

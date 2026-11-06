@@ -10,6 +10,8 @@ import {
   layoutTrail,
   MAX_PER_HILL,
   MOUNTAIN,
+  moonLitPath,
+  moonPhase,
   remainingFraction,
   SUMMIT,
 } from './summit';
@@ -134,5 +136,25 @@ describe('helpers', () => {
     expect(remainingFraction({ createdAt: 0, dueAt: 100 }, 75)).toBeCloseTo(0.25);
     expect(remainingFraction({ createdAt: 0, dueAt: 100 }, 200)).toBe(0);
     expect(remainingFraction({ createdAt: 0, dueAt: null }, 0)).toBe(0);
+  });
+});
+
+describe('moon', () => {
+  it('matches known new and full moons', () => {
+    const near = (p: number, target: number) =>
+      Math.min(Math.abs(p - target), 1 - Math.abs(p - target));
+    expect(near(moonPhase(Date.UTC(2024, 0, 11, 11, 57)), 0)).toBeLessThan(0.02);
+    expect(near(moonPhase(Date.UTC(2024, 0, 25, 17, 54)), 0.5)).toBeLessThan(0.02);
+    expect(near(moonPhase(Date.UTC(2026, 10, 24, 14, 53)), 0.5)).toBeLessThan(0.02);
+  });
+  it('draws nothing at new moon and a full disc at full moon', () => {
+    expect(moonLitPath(0, 0, 0, 10)).toBeNull();
+    const full = moonLitPath(0.5, 0, 0, 10) ?? '';
+    // 望：左半圓（外緣）+ 右半圓（界線半寬 = r）= 整個圓
+    expect(full).toBe('M0 -10A10 10 0 0 0 0 10A10 10 0 0 0 0 -10Z');
+    // 上弦（漸盈）亮面在右：外緣順時針
+    expect(moonLitPath(0.1, 0, 0, 10)).toMatch(/^M0 -10A10 10 0 0 1 0 10A[\d.]+ 10 0 0 0/);
+    // 殘月（漸虧）亮面在左
+    expect(moonLitPath(0.9, 0, 0, 10)).toMatch(/^M0 -10A10 10 0 0 0 0 10A[\d.]+ 10 0 0 1/);
   });
 });

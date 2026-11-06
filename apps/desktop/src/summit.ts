@@ -193,3 +193,32 @@ export function remainingFraction(task: Pick<Task, 'createdAt' | 'dueAt'>, now: 
   if (total <= 0) return 0;
   return Math.min(1, Math.max(0, (task.dueAt - now) / total));
 }
+
+// ── 月相（ui-spec「視覺語言」日夜） ─────────────────────────
+
+const SYNODIC_DAYS = 29.530588853;
+/** 2000-01-06 18:14 UTC 的朔 */
+const NEW_MOON_EPOCH = Date.UTC(2000, 0, 6, 18, 14);
+
+/** 月齡比例：0 = 朔、0.5 = 望（0 ≤ p < 1）。 */
+export function moonPhase(ms: number): number {
+  const days = (ms - NEW_MOON_EPOCH) / 86_400_000;
+  const p = (days / SYNODIC_DAYS) % 1;
+  return p < 0 ? p + 1 : p;
+}
+
+/**
+ * 月亮亮面的 SVG path（北半球視角：漸盈亮面在右）。朔附近回傳 null（看不到亮面）。
+ * 外緣半圓 + 明暗界線的橢圓弧，界線半寬為 r·|cos 2πp|。
+ */
+export function moonLitPath(p: number, cx: number, cy: number, r: number): string | null {
+  const lit = (1 - Math.cos(2 * Math.PI * p)) / 2;
+  if (lit < 0.02) return null;
+  const waxing = p < 0.5;
+  const crescent = lit < 0.5;
+  const rx = Math.abs(Math.cos(2 * Math.PI * p)) * r;
+  const outer = waxing ? 1 : 0;
+  const term = waxing === crescent ? 0 : 1;
+  const f = (n: number) => Math.round(n * 100) / 100;
+  return `M${f(cx)} ${f(cy - r)}A${f(r)} ${f(r)} 0 0 ${outer} ${f(cx)} ${f(cy + r)}A${f(rx)} ${f(r)} 0 0 ${term} ${f(cx)} ${f(cy - r)}Z`;
+}

@@ -4,6 +4,7 @@
  */
 import type { Look, PresenceState } from './api';
 import { t, type MessageKey } from './i18n';
+import { moonLitPath, moonPhase } from './summit';
 
 const v = (name: string) => `var(--hills-${name})`;
 
@@ -368,6 +369,40 @@ export function Sun({ x, y, r = 24 }: { x: number; y: number; r?: number }) {
       <circle cx={x} cy={y} r={r + 16} fill={v('sun-halo')} />
       <circle cx={x} cy={y} r={r} fill={v('sun')} />
     </g>
+  );
+}
+
+/** 依日期計算月相的月亮（ui-spec「視覺語言」日夜）。 */
+export function Moon({ x, y, r = 22, now }: { x: number; y: number; r?: number; now: number }) {
+  const lit = moonLitPath(moonPhase(now), x, y, r);
+  return (
+    <g aria-hidden>
+      <circle cx={x} cy={y} r={r + 14} fill={v('moon-halo')} />
+      <circle cx={x} cy={y} r={r} fill={v('moon-shadow')} />
+      {lit && <path d={lit} fill={v('moon')} />}
+      {[
+        [-150, -26, 1.6],
+        [-96, 34, 1.2],
+        [-210, 18, 1.4],
+        [40, 46, 1.1],
+      ].map(([dx, dy, rr]) => (
+        <circle key={`${dx}${dy}`} cx={x + dx} cy={y + dy} r={rr} fill={v('moon')} />
+      ))}
+    </g>
+  );
+}
+
+/** 淺色模式顯示太陽、深色模式顯示月亮（跟隨系統外觀）。 */
+export function SkyLight({ x, y, now }: { x: number; y: number; now: number }) {
+  return (
+    <>
+      <g className="dark:hidden">
+        <Sun x={x} y={y} />
+      </g>
+      <g className="hidden dark:inline">
+        <Moon x={x} y={y} now={now} />
+      </g>
+    </>
   );
 }
 

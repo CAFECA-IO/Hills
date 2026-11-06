@@ -15,8 +15,8 @@ import {
   House,
   NamePill,
   SkyGradient,
+  SkyLight,
   StatusBadge,
-  Sun,
   stateLabel,
   textWidth,
 } from './figures';
@@ -183,7 +183,7 @@ function Scene({
     >
       <SkyGradient id="home-sky" />
       <rect width={SCENE.w} height={SCENE.h} fill="url(#home-sky)" />
-      <Sun x={690} y={70} />
+      <SkyLight x={690} y={70} now={now} />
       <Cloud x={560} y={96} scale={0.55} />
       {leave.length > 0 && (
         <g>

@@ -43,6 +43,10 @@
   --hills-cloud: #ffffff;
   --hills-sun: #ffe08a;
   --hills-sun-halo: #fff3cf;
+  /* 月亮只在深色模式顯示 */
+  --hills-moon: #f3ebc8;
+  --hills-moon-shadow: #2a3646;
+  --hills-moon-halo: #1c2a3f;
   --hills-roof: #f07a3a;
   --hills-laptop: #ffffff;
   --hills-laptop-line: #8a94a3;
@@ -106,6 +110,9 @@
     --hills-cloud: #c9d6e6;
     --hills-sun: #e6c86e;
     --hills-sun-halo: #3a3a2a;
+    --hills-moon: #f3ebc8;
+    --hills-moon-shadow: #2a3646;
+    --hills-moon-halo: #1c2a3f;
   }
 }
 

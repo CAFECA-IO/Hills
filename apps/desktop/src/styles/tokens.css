@@ -1,37 +1,87 @@
 /*
- * 設計 token（D22、development-guidelines §4.2）。元件只能使用這些變數，不得寫死色碼。
- * 主題色 --hills-primary 可由組織設定覆寫（D20）。目前為 M0 暫定值，M1「設計系統」Issue 定稿。
+ * 設計 token（D22、D40「晴空 · 焦點山」、ui-spec「視覺語言」、development-guidelines §4.2）。
+ * 元件只能使用這些變數，不得寫死色碼。主題色 --hills-primary 可由組織設定覆寫（D20）。
  */
 @import 'tailwindcss';
 
 :root {
-  --hills-primary: oklch(55% 0.13 160);
-  --hills-bg: oklch(98.5% 0.005 160);
-  --hills-surface: oklch(100% 0 0);
-  --hills-text: oklch(25% 0.02 160);
-  --hills-muted: oklch(50% 0.02 160);
-  --hills-border: oklch(90% 0.01 160);
-  --hills-on-primary: oklch(100% 0 0);
-  --hills-danger: oklch(55% 0.18 25);
-  --hills-warning: oklch(70% 0.14 75);
+  --hills-primary: #1f6feb;
+  --hills-primary-soft: #e6f0fe;
+  --hills-bg: #f3f6fa;
+  --hills-surface: #ffffff;
+  --hills-text: #16202e;
+  --hills-muted: #3b4656;
+  --hills-border: #dce3ec;
+  --hills-on-primary: #ffffff;
+  --hills-danger: #b42328;
+  --hills-warning: #8a5a00;
+  /* 山景 */
+  --hills-sky-top: #d6e8fd;
+  --hills-sky-bottom: #f3f8ff;
+  --hills-mountain: #c9daf2;
+  --hills-hill-near: #b6dec6;
+  --hills-hill-mid: #cdebd8;
+  --hills-hill-far: #c4e5d0;
+  /* 狀態：徽章色 / 文字色（文字對 surface ≥ 4.5:1） */
+  --hills-st-online: #1e9e6a;
+  --hills-st-online-text: #146c48;
+  --hills-st-busy: #e5484d;
+  --hills-st-busy-text: #b42328;
+  --hills-st-lunch: #f07a3a;
+  --hills-st-lunch-text: #9a3d0b;
+  --hills-st-away: #f2b32b;
+  --hills-st-away-text: #8a5a00;
+  --hills-st-focus: #5b6b82;
+  --hills-st-focus-text: #3b4656;
+  --hills-st-leave: #7c5cfc;
+  --hills-st-leave-text: #5b3fd6;
+  --hills-st-offline: #8a94a3;
+  --hills-st-offline-text: #576375;
   /* QR Code 一律白底，確保可掃描 */
-  --hills-qr-bg: oklch(100% 0 0);
+  --hills-qr-bg: #ffffff;
+  --hills-radius-card: 16px;
+  --hills-radius-control: 12px;
+  --hills-motion: 180ms;
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --hills-bg: oklch(20% 0.01 160);
-    --hills-surface: oklch(25% 0.012 160);
-    --hills-text: oklch(94% 0.01 160);
-    --hills-muted: oklch(70% 0.015 160);
-    --hills-border: oklch(35% 0.015 160);
-    --hills-danger: oklch(68% 0.16 25);
+    --hills-primary: #4c8df6;
+    --hills-primary-soft: #1b2b45;
+    --hills-bg: #0f1620;
+    --hills-surface: #18212d;
+    --hills-text: #e8edf4;
+    --hills-muted: #a9b4c3;
+    --hills-border: #2a3646;
+    --hills-on-primary: #0f1620;
+    --hills-danger: #ff8a8e;
+    --hills-warning: #f5c35a;
+    --hills-sky-top: #16253a;
+    --hills-sky-bottom: #0f1620;
+    --hills-mountain: #2a3b55;
+    --hills-hill-near: #1e3a2d;
+    --hills-hill-mid: #22402f;
+    --hills-hill-far: #264535;
+    --hills-st-online-text: #5fd3a0;
+    --hills-st-busy-text: #ff8a8e;
+    --hills-st-lunch-text: #ffab7a;
+    --hills-st-away-text: #f5c35a;
+    --hills-st-focus-text: #b8c3d3;
+    --hills-st-leave-text: #b7a6ff;
+    --hills-st-offline-text: #a9b4c3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --hills-motion: 0ms;
   }
 }
 
 @theme inline {
   --color-primary: var(--hills-primary);
+  --color-primary-soft: var(--hills-primary-soft);
   --color-bg: var(--hills-bg);
   --color-surface: var(--hills-surface);
   --color-fg: var(--hills-text);
@@ -41,7 +91,29 @@
   --color-danger: var(--hills-danger);
   --color-warning: var(--hills-warning);
   --color-qr: var(--hills-qr-bg);
-  --font-sans: 'Noto Sans TC', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --color-sky-top: var(--hills-sky-top);
+  --color-sky-bottom: var(--hills-sky-bottom);
+  --color-mountain: var(--hills-mountain);
+  --color-hill-near: var(--hills-hill-near);
+  --color-hill-mid: var(--hills-hill-mid);
+  --color-hill-far: var(--hills-hill-far);
+  --color-st-online: var(--hills-st-online);
+  --color-st-online-text: var(--hills-st-online-text);
+  --color-st-busy: var(--hills-st-busy);
+  --color-st-busy-text: var(--hills-st-busy-text);
+  --color-st-lunch: var(--hills-st-lunch);
+  --color-st-lunch-text: var(--hills-st-lunch-text);
+  --color-st-away: var(--hills-st-away);
+  --color-st-away-text: var(--hills-st-away-text);
+  --color-st-focus: var(--hills-st-focus);
+  --color-st-focus-text: var(--hills-st-focus-text);
+  --color-st-leave: var(--hills-st-leave);
+  --color-st-leave-text: var(--hills-st-leave-text);
+  --color-st-offline: var(--hills-st-offline);
+  --color-st-offline-text: var(--hills-st-offline-text);
+  --radius-card: var(--hills-radius-card);
+  --radius-control: var(--hills-radius-control);
+  --font-sans: 'Inter', 'Noto Sans TC', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
 body {

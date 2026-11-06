@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.9 草案 · 2026-11-06 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.10 草案 · 2026-11-06 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15。
 
 ## 1. 元件總覽
@@ -253,7 +253,9 @@ AAD = utf8(docId) ‖ 0x00 ‖ utf8(keyId)
 
 - 每台裝置每 30 秒於 gossip 廣播 `Presence{memberId, deviceId, state, note, currentTaskId, expiresAt, ts, sig}`，以 `GK` 加密。
 - 90 秒未收到 → 離線；同一成員多台裝置取最活躍的狀態。
-- 本機閒置 10 分鐘（可設定）→ 自動「離開」。
+- 本機閒置 10 分鐘（可設定）→ 自動「暫離」。
+- `state`（D40）：`Online` 上線、`Busy` 忙碌、`Meeting` 會議、`Focus` 專注、`Away` 暫離、`Leave` 休假、`Offline` 離線、`Lunch` 午休。`Lunch` 加在列舉最後，既有值的序列化編號不變；舊版收到 `Lunch` 會解碼失敗並略過該則 presence（M1 前尚無正式使用者，可接受）。
+- `expiresAt` 是「幾點回來」：到期後回到上線（會議、午休、暫離、專注）或離線（休假以請假期間為準）。
 
 ### 5.2 Mailbox 服務 API
 
@@ -285,7 +287,7 @@ FETCH_JOINS { orgId }                                → [JoinRequest]   // 限�
 ## 6. 可信時間戳（打卡）
 
 ```
-裝置：record = { memberId, kind: in|out, localTime, monotonic, location: office|remote, wifiHash? }
+裝置：record = { memberId, kind: in|out, localTime, monotonic, location: office(officeId)|remote, wifiHash? }
       h = blake3(postcard(record))          ──► hills-tsa { h }
 TSA ：token = Sign_TSA(h ‖ serverTime)       ──► 裝置
 裝置：AttendanceRecord = { record, tsaToken, sig_DK }
@@ -294,7 +296,7 @@ TSA ：token = Sign_TSA(h ‖ serverTime)       ──► 裝置
 - 工時以 `serverTime` 為準；`localTime` 與 `serverTime` 相差 > 5 分鐘標示異常。
 - 離線打卡：先記錄 `localTime` 與單調時鐘讀數，上線後補取 token 並標註 `lateStamped`；報表顯示註記。
 - TSA 公鑰寫在 `org` 文件；金鑰輪替時新舊並存。
-- `wifiHash = blake3(orgId ‖ BSSID)`，不保存原始 BSSID；與 org 文件中登錄的公司 Wi-Fi 雜湊比對得出 `office`。
+- `wifiHash = blake3(orgId ‖ BSSID)`，不保存原始 BSSID；與 org 文件中各辦公室登錄的 Wi-Fi 雜湊比對得出 `office(officeId)`；都不符合時為 `remote`（D40 多辦公室）。
 
 ## 7. 領域規則（hills-domain）
 
@@ -358,19 +360,22 @@ ID 一律使用 ULID；時間存 UTC（RFC 3339），另存使用者時區；日
 // org 文件
 Organization { id, name, branding: { logo?, primaryColor }, locale, timezone,
                holidayRegion, customHolidays: Date[], tsaPublicKeys: Key[],
-               officeWifiHashes: string[], workRule: WorkRule,
+               offices: Office[], workRule: WorkRule, lunchBreak?: {start, end},
                leaveTypes: LeaveType[], leavePolicy: AnnualLeaveTable,
                approvalRules: ApprovalRule[] }
 Member      { id, name, title?, timezone, joinedAt, hireDate, roles: Role[],
               cert: MemberCert, devices: DeviceCert[], status: active|disabled }
 Team        { id, name, leadIds: MemberId[], memberIds: MemberId[] }
 Invite      { id, secretHash, role, teamIds, expiresAt, usedBy?, revoked }
+Office      { id, name, wifiHashes: string[] }
 LeaveType   { id, name, paid: boolean, minUnitHours, annualLimitHours?, requireProof }
 HolidayCalendar { region, year, holidays: {date, name}[], workdays: Date[] }
 
 // team 文件
 Task        { id, teamId, title, assigneeId?, status: todo|doing|review|done,
-              estimateHours?, planItemId?, blockedReason?, createdAt, updatedAt }
+              estimateHours?, dueAt?, steps?: TaskStep[], planItemId?, blockedReason?,
+              createdAt, updatedAt }
+TaskStep    { id, title, assigneeId?, done: boolean, doneAt? }
 TeamGoal    { id, teamId, period, title, keyResults: KeyResult[] }
 
 // member 文件

@@ -1,6 +1,6 @@
 # 山丘上的卡菲卡（Hills）功能規劃
 
-> 版本：v1.2 · 2026-11-06 · 狀態：M0 完成，進入 M1
+> 版本：v1.3 · 2026-11-06 · 狀態：M0 完成，進入 M1
 > 本文件是專案的最高層事實來源；修改專案前先修改本文件（見 [AGENTS.md](../AGENTS.md)、[docs/README.md](./README.md)）。
 
 ## 1. 產品定位
@@ -55,6 +55,7 @@ Hills 是 CAFECA 團隊的工作通訊與協作工具，安裝於桌機、筆電
 | D37 | 對話金鑰 | **確認提案 P1**：對話沿用 epoch 對稱金鑰（`CK`，HPKE 封裝給成員，移出成員時輪替）；OpenMLS 為 M5 之後的升級選項 | 交付最快；無逐訊息前向保密 |
 | D38 | 復原詞語言 | **復原詞以介面語言顯示**（繁中介面顯示繁體中文字表、英文介面顯示英文字表）；還原時兩種都接受，使用者可在設定中切換顯示語言 | 兩種字表對應同一個身分（technical-design §3.1） |
 | D39 | 儲存節點連線 | **儲存節點改以 iroh 連線（ALPN `hills/storage/1`），經 Rust 核心轉送已加密的分片**；讀取條帶、AES-256-GCM 加密與 Reed-Solomon 編碼仍全部在前端（Web Worker）進行，Rust 只轉送密文分片與處理使用者所選路徑的本機檔案讀寫；不使用 Caddy、各節點不需網域與憑證（取代 technical-design §15.6–15.7 原「前端以 HTTPS 直接上傳、Caddy 對外」的設計） | relay 已占用 80 / 443 並自行管理憑證；沿用 mailbox 的裝置憑證登入，NAT 後也能經 relay 連線 |
+| D40 | 介面方向 | **採用「晴空 · 焦點山」**（設計第四輪版本二）：首頁把今天最需要聚焦的一件事畫成一座山，步驟是山路上的檢查點、山頂是期限；同事以原創簡筆角色站在代表辦公地點的山丘上（休假者在雲上）；狀態同時以姿勢、徽章顏色、徽章形狀與文字表達；右側摘要圖卡（下一步、等你處理、誰快回來、Scrum）；**新增「午休」狀態、「外出」改稱「暫離」、狀態「請假」顯示為「休假」**；**辦公地點可登錄多個**（各自對應公司 Wi-Fi，延伸 D11）；**任務新增期限與步驟**；字型不隨安裝檔打包，使用系統已安裝字型 | 具體化 D22 的山丘意象；所有畫面另有清單檢視；視覺規格見 ui-spec「視覺語言」 |
 
 ## 3. 使用者角色
 
@@ -113,8 +114,8 @@ Hills 是 CAFECA 團隊的工作通訊與協作工具，安裝於桌機、筆電
 
 ### 5.2 出勤與即時狀態（Presence）
 
-- 狀態：上線、忙碌、會議中、專注中、外出、請假、離線；可自訂狀態文字與到期時間。
-- **自動狀態**：通話中自動標為「會議中」；閒置 N 分鐘轉「離開」；行事曆（後期整合）自動帶入。
+- 狀態：上線、忙碌、會議中、專注中、午休、暫離、休假、離線（D40：新增午休，外出改稱暫離，請假狀態顯示為休假）；可自訂狀態文字與到期時間（到期時間即「幾點回來」，顯示在角色名牌上）。
+- **自動狀態**：通話中自動標為「會議中」；閒置 N 分鐘轉「暫離」；組織設定的午休時段內可一鍵切換「午休」（不自動切換）；行事曆（後期整合）自動帶入。
 - **打卡規則**（組織可設定）：彈性上班區間（預設 08:00–10:00）、每日應工作時數（預設 8 小時）、休息時間（預設 1 小時不計工時）；晚於彈性區間上班即標示遲到，未滿應工作時數即標示早退 / 工時不足。
 - **上下班打卡**：手動打卡為正式紀錄，「首次上線 / 最後離線」作為參考與忘打卡提醒；補打卡需主管核准。
 - **打卡防竄改**：打卡紀錄以裝置金鑰簽章並帶可信時間戳（由 Signaling / 信箱節點簽發），離線打卡上線後補簽並標註。
@@ -123,7 +124,7 @@ Hills 是 CAFECA 團隊的工作通訊與協作工具，安裝於桌機、筆電
 - **特休額度**：依到職日以週年制自動計算（依勞基法年資級距），顯示已用、剩餘與到期日；未休特休到期提醒。
 - **加班申請**：事前或事後申請加班時段與事由，經多層核准後生效；可選加班費或補休，補休時數轉入「補休」假別額度。未申請的超時工時只列為參考，不計為加班。
 - **工時統計**：每日 / 每週 / 每月工時、加班時數、遲到早退標示；個人可看自己，負責人可看組員，管理者可匯出 CSV / Excel。
-- **打卡地點標註**：裝置連線至管理者登錄的公司 Wi-Fi（SSID / BSSID）時標為「辦公室」，否則標為「遠端」；地點只作標註，不阻擋打卡，也不收集 GPS 座標。
+- **打卡地點標註**：裝置連線至管理者登錄的公司 Wi-Fi（SSID / BSSID）時標為該 Wi-Fi 所屬的辦公室（組織可登錄多個辦公室，例如「台北辦公室」「新竹辦公室」，D40），否則標為「遠端」；成員可手動切換或選擇不顯示地點；地點只作標註，不阻擋打卡，也不收集 GPS 座標。
 - 工時可對應任務：Scrum 中「進行中」任務的時間可作為參考工時分配（選配）。
 - **團隊看板**：一頁看全員狀態 + 所屬小組 + 「目前正在執行的任務」（來自 5.4）。
 - 隱私：成員可設定狀態與正在執行任務的可見範圍。
@@ -141,7 +142,8 @@ Hills 是 CAFECA 團隊的工作通訊與協作工具，安裝於桌機、筆電
 ### 5.4 每日 Scrum 與任務
 
 - 每日回報表單：**昨天完成、今天計劃、遇到的阻礙**；可從「本日計劃」一鍵帶入。
-- 任務：標題、所屬小組、負責人、狀態（待辦 / 進行中 / 審核 / 完成）、預估時間、關聯計劃項目。
+- 任務：標題、所屬小組、負責人、狀態（待辦 / 進行中 / 審核 / 完成）、預估時間、期限、步驟（每步可有負責人與完成狀態）、關聯計劃項目。
+- **焦點**（D40）：首頁自動選出每人今天最需要聚焦的一件任務（排序：期限最近 → 卡住別人 → 指派給你 → 被提及），可手動更換，同時只有一件。
 - 看板 / 清單兩種檢視；「開始執行」一個任務時自動更新 Presence 的「正在執行」。
 - 阻礙自動通知小組負責人，並可一鍵開啟討論串。
 - 提醒：工作日固定時間提醒填寫 Scrum；未填寫者在小組頁面標示。
@@ -277,7 +279,8 @@ Hills 是 CAFECA 團隊的工作通訊與協作工具，安裝於桌機、筆電
 - `Team`（工作小組）↔ `Member`（多對多，含角色）
 - `PresenceStatus`（member, state, note, currentTaskId, expiresAt）
 - `AttendanceRecord`（member, date, clockIn, clockOut, source, signature, correctedBy）
-- `AttendanceRecord` 增加 `location: office/remote`
+- `AttendanceRecord` 增加 `location: office(officeId)/remote`
+- `Office`（name, wifiHashes[]）
 - `WorkRule`（flexStart, flexEnd, dailyHours, breakMinutes）
 - `LeaveType`（name, paid, minUnit, annualLimit, requireProof）
 - `LeaveRequest`（member, type, start, end, delegate, status, approvalSteps[]）
@@ -285,7 +288,7 @@ Hills 是 CAFECA 團隊的工作通訊與協作工具，安裝於桌機、筆電
 - `ApprovalRule`（condition: days/type, approvers）
 - `LeaveBalance`（member, year, type, granted, used）
 - `Plan`（owner, level: year/quarter/month/week/day, period, parentId, title, keyResults, progress, visibility）
-- `Task`（team, assignee, status, planItemId, estimate）
+- `Task`（team, assignee, status, planItemId, estimate, dueAt, steps[]）
 - `ScrumReport`（member, date, done, today, blockers）
 - `Report`（scope: member/team, period, content, generatedBy）
 - `Conversation`（type: dm/group/team, members, assistantConfig）
@@ -368,6 +371,7 @@ Hills 是 CAFECA 團隊的工作通訊與協作工具，安裝於桌機、筆電
 |------|------|------|
 | v0.1–v0.8 | 2026-11-05 | 五輪問答確認 D1–D32 |
 | v0.9 | 2026-11-05 | 新增 D33 文件優先；加入 AGENTS.md、M2–M5 技術設計、介面規格、開發規範、M2–M5 backlog |
+| v1.3 | 2026-11-06 | 新增 D40 介面方向「晴空 · 焦點山」（午休 / 暫離狀態、多辦公室、任務期限與步驟）；technical-design v0.10、ui-spec v0.6 |
 | v1.2 | 2026-11-06 | M0 完成（PR #103 合併）；新增 D39 儲存節點以 iroh 連線；technical-design v0.9（§14 對話補充、§15 改依 D39）、ui-spec v0.5、deploy.md v0.4 |
 | v1.1.11 | 2026-11-06 | poc-report v0.10：記錄驗收環境為企業防火牆（Win11）↔ iPhone 熱點 CGNAT（Mac），列入 NAT 矩陣 |
 | v1.1.10 | 2026-11-06 | poc-report v0.9：M0 跨網路驗收全部通過，go / no-go 結論為 go；NAT 矩陣與安裝檔於 M1 期間補測 |

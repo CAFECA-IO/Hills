@@ -9,12 +9,13 @@ import {
   type PresenceState,
   type SyncStatus,
 } from './api';
+import { Chat } from './chat';
 import { useIdleAway, useLoad, useSyncStatus } from './hooks';
 import { formatTime, getLocale, LOCALES, setLocale, t, type MessageKey } from './i18n';
 import { BackupForm, PhraseFlow } from './onboarding';
 import { Button, Card, CodeBox, ConfirmButton, ErrorText, Field, useAction } from './ui';
 
-type Page = 'team' | 'settings';
+type Page = 'team' | 'chat' | 'settings';
 
 const SYNC_ICON: Record<SyncStatus, string> = {
   Synced: '●',
@@ -74,8 +75,11 @@ export function Shell({ info }: { info: AppInfo }) {
   const overview = useLoad(api.overview, ['org', 'roster', 'presence']);
   const me = overview.data?.members.find((m) => m.isMe);
   useIdleAway(() => (me ? { state: me.presence ?? 'Online', note: me.note } : null));
+  const convs = useLoad(api.conversations, ['convs', 'message', 'doc']);
+  const unread = (convs.data ?? []).reduce((n, c) => n + c.unread, 0);
   const nav: [Page, MessageKey, string][] = [
     ['team', 'nav.team', '◉'],
+    ['chat', 'nav.chat', '✉'],
     ['settings', 'nav.settings', '⚙'],
   ];
   return (
@@ -95,13 +99,21 @@ export function Shell({ info }: { info: AppInfo }) {
           >
             <span aria-hidden>{icon}</span>
             {t(label)}
+            {p === 'chat' && unread > 0 && (
+              <span
+                className="ml-auto rounded-full bg-primary px-2 text-xs text-on-primary"
+                aria-label={t('chat.unread', { count: unread })}
+              >
+                {unread}
+              </span>
+            )}
           </button>
         ))}
       </nav>
       <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-line px-6 py-3">
           <h1 className="text-lg font-semibold">
-            {t(page === 'team' ? 'team.title' : 'settings.title')}
+            {t(page === 'team' ? 'team.title' : page === 'chat' ? 'chat.title' : 'settings.title')}
           </h1>
           <SyncIndicator />
         </header>
@@ -112,6 +124,8 @@ export function Shell({ info }: { info: AppInfo }) {
               teams={overview.data?.teams ?? []}
               error={overview.error}
             />
+          ) : page === 'chat' ? (
+            <Chat members={overview.data?.members ?? []} />
           ) : (
             <Settings
               info={info}

@@ -50,3 +50,36 @@ body {
   color: var(--color-fg);
   font-family: var(--font-sans);
 }
+
+/* 訊息內的 Markdown（只用 token） */
+.prose-hills p {
+  margin: 0.125rem 0;
+}
+.prose-hills ul,
+.prose-hills ol {
+  margin: 0.25rem 0;
+  padding-left: 1.25rem;
+}
+.prose-hills ul {
+  list-style: disc;
+}
+.prose-hills ol {
+  list-style: decimal;
+}
+.prose-hills code {
+  border-radius: 0.25rem;
+  background: var(--color-bg);
+  padding: 0 0.25rem;
+  font-size: 0.85em;
+}
+.prose-hills pre {
+  overflow-x: auto;
+  border-radius: 0.25rem;
+  background: var(--color-bg);
+  padding: 0.5rem;
+}
+.prose-hills blockquote {
+  border-left: 2px solid var(--color-line);
+  padding-left: 0.5rem;
+  color: var(--color-muted);
+}

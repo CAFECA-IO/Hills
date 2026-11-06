@@ -15,6 +15,7 @@ pub fn run() {
         )
         .init();
     let result = tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
@@ -44,6 +45,15 @@ pub fn run() {
             commands::revoke_member,
             commands::devices,
             commands::revoke_device,
+            commands::conversations,
+            commands::messages,
+            commands::open_dm,
+            commands::create_group,
+            commands::send_message,
+            commands::add_conv_members,
+            commands::remove_conv_member,
+            commands::rename_conv,
+            commands::set_active_conv,
         ])
         .run(tauri::generate_context!());
     if let Err(err) = result {

@@ -6,8 +6,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use hills_node::{
-    CreateOrg, Event, LinkListener, LinkSession, MemberId, MemberStatus, Node, NodeOptions,
-    PhraseLanguage, PresenceState, Pub32, Role, SecretStore, SyncStatus,
+    ConvKind, CreateOrg, Event, LinkListener, LinkSession, MemberId, MemberStatus, Message, Node,
+    NodeOptions, PhraseLanguage, PresenceState, Pub32, Role, SecretStore, SyncStatus,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -36,6 +36,8 @@ pub struct AppState {
     link_cancel: Mutex<Option<oneshot::Sender<()>>>,
     /// 舊裝置端：已計算 SAS、等待使用者確認
     link_session: Mutex<Option<LinkSession>>,
+    /// 前端目前開著的對話（該對話的新訊息不發通知）
+    active_conv: std::sync::Mutex<Option<String>>,
 }
 
 impl AppState {
@@ -46,6 +48,7 @@ impl AppState {
             node: Mutex::new(None),
             link_cancel: Mutex::new(None),
             link_session: Mutex::new(None),
+            active_conv: std::sync::Mutex::new(None),
         }
     }
 }
@@ -54,22 +57,34 @@ fn opts() -> NodeOptions {
     NodeOptions::default()
 }
 
-/// 把 node 的事件轉送給前端（前端收到後重新讀取對應資料）。
+/// 把 node 的事件轉送給前端（前端收到後重新讀取對應資料），並發出桌機通知（§14.2）。
 fn forward_events(app: &AppHandle, node: &Node) {
     let mut rx = node.events();
     let app = app.clone();
+    let node = node.clone();
     tauri::async_runtime::spawn(async move {
         loop {
             match rx.recv().await {
                 Ok(ev) => {
-                    let name = match ev {
+                    let name = match &ev {
                         Event::StatusChanged(_) => "status",
                         Event::Activated => "activated",
                         Event::OrgChanged => "org",
                         Event::RosterChanged => "roster",
                         Event::PresenceChanged => "presence",
                         Event::DocChanged(_) => "doc",
+                        Event::ConvsChanged => "convs",
+                        Event::Message { .. } => "message",
                     };
+                    if let Event::Message {
+                        conv,
+                        author,
+                        notify: true,
+                        preview,
+                    } = &ev
+                    {
+                        notify_message(&app, &node, conv, author, preview);
+                    }
                     let _ = app.emit(events::NODE, name);
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
@@ -79,6 +94,36 @@ fn forward_events(app: &AppHandle, node: &Node) {
             }
         }
     });
+}
+
+/// 私訊或提及：視窗不在前景、或沒有開著該對話時發出通知。標題為寄件者姓名、內容為訊息預覽。
+fn notify_message(app: &AppHandle, node: &Node, conv: &str, author: &MemberId, preview: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    let focused = app
+        .get_webview_window("main")
+        .and_then(|w| w.is_focused().ok())
+        .unwrap_or(false);
+    let viewing = app
+        .state::<AppState>()
+        .active_conv
+        .lock()
+        .map(|a| a.as_deref() == Some(conv))
+        .unwrap_or(false);
+    if focused && viewing {
+        return;
+    }
+    let title = node
+        .org()
+        .members
+        .get(author)
+        .map(|m| m.name.clone())
+        .unwrap_or_else(|| author.to_string());
+    let _ = app
+        .notification()
+        .builder()
+        .title(title)
+        .body(preview)
+        .show();
 }
 
 async fn install(app: &AppHandle, state: &AppState, node: Node) {
@@ -572,6 +617,173 @@ pub async fn revoke_device(state: State<'_, AppState>, device_id: String) -> Cmd
         }
         n.revoke_device(id).await.map_err(e)
     })
+}
+
+// ── 對話（technical-design §14）────────────────────────────
+
+fn parse_member(s: &str) -> CmdResult<MemberId> {
+    MemberId::parse(s).map_err(|_| "成員 ID 格式錯誤".to_string())
+}
+
+fn parse_members(v: &[String]) -> CmdResult<Vec<MemberId>> {
+    v.iter().map(|s| parse_member(s)).collect()
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageView {
+    id: String,
+    conv: String,
+    author: String,
+    created_at: i64,
+    kind: String,
+    body: String,
+    mentions: Vec<String>,
+    attachments: serde_json::Value,
+}
+
+impl From<Message> for MessageView {
+    fn from(m: Message) -> Self {
+        Self {
+            id: m.id,
+            conv: m.conv,
+            author: m.author.to_string(),
+            created_at: m.created_at,
+            kind: m.kind,
+            body: m.body,
+            mentions: m.mentions.iter().map(|x| x.to_string()).collect(),
+            attachments: m.attachments,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConvRow {
+    id: String,
+    kind: ConvKind,
+    name: String,
+    creator: String,
+    created_at: i64,
+    members: Vec<String>,
+    last: Option<MessageView>,
+    unread: u32,
+}
+
+#[tauri::command]
+pub async fn conversations(state: State<'_, AppState>) -> CmdResult<Vec<ConvRow>> {
+    with_node!(state, n => Ok(n
+        .conversations()
+        .into_iter()
+        .map(|v| ConvRow {
+            id: v.info.id,
+            kind: v.info.kind,
+            name: v.info.name,
+            creator: v.info.creator.to_string(),
+            created_at: v.info.created_at,
+            members: v.info.members.iter().map(|m| m.to_string()).collect(),
+            last: v.last.map(Into::into),
+            unread: v.unread,
+        })
+        .collect()))
+}
+
+#[tauri::command]
+pub async fn messages(
+    state: State<'_, AppState>,
+    conv: String,
+    limit: Option<usize>,
+) -> CmdResult<Vec<MessageView>> {
+    let limit = limit.unwrap_or(500).min(5000);
+    with_node!(state, n => Ok(n
+        .messages(&conv, limit)
+        .map_err(e)?
+        .into_iter()
+        .map(Into::into)
+        .collect()))
+}
+
+/// 開啟與某位成員的私訊（沒有就建立）。
+#[tauri::command]
+pub async fn open_dm(state: State<'_, AppState>, member: String) -> CmdResult<String> {
+    let peer = parse_member(&member)?;
+    with_node!(state, n => {
+        if let Some(id) = n.find_dm(&peer) {
+            return Ok(id);
+        }
+        n.create_conv(ConvKind::Dm, "", &[peer]).await.map_err(e)
+    })
+}
+
+#[tauri::command]
+pub async fn create_group(
+    state: State<'_, AppState>,
+    name: String,
+    members: Vec<String>,
+) -> CmdResult<String> {
+    let members = parse_members(&members)?;
+    if name.trim().is_empty() {
+        return Err("群組名稱不可空白".into());
+    }
+    with_node!(state, n => n.create_conv(ConvKind::Group, &name, &members).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn send_message(
+    state: State<'_, AppState>,
+    conv: String,
+    body: String,
+    mentions: Vec<String>,
+    attachments: Option<serde_json::Value>,
+) -> CmdResult<MessageView> {
+    let mentions = parse_members(&mentions)?;
+    let attachments = attachments.unwrap_or(serde_json::Value::Null);
+    with_node!(state, n => n
+        .send_message(&conv, &body, &mentions, attachments)
+        .await
+        .map(Into::into)
+        .map_err(e))
+}
+
+#[tauri::command]
+pub async fn add_conv_members(
+    state: State<'_, AppState>,
+    conv: String,
+    members: Vec<String>,
+) -> CmdResult<()> {
+    let members = parse_members(&members)?;
+    with_node!(state, n => n.add_conv_members(&conv, &members).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn remove_conv_member(
+    state: State<'_, AppState>,
+    conv: String,
+    member: String,
+) -> CmdResult<()> {
+    let member = parse_member(&member)?;
+    with_node!(state, n => n.remove_conv_member(&conv, member).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn rename_conv(state: State<'_, AppState>, conv: String, name: String) -> CmdResult<()> {
+    with_node!(state, n => n.rename_conv(&conv, &name).await.map_err(e))
+}
+
+/// 前端開啟（或離開）某個對話：標記已讀並記錄，用於決定是否通知。
+#[tauri::command]
+pub async fn set_active_conv(
+    state: State<'_, AppState>,
+    conv: Option<String>,
+    read_until: Option<i64>,
+) -> CmdResult<()> {
+    if let Ok(mut a) = state.active_conv.lock() {
+        a.clone_from(&conv);
+    }
+    if let (Some(c), Some(t)) = (conv, read_until) {
+        with_node!(state, n => n.mark_read(&c, t).map_err(e))?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

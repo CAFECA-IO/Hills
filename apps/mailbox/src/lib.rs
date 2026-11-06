@@ -467,7 +467,7 @@ impl Mailbox {
                     signer.is_admin()
                 }
                 KeyFamily::MemberPrivate(m) => *m == signer.member_id,
-                KeyFamily::Conv(_) => true,
+                KeyFamily::Conv(_) | KeyFamily::ConvMeta(_) => true,
             };
             if !allowed {
                 return err(ErrorCode::Forbidden, "無權封裝此金鑰");

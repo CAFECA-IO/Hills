@@ -33,6 +33,16 @@ pub enum MemberSection {
     Secrets,
 }
 
+/// 對話紀錄的分段：`<yyyy-mm>-e<epoch>`（technical-design §14.2 v0.9）。
+fn is_log_segment(s: &str) -> bool {
+    match s.split_once("-e") {
+        Some((ym, n)) => {
+            is_month(ym) && !n.is_empty() && n.len() <= 9 && n.bytes().all(|c| c.is_ascii_digit())
+        }
+        None => false,
+    }
+}
+
 fn is_month(s: &str) -> bool {
     let b = s.as_bytes();
     b.len() == 7
@@ -57,7 +67,7 @@ impl DocKind {
             ["team", t] if is_segment(t) => DocKind::Team((*t).into()),
             ["approvals", m] => DocKind::Approvals(MemberId::parse(m).ok()?),
             ["conv", c, "meta"] if is_segment(c) => DocKind::ConvMeta((*c).into()),
-            ["conv", c, "log", ym] if is_segment(c) && is_month(ym) => {
+            ["conv", c, "log", seg] if is_segment(c) && is_log_segment(seg) => {
                 DocKind::ConvLog((*c).into())
             }
             ["member", m, rest @ ..] => {
@@ -104,7 +114,7 @@ mod tests {
             Some(DocKind::Approvals(m))
         );
         assert_eq!(
-            DocKind::parse("conv/c1/log/2026-11"),
+            DocKind::parse("conv/c1/log/2026-11-e1"),
             Some(DocKind::ConvLog("c1".into()))
         );
     }

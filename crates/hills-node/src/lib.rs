@@ -3,7 +3,9 @@
 //! 組合 identity / crypto / store / sync / net，提供組織生命週期（建立、加入、綁定、復原、停用）、
 //! 文件讀寫與同步（mailbox、gossip、直連）、上線狀態。桌機 app 只透過本 crate 操作。
 
+mod chat;
 pub mod config;
+pub mod conv;
 mod gossip;
 mod lifecycle;
 mod link;
@@ -14,7 +16,9 @@ pub mod org;
 mod policy;
 mod syncproto;
 
+pub use chat::ConvView;
 pub use config::MemberStatus;
+pub use conv::{ConvInfo, ConvKind, Message};
 pub use hills_identity::PhraseLanguage;
 pub use hills_identity::secret_store::{MemoryStore, SecretStore, SecretStoreError};
 pub use hills_proto::gossip::{Presence, PresenceState};

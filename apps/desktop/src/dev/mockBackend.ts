@@ -74,6 +74,68 @@ let devices: DeviceInfo[] = [
   { id: 'cd'.repeat(32), name: 'Windows 筆電', issuedAt: Date.now() - 3600_000, thisDevice: false },
 ];
 
+interface MockMsg {
+  id: string;
+  conv: string;
+  author: string;
+  createdAt: number;
+  kind: string;
+  body: string;
+  mentions: string[];
+  attachments: null;
+}
+const convs = [
+  {
+    id: 'g1',
+    kind: 'group',
+    name: '產品討論',
+    creator: 'mem-me',
+    createdAt: Date.now() - 86400_000,
+    members: ['mem-me', 'mem-a', 'mem-b'],
+  },
+  {
+    id: 'd1',
+    kind: 'dm',
+    name: '',
+    creator: 'mem-a',
+    createdAt: Date.now() - 3600_000,
+    members: ['mem-me', 'mem-a'],
+  },
+];
+const msgs: MockMsg[] = [
+  {
+    id: '1',
+    conv: 'g1',
+    author: 'mem-a',
+    createdAt: Date.now() - 600_000,
+    kind: 'text',
+    body: '邀請碼流程完成了，**請幫忙看**',
+    mentions: [],
+    attachments: null,
+  },
+  {
+    id: '2',
+    conv: 'g1',
+    author: 'mem-b',
+    createdAt: Date.now() - 300_000,
+    kind: 'text',
+    body: '@我 下午看\n\n- 檢查 SAS\n- 檢查 `relay`',
+    mentions: ['mem-me'],
+    attachments: null,
+  },
+  {
+    id: '3',
+    conv: 'd1',
+    author: 'mem-a',
+    createdAt: Date.now() - 120_000,
+    kind: 'text',
+    body: '晚點聊？',
+    mentions: [],
+    attachments: null,
+  },
+];
+const read: Record<string, number> = {};
+
 const delay = (ms = 200) => new Promise((r) => setTimeout(r, ms));
 
 const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
@@ -147,6 +209,75 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     return code('hills1-' + 'z'.repeat(100));
   },
   invites: () => invites,
+  conversations: () =>
+    convs.map((c) => {
+      const list = msgs.filter((m) => m.conv === c.id);
+      const last = list[list.length - 1] ?? null;
+      const unread = list.filter(
+        (m) => m.author !== state.me && m.createdAt > (read[c.id] ?? 0),
+      ).length;
+      return { ...c, last, unread };
+    }),
+  messages: (a) => msgs.filter((m) => m.conv === a.conv),
+  open_dm: (a) => {
+    const found = convs.find((c) => c.kind === 'dm' && c.members.includes(String(a.member)));
+    if (found) return found.id;
+    const id = 'd' + (convs.length + 1);
+    convs.push({
+      id,
+      kind: 'dm',
+      name: '',
+      creator: state.me,
+      createdAt: Date.now(),
+      members: [state.me, String(a.member)],
+    });
+    return id;
+  },
+  create_group: (a) => {
+    const id = 'g' + (convs.length + 1);
+    convs.push({
+      id,
+      kind: 'group',
+      name: String(a.name),
+      creator: state.me,
+      createdAt: Date.now(),
+      members: [state.me, ...(a.members as string[])],
+    });
+    emit('hills://node', 'convs');
+    return id;
+  },
+  send_message: (a) => {
+    const m: MockMsg = {
+      id: String(msgs.length + 1),
+      conv: String(a.conv),
+      author: state.me,
+      createdAt: Date.now(),
+      kind: 'text',
+      body: String(a.body),
+      mentions: a.mentions as string[],
+      attachments: null,
+    };
+    msgs.push(m);
+    emit('hills://node', 'message');
+    return m;
+  },
+  add_conv_members: (a) => {
+    const c = convs.find((x) => x.id === a.conv);
+    c?.members.push(...(a.members as string[]));
+    emit('hills://node', 'convs');
+  },
+  remove_conv_member: (a) => {
+    const c = convs.find((x) => x.id === a.conv);
+    if (c) c.members = c.members.filter((m) => m !== a.member);
+    emit('hills://node', 'convs');
+  },
+  rename_conv: () => undefined,
+  set_active_conv: (a) => {
+    if (a.conv && typeof a.readUntil === 'number') {
+      read[String(a.conv)] = a.readUntil;
+      emit('hills://node', 'convs');
+    }
+  },
   rename_org: (a) => {
     state.orgName = String(a.name);
     emit('hills://node', 'org');

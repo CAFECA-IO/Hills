@@ -76,6 +76,30 @@ export interface CreateOrgArgs {
   teamName: string;
 }
 
+export type ConvKind = 'dm' | 'group';
+
+export interface MessageView {
+  id: string;
+  conv: string;
+  author: string;
+  createdAt: number;
+  kind: 'text' | 'files' | 'system' | string;
+  body: string;
+  mentions: string[];
+  attachments: unknown;
+}
+
+export interface ConvRow {
+  id: string;
+  kind: ConvKind;
+  name: string;
+  creator: string;
+  createdAt: number;
+  members: string[];
+  last: MessageView | null;
+  unread: number;
+}
+
 export const EVENTS = {
   node: 'hills://node',
   linkSas: 'hills://link-sas',
@@ -140,4 +164,17 @@ export const api = {
   revokeMember: (memberId: string) => call<void>('revoke_member', { memberId }),
   devices: () => call<DeviceInfo[]>('devices'),
   revokeDevice: (deviceId: string) => call<void>('revoke_device', { deviceId }),
+  conversations: () => call<ConvRow[]>('conversations'),
+  messages: (conv: string, limit?: number) => call<MessageView[]>('messages', { conv, limit }),
+  openDm: (member: string) => call<string>('open_dm', { member }),
+  createGroup: (name: string, members: string[]) => call<string>('create_group', { name, members }),
+  sendMessage: (conv: string, body: string, mentions: string[], attachments?: unknown) =>
+    call<MessageView>('send_message', { conv, body, mentions, attachments }),
+  addConvMembers: (conv: string, members: string[]) =>
+    call<void>('add_conv_members', { conv, members }),
+  removeConvMember: (conv: string, member: string) =>
+    call<void>('remove_conv_member', { conv, member }),
+  renameConv: (conv: string, name: string) => call<void>('rename_conv', { conv, name }),
+  setActiveConv: (conv: string | null, readUntil?: number) =>
+    call<void>('set_active_conv', { conv, readUntil }),
 };

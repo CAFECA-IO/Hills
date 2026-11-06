@@ -43,6 +43,9 @@ pub struct OrgSnapshot {
     pub members: BTreeMap<MemberId, MemberRec>,
     pub teams: BTreeMap<String, TeamRec>,
     pub invites: BTreeMap<String, InviteRec>,
+    /// 對話現任成員（由本人可解密的 meta 投影，§14.1；不屬於 org 文件）
+    #[serde(skip)]
+    pub convs: BTreeMap<String, BTreeMap<MemberId, u32>>,
 }
 
 impl Directory for OrgSnapshot {
@@ -51,15 +54,21 @@ impl Directory for OrgSnapshot {
             .get(team)
             .is_some_and(|t| t.members.contains(m) || t.leads.contains(m))
     }
-    fn is_conv_member(&self, _: &str, _: &MemberId) -> bool {
-        false
+    fn is_conv_member(&self, conv: &str, m: &MemberId) -> bool {
+        self.convs.get(conv).is_some_and(|ms| ms.contains_key(m))
     }
-    fn is_conv_admin(&self, _: &str, _: &MemberId) -> bool {
-        false
+    /// M1：對話管理員只有建立者（convId 前綴，§14.1 v0.9），不需先解密 meta。
+    fn is_conv_admin(&self, conv: &str, m: &MemberId) -> bool {
+        crate::conv::creator_of(conv).as_ref() == Some(m)
     }
 }
 
 impl OrgSnapshot {
+    /// 對話現任成員加入時的 epoch。
+    pub fn conv_joined_epoch(&self, conv: &str, m: &MemberId) -> Option<u32> {
+        self.convs.get(conv)?.get(m).copied()
+    }
+
     pub fn teams_of(&self, m: &MemberId) -> Vec<String> {
         self.teams
             .iter()
@@ -75,14 +84,14 @@ impl OrgSnapshot {
 
 // ---------- 讀取 ----------
 
-fn get_obj(doc: &AutoCommit, obj: &ObjId, key: &str) -> Option<ObjId> {
+pub(crate) fn get_obj(doc: &AutoCommit, obj: &ObjId, key: &str) -> Option<ObjId> {
     match doc.get(obj, key).ok()?? {
         (Value::Object(_), id) => Some(id),
         _ => None,
     }
 }
 
-fn get_str(doc: &AutoCommit, obj: &ObjId, key: &str) -> Option<String> {
+pub(crate) fn get_str(doc: &AutoCommit, obj: &ObjId, key: &str) -> Option<String> {
     match doc.get(obj, key).ok()??.0 {
         Value::Scalar(s) => match s.as_ref() {
             ScalarValue::Str(t) => Some(t.to_string()),
@@ -92,7 +101,7 @@ fn get_str(doc: &AutoCommit, obj: &ObjId, key: &str) -> Option<String> {
     }
 }
 
-fn get_int(doc: &AutoCommit, obj: &ObjId, key: &str) -> Option<i64> {
+pub(crate) fn get_int(doc: &AutoCommit, obj: &ObjId, key: &str) -> Option<i64> {
     match doc.get(obj, key).ok()??.0 {
         Value::Scalar(s) => match s.as_ref() {
             ScalarValue::Int(i) => Some(*i),
@@ -212,7 +221,7 @@ pub fn read(doc: &AutoCommit) -> OrgSnapshot {
 
 type R<T> = Result<T, automerge::AutomergeError>;
 
-fn ensure_map(doc: &mut AutoCommit, obj: &ObjId, key: &str) -> R<ObjId> {
+pub(crate) fn ensure_map(doc: &mut AutoCommit, obj: &ObjId, key: &str) -> R<ObjId> {
     if let Some(id) = get_obj(doc, obj, key) {
         return Ok(id);
     }

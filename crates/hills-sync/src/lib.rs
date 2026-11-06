@@ -26,6 +26,22 @@ pub trait Directory {
     fn is_conv_admin(&self, conv: &str, member: &MemberId) -> bool;
 }
 
+/// 對話紀錄（technical-design §14.2）只能新增：每個 op 都必須是在根物件上、以
+/// `<作者 memberId>:` 開頭的新 key 放入字串（不能覆寫、刪除或建立巢狀物件）。
+pub fn append_only_by(change: &Change, author: &MemberId) -> bool {
+    use automerge::ScalarValue;
+    use automerge::legacy::{Key, ObjectId, OpType};
+    let prefix = format!("{author}:");
+    let decoded = change.decode();
+    decoded.operations.iter().all(|op| {
+        matches!(op.obj, ObjectId::Root)
+            && op.pred.is_empty()
+            && !op.insert
+            && matches!(&op.key, Key::Map(k) if k.starts_with(&prefix) && k.len() <= 128)
+            && matches!(&op.action, OpType::Put(ScalarValue::Str(_)))
+    })
+}
+
 /// 判斷驗證通過的成員可否寫入此類文件（technical-design §4.1 表格）。
 pub fn allowed(kind: &DocKind, who: &Verified, dir: &dyn Directory) -> bool {
     match kind {
@@ -52,6 +68,8 @@ pub enum SyncError {
     UnknownDoc,
     #[error("無寫入權限")]
     Forbidden,
+    #[error("對話紀錄只能新增自己的訊息")]
+    NotAppendOnly,
     #[error("簽署裝置與宣告的作者不同")]
     AuthorMismatch,
     #[error("不支援的版本")]
@@ -139,6 +157,9 @@ impl<'a> Validator<'a> {
         let kind = DocKind::parse(doc_id).ok_or(SyncError::UnknownDoc)?;
         if !allowed(&kind, &who, self.dir) {
             return Err(SyncError::Forbidden);
+        }
+        if matches!(kind, DocKind::ConvLog(_)) && !append_only_by(&change, &who.member_id) {
+            return Err(SyncError::NotAppendOnly);
         }
         Ok((change, who))
     }

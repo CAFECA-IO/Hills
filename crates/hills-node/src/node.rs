@@ -1,6 +1,6 @@
 //! Node 核心：狀態、啟動、文件讀寫與套用遠端 change（technical-design §16.1、§16.5）。
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, Weak};
 use std::time::{Duration, Instant};
@@ -29,6 +29,7 @@ use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
 
 use crate::config::{MemberStatus, NodeConfig, Secrets};
+use crate::conv::{self, ConvInfo};
 use crate::local::LocalDoc;
 use crate::org::{self, OrgSnapshot};
 use crate::policy;
@@ -78,6 +79,16 @@ pub enum Event {
     RosterChanged,
     PresenceChanged,
     DocChanged(String),
+    /// 對話清單或成員變更
+    ConvsChanged,
+    /// 收到別人的新訊息（§14.2 通知）
+    Message {
+        conv: String,
+        author: MemberId,
+        /// 私訊，或提及本人
+        notify: bool,
+        preview: String,
+    },
 }
 
 /// 需持久化的同步狀態（以儲存金鑰加密存成 `state.enc`）。
@@ -102,7 +113,18 @@ pub(crate) struct State {
     pub key_outbox: Vec<Signed<WrappedKey>>,
     /// 暫時無法解密（金鑰尚未到）的 bundle
     pub pending: Vec<EncryptedBundle>,
+    /// 本人可解密的對話（由 meta 投影，§14.1）
+    pub convs: BTreeMap<String, ConvInfo>,
+    /// 作者尚未出現在 meta 而暫存的對話紀錄 change（meta 更新後重試，§14.1 v0.9）
+    pub held: Vec<(String, SignedChange)>,
+    /// 各對話已知的訊息月份（`yyyy-mm`）
+    pub conv_months: BTreeMap<String, std::collections::BTreeSet<String>>,
 }
+
+/// pending bundle 的上限（對話 bundle 無法事先判斷是否為本人所屬）。
+const MAX_PENDING: usize = 5000;
+/// 暫存對話 change 的上限。
+const MAX_HELD: usize = 5000;
 
 pub(crate) struct Inner {
     pub dir: PathBuf,
@@ -199,10 +221,58 @@ impl Inner {
     }
 
     pub fn org_snapshot(&self, st: &mut State) -> OrgSnapshot {
-        match self.load_doc(&mut st.docs, "org") {
+        let mut snap = match self.load_doc(&mut st.docs, "org") {
             Ok(l) => org::read(&l.doc),
             Err(_) => OrgSnapshot::default(),
+        };
+        snap.convs = st
+            .convs
+            .iter()
+            .map(|(id, c)| (id.clone(), c.joined.clone()))
+            .collect();
+        snap
+    }
+
+    /// 文件變更後更新對話投影；回傳 meta 是否改變。
+    pub fn note_conv_doc(&self, st: &mut State, doc_id: &str) -> bool {
+        let Some((conv_id, month)) = conv::parse_doc(doc_id) else {
+            return false;
+        };
+        match month {
+            Some(m) => {
+                st.conv_months.entry(conv_id).or_default().insert(m);
+                false
+            }
+            None => {
+                let Ok(local) = self.load_doc(&mut st.docs, doc_id) else {
+                    return false;
+                };
+                let Some(info) = conv::read_meta(&conv_id, &local.doc) else {
+                    return false;
+                };
+                let changed = st.convs.get(&conv_id) != Some(&info);
+                st.convs.insert(conv_id, info);
+                changed
+            }
         }
+    }
+
+    /// 啟動時由本機文件重建對話投影。
+    pub fn scan_convs(&self, st: &mut State) -> Result<()> {
+        let mut ids = self.store.doc_ids()?;
+        ids.sort();
+        for id in ids {
+            if id.starts_with("conv/") {
+                self.note_conv_doc(st, &id);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn save_held(&self, st: &State) -> Result<()> {
+        self.store
+            .write_secret_file("held", &postcard::to_allocvec(&st.held)?)?;
+        Ok(())
     }
 
     /// 在本機修改文件：檢查寫入權限 → 修改 → 簽章 → 保存 → 加密成 bundle 放入 outbox。
@@ -246,6 +316,9 @@ impl Inner {
         }
         let heads = local.heads();
         self.save_doc(&mut st.docs, doc_id)?;
+        if self.note_conv_doc(st, doc_id) {
+            self.emit(Event::ConvsChanged);
+        }
         st.outbox.push(seal_bundle(doc_id, &key_id, &key, &signed)?);
         self.persist(st)?;
         Ok(heads)
@@ -256,44 +329,118 @@ impl Inner {
         if changes.is_empty() {
             return Ok(0);
         }
-        let n = {
+        let mut new_messages = Vec::new();
+        let (n, meta_changed) = {
             let mut st = lock(&self.st);
             let dir = self.org_snapshot(&mut st);
-            let State { trust, docs, .. } = &mut *st;
-            let v = Validator::new(trust, &dir);
+            let is_log = matches!(DocKind::parse(doc_id), Some(DocKind::ConvLog(_)));
             let mut ok = Vec::new();
-            for sc in changes {
-                match v.check(doc_id, sc) {
-                    Ok((c, _)) => ok.push((c, sc)),
-                    Err(e) => tracing::warn!(doc_id, error = %e, "拒絕遠端 change"),
+            let mut held = Vec::new();
+            {
+                let v = Validator::new(&st.trust, &dir);
+                for sc in changes {
+                    match v.check(doc_id, sc) {
+                        Ok((c, who)) => ok.push((c, sc, who.member_id)),
+                        Err(hills_sync::SyncError::Forbidden) if is_log => held.push(sc.clone()),
+                        Err(e) => tracing::warn!(doc_id, error = %e, "拒絕遠端 change"),
+                    }
                 }
+            }
+            if !held.is_empty() {
+                for sc in held {
+                    if !st
+                        .held
+                        .iter()
+                        .any(|(_, h)| h.body.change_hash == sc.body.change_hash)
+                    {
+                        st.held.push((doc_id.to_owned(), sc));
+                    }
+                }
+                let over = st.held.len().saturating_sub(MAX_HELD);
+                st.held.drain(..over);
+                self.save_held(&st)?;
             }
             if ok.is_empty() {
                 return Ok(0);
             }
+            let me = self.me();
+            let State { docs, .. } = &mut *st;
             let local = self.load_doc(docs, doc_id)?;
             let fresh: Vec<_> = ok
                 .into_iter()
-                .filter(|(c, _)| local.doc.get_change_by_hash(&c.hash()).is_none())
+                .filter(|(c, _, _)| local.doc.get_change_by_hash(&c.hash()).is_none())
                 .collect();
             if fresh.is_empty() {
                 return Ok(0);
             }
-            for (_, sc) in &fresh {
+            for (_, sc, _) in &fresh {
                 local.record(sc);
             }
+            let added: Vec<String> = if is_log {
+                fresh
+                    .iter()
+                    .filter(|(_, _, author)| *author != me)
+                    .flat_map(|(c, _, _)| conv::added_keys(c))
+                    .collect()
+            } else {
+                vec![]
+            };
             local
                 .doc
-                .apply_changes(fresh.iter().map(|(c, _)| c.clone()))
+                .apply_changes(fresh.iter().map(|(c, _, _)| c.clone()))
                 .map_err(|e| anyhow!("套用失敗：{e}"))?;
+            if let Some((conv_id, _)) = conv::parse_doc(doc_id) {
+                new_messages = conv::read_keys(&conv_id, &local.doc, &added);
+            }
             self.save_doc(docs, doc_id)?;
-            fresh.len()
+            let meta_changed = self.note_conv_doc(&mut st, doc_id);
+            let kinds: BTreeMap<String, conv::ConvKind> =
+                st.convs.iter().map(|(k, c)| (k.clone(), c.kind)).collect();
+            for m in &new_messages {
+                let notify =
+                    kinds.get(&m.conv) == Some(&conv::ConvKind::Dm) || m.mentions.contains(&me);
+                self.emit(Event::Message {
+                    conv: m.conv.clone(),
+                    author: m.author,
+                    notify,
+                    preview: m.body.chars().take(120).collect(),
+                });
+            }
+            (fresh.len(), meta_changed)
         };
         self.emit(Event::DocChanged(doc_id.to_owned()));
         if doc_id == "org" {
             self.emit(Event::OrgChanged);
         }
+        if meta_changed {
+            self.emit(Event::ConvsChanged);
+            if let Some((conv_id, None)) = conv::parse_doc(doc_id) {
+                self.retry_held(&conv_id)?;
+            }
+        }
         Ok(n)
+    }
+
+    /// meta 更新後，重試該對話暫存的 change。
+    pub fn retry_held(&self, conv_id: &str) -> Result<()> {
+        let prefix = format!("conv/{conv_id}/");
+        let mine: Vec<(String, SignedChange)> = {
+            let mut st = lock(&self.st);
+            let (mine, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut st.held)
+                .into_iter()
+                .partition(|(d, _)| d.starts_with(&prefix));
+            st.held = rest;
+            self.save_held(&st)?;
+            mine
+        };
+        let mut by_doc: BTreeMap<String, Vec<SignedChange>> = BTreeMap::new();
+        for (d, sc) in mine {
+            by_doc.entry(d).or_default().push(sc);
+        }
+        for (d, scs) in by_doc {
+            self.apply_remote(&d, &scs)?;
+        }
+        Ok(())
     }
 
     /// 嘗試解開並套用 bundle；金鑰尚未到但應該會到的，放入 pending。
@@ -313,6 +460,8 @@ impl Inner {
                     && !st.pending.iter().any(|p| p.bundle_hash == b.bundle_hash)
                 {
                     st.pending.push(b.clone());
+                    let over = st.pending.len().saturating_sub(MAX_PENDING);
+                    st.pending.drain(..over);
                     self.persist(&st)?;
                 }
             }
@@ -499,6 +648,9 @@ impl Node {
                 outbox: vec![],
                 key_outbox: vec![],
                 pending: vec![],
+                convs: BTreeMap::new(),
+                held: vec![],
+                conv_months: BTreeMap::new(),
             },
             None => {
                 let raw = store
@@ -517,6 +669,9 @@ impl Node {
                     outbox: p.outbox,
                     key_outbox: p.key_outbox,
                     pending: p.pending,
+                    convs: BTreeMap::new(),
+                    held: read_held(&store),
+                    conv_months: BTreeMap::new(),
                 }
             }
         };
@@ -574,7 +729,8 @@ impl Node {
             tasks: Mutex::new(Vec::new()),
         });
         {
-            let st = lock(&inner.st);
+            let mut st = lock(&inner.st);
+            inner.scan_convs(&mut st)?;
             inner.persist(&st)?;
         }
         let router = Router::builder(endpoint)
@@ -613,4 +769,13 @@ pub(crate) fn write_initial_state(
     };
     store.write_secret_file("state", &postcard::to_allocvec(&p)?)?;
     Ok(())
+}
+
+fn read_held(store: &DocStore) -> Vec<(String, SignedChange)> {
+    store
+        .read_secret_file("held")
+        .ok()
+        .flatten()
+        .and_then(|raw| postcard::from_bytes(&raw).ok())
+        .unwrap_or_default()
 }

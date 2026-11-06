@@ -4,9 +4,11 @@ use hills_identity::trust::Verified;
 use hills_proto::{KeyFamily, MemberId};
 use hills_sync::{Directory, DocKind, MemberSection};
 
-/// 文件使用哪個金鑰家族加密。M0 只支援 org、team、member secrets。
+/// 文件使用哪個金鑰家族加密。目前支援 org、team、member secrets、對話（§14）。
 pub fn key_family(doc_id: &str) -> Option<KeyFamily> {
     match DocKind::parse(doc_id)? {
+        DocKind::ConvMeta(c) => Some(KeyFamily::ConvMeta(c)),
+        DocKind::ConvLog(c) => Some(KeyFamily::Conv(c)),
         DocKind::Org => Some(KeyFamily::Org),
         DocKind::Team(t) => Some(KeyFamily::Team(t)),
         DocKind::Member {
@@ -18,7 +20,7 @@ pub fn key_family(doc_id: &str) -> Option<KeyFamily> {
 }
 
 /// 請求者可否讀取此文件（直連同步回應前檢查）。
-pub fn can_read(doc_id: &str, who: &Verified, dir: &dyn Directory) -> bool {
+pub fn can_read(doc_id: &str, who: &Verified, dir: &crate::org::OrgSnapshot) -> bool {
     match DocKind::parse(doc_id) {
         Some(DocKind::Org) => true,
         Some(DocKind::Team(t)) => dir.is_team_member(&t, &who.member_id),
@@ -26,6 +28,17 @@ pub fn can_read(doc_id: &str, who: &Verified, dir: &dyn Directory) -> bool {
             owner,
             section: MemberSection::Secrets,
         }) => owner == who.member_id,
+        Some(DocKind::ConvMeta(c)) => dir.is_conv_member(&c, &who.member_id),
+        // 只交出成員加入之後 epoch 的紀錄文件（§14.2 v0.9）
+        Some(DocKind::ConvLog(c)) => {
+            let epoch = crate::conv::parse_doc(doc_id)
+                .and_then(|(_, seg)| seg)
+                .and_then(|seg| crate::conv::segment_epoch(&seg));
+            match (epoch, dir.conv_joined_epoch(&c, &who.member_id)) {
+                (Some(n), Some(joined)) => joined <= n,
+                _ => false,
+            }
+        }
         _ => false,
     }
 }
@@ -36,6 +49,8 @@ pub fn expects_key(family: &KeyFamily, me: &MemberId, dir: &dyn Directory) -> bo
         KeyFamily::Org => true,
         KeyFamily::Team(t) => dir.is_team_member(t, me),
         KeyFamily::MemberPrivate(m) => m == me,
+        // 無法在取得金鑰前得知是否為成員；保留重試（node 端限制 pending 數量）
+        KeyFamily::Conv(_) | KeyFamily::ConvMeta(_) => true,
         _ => false,
     }
 }

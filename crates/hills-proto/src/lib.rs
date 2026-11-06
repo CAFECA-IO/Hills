@@ -284,6 +284,8 @@ pub enum KeyFamily {
     MemberAttendance(MemberId),
     MemberPrivate(MemberId),
     Conv(String),
+    /// 對話 meta 專用金鑰（technical-design §14.1 v0.9）；新成員取得全部 epoch
+    ConvMeta(String),
 }
 
 /// `<family>:epoch:<n>`，n 從 1 開始。
@@ -305,6 +307,7 @@ impl fmt::Display for KeyId {
             KeyFamily::MemberAttendance(m) => write!(f, "member:{m}:attendance"),
             KeyFamily::MemberPrivate(m) => write!(f, "member:{m}:private"),
             KeyFamily::Conv(c) => write!(f, "conv:{c}"),
+            KeyFamily::ConvMeta(c) => write!(f, "conv:{c}:meta"),
         }?;
         write!(f, ":epoch:{}", self.epoch)
     }
@@ -324,6 +327,7 @@ impl FromStr for KeyId {
             ["org"] => KeyFamily::Org,
             ["team", t] if valid_segment(t) => KeyFamily::Team((*t).to_owned()),
             ["conv", c] if valid_segment(c) => KeyFamily::Conv((*c).to_owned()),
+            ["conv", c, "meta"] if valid_segment(c) => KeyFamily::ConvMeta((*c).to_owned()),
             ["member", m, "attendance"] => KeyFamily::MemberAttendance(MemberId::parse(m)?),
             ["member", m, "private"] => KeyFamily::MemberPrivate(MemberId::parse(m)?),
             _ => return Err(bad),
@@ -473,6 +477,10 @@ mod tests {
             (KeyFamily::Org, "org:epoch:1".to_string()),
             (KeyFamily::Team("t1".into()), "team:t1:epoch:1".into()),
             (KeyFamily::Conv("c9".into()), "conv:c9:epoch:1".into()),
+            (
+                KeyFamily::ConvMeta("c9".into()),
+                "conv:c9:meta:epoch:1".into(),
+            ),
             (
                 KeyFamily::MemberAttendance(m),
                 format!("member:{m}:attendance:epoch:1"),

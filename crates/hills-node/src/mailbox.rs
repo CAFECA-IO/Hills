@@ -44,7 +44,10 @@ fn accept_keys(inner: &Inner, items: &[hills_proto::mailbox::KeyItem]) -> Result
                 signer.is_admin()
             }
             KeyFamily::MemberPrivate(m) => *m == signer.member_id,
-            KeyFamily::Conv(_) => true,
+            // §14.1 v0.9：只接受對話建立者裝置封裝的對話金鑰
+            KeyFamily::Conv(c) | KeyFamily::ConvMeta(c) => {
+                crate::conv::creator_of(c) == Some(signer.member_id)
+            }
         };
         if !ok || st.ring.contains(&w.body.key_id) {
             continue;
@@ -112,6 +115,10 @@ async fn refresh(inner: &Arc<Inner>, mb: &MailboxClient) -> Result<()> {
     };
     if roster_changed {
         inner.emit(Event::RosterChanged);
+    }
+    // 我建立的對話中被停用的成員：移出並輪替（§14.1）
+    if let Err(e) = inner.prune_revoked_conv_members() {
+        tracing::warn!(error = %e, "無法更新對話成員");
     }
     // 金鑰
     let since = lock(&inner.cfg).keys_cursor;

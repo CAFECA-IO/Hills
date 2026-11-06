@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.7 草案 · 2026-11-05 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.8 草案 · 2026-11-06 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15。
 
 ## 1. 元件總覽
@@ -644,7 +644,9 @@ GET    /v1/health
 | `docs/*.am` | Automerge 文件 + 每筆 change 的簽章（§16.5） | 儲存金鑰（§9） |
 | `keyring.enc`、`trust.enc` | KeyRing、TrustStore 快照 | 儲存金鑰 |
 
-網路：node 的 iroh 金鑰就是 DK；relay 使用 mailbox 連線碼中的 relay URL（自架，D1），連線碼沒有 relay 時只用直連（測試用）。M0 只支援 `org`、`team/<id>`、`member/<id>/secrets` 三種文件，其他文件類型隨 M1 功能加入。
+網路：node 的 iroh 金鑰就是 DK；relay 使用 mailbox 連線碼中的 relay URL（自架，D1），連線碼沒有 relay 時只用直連（測試用）。
+
+**mailbox 位址更新**（v0.8）：`node.json` 中的 mailbox 位址不是固定值。每次同步呼叫 `Info` 取得 mailbox 目前的位址；NodeId 與已存的相同時，若 relay 或直連位址不同，就更新 `node.json`、把新 relay 加入執行中的 endpoint（不需重啟），再 `Announce` 自己的新位址。NodeId 不同時忽略（mailbox 身分不能以此方式更換）。之後產生的邀請碼、組織連線碼、綁定碼都帶新位址。mailbox 只能藉此指定 relay，而 relay 只看得到端對端加密的 QUIC，因此不增加信任範圍。這讓部署後才補上 relay、或更換 relay 網域時，既有安裝會自動修正。M0 只支援 `org`、`team/<id>`、`member/<id>/secrets` 三種文件，其他文件類型隨 M1 功能加入。
 
 ### 16.2 邀請與加入
 
@@ -723,6 +725,7 @@ secret 不放在 org 文件，因為所有成員都能讀 org 文件；代價是
 | `PutKeys` | ✓ | 管理者（org、team、attendance）/ 本人（private） | `Signed<WrappedKey>`，由簽署裝置的權限決定 |
 | `FetchKeys{since}` | ✓ | 收件者本人 | 只回傳 `recipient == 本人` 的封裝 |
 | `Announce{addr}` / `Peers` | ✓ | 成員 | 自架位址簿：裝置的 iroh 位址與最後上線時間，取代 n0 DNS 探索（D1、D26 全自架） |
+| `Info` | ✓ | 成員 | 回傳 mailbox 目前的 `PeerAddr`（NodeId、relay、對外位址優先），供 node 更新已存位址（§16.1）；內容與 mailbox 連線碼相同，不是機密 |
 | `Put` / `List` / `Get` | ✓ | 成員 | §5.2 |
 
 `Roster` 增加 `device_certs`。

@@ -1,6 +1,6 @@
 # M0 PoC 報告
 
-> 版本：v0.6 · 2026-11-06 · 對應 technical-design §12、§15.8；Issue「[M0][PoC] …」各項
+> 版本：v0.7 · 2026-11-06 · 對應 technical-design §12、§15.8；Issue「[M0][PoC] …」各項
 > 狀態：**部分完成**。macOS 與 Windows WebView 檔案管線通過；Windows 已經自架 mailbox + relay 加入組織。NAT 矩陣、安裝檔與 §5.4 其餘項目待實測。
 
 ## 1. 結論摘要
@@ -184,7 +184,9 @@ push 後 CI 的「Desktop bundle」job 會產生未簽章的 `.dmg`、`.exe`、`
 | 項目 | 結果 |
 |------|------|
 | Mac 建立組織、Windows 以邀請碼加入（不同網路） | ✅ 2026-11-06，經自架 mailbox + relay（relay.cafeca.io）加入成功 |
-| 狀態文字同步時間 | |
-| 組織名稱即時同步時間 | |
+| 狀態文字同步時間 | ✗ 2026-11-06 第一次試用：始終未同步，雙方互相顯示離線 |
+| 組織名稱即時同步時間 | 約 2 秒（經 mailbox） |
 | Windows 關閉期間的變更，重新開啟後補同步 | |
-| 綁定第二台裝置 | |
+| 綁定第二台裝置 | ✗ 2026-11-06：「無法連線到新裝置：timed out」 |
+
+**第一次試用的原因**：組織是以部署初期、尚未含 relay 的 mailbox 連線碼建立（當時 relay 因 `relay.toml` 掛載問題未啟動），node 的 relay 取自已存的 mailbox 位址且之後不再更新，因此所有裝置都在無 relay 狀態運作：跨網路只連得到 mailbox 的公網 IP，需要裝置直連的 presence（gossip）、直連同步與裝置綁定全部失敗，只有經 mailbox 的資料同步成功。由 technical-design v0.8 §16.1「mailbox 位址更新」修正，更新後重新測試。

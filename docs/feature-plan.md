@@ -1,6 +1,6 @@
 # 山丘上的卡菲卡（Hills）功能規劃
 
-> 版本：v1.1.8 · 2026-11-06 · 狀態：方針已確認，進入 M0
+> 版本：v1.1.9 · 2026-11-06 · 狀態：方針已確認，進入 M0
 > 本文件是專案的最高層事實來源；修改專案前先修改本文件（見 [AGENTS.md](../AGENTS.md)、[docs/README.md](./README.md)）。
 
 ## 1. 產品定位
@@ -367,6 +367,7 @@ Hills 是 CAFECA 團隊的工作通訊與協作工具，安裝於桌機、筆電
 |------|------|------|
 | v0.1–v0.8 | 2026-11-05 | 五輪問答確認 D1–D32 |
 | v0.9 | 2026-11-05 | 新增 D33 文件優先；加入 AGENTS.md、M2–M5 技術設計、介面規格、開發規範、M2–M5 backlog |
+| v1.1.9 | 2026-11-06 | poc-report v0.8：修正後 Mac + Windows 跨網路 presence < 1 秒、綁定新裝置通過 |
 | v1.1.8 | 2026-11-06 | technical-design v0.8：mailbox `Info` 請求，node 每次同步更新已存的 mailbox 位址（含 relay）；poc-report v0.7 記錄首次 Mac + Windows 試用結果 |
 | v1.1.7 | 2026-11-06 | poc-report v0.6：Windows WebView2 檔案管線 120–125 MB/s 通過；Windows 經自架部署加入組織成功 |
 | v1.1.6 | 2026-11-06 | ui-spec v0.4、deploy.md：建立組織的 mailbox 連線碼可由建置設定 VITE_HILLS_DEFAULT_MAILBOX 預先填入（不內建於 repo，D20） |

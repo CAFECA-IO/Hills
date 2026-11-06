@@ -1,6 +1,6 @@
 # M0 PoC 報告
 
-> 版本：v0.7 · 2026-11-06 · 對應 technical-design §12、§15.8；Issue「[M0][PoC] …」各項
+> 版本：v0.8 · 2026-11-06 · 對應 technical-design §12、§15.8；Issue「[M0][PoC] …」各項
 > 狀態：**部分完成**。macOS 與 Windows WebView 檔案管線通過；Windows 已經自架 mailbox + relay 加入組織。NAT 矩陣、安裝檔與 §5.4 其餘項目待實測。
 
 ## 1. 結論摘要
@@ -9,7 +9,7 @@
 |------|---------|---------|------|
 | iroh 穿透 | 各網路組合皆可連線 | 本機雙行程直連成功；NAT 矩陣待測 | ⏳ 待實測 |
 | Automerge 同步 | 一致、無遺失、合併 < 1 秒 | 一致；100 次 / 副本合併 3.4 ms | ✅ 通過 |
-| 多節點同步（hills-node） | 即時 ≤ 2 秒、離線補同步 ≤ 5 秒 | 本機：gossip + 直連 120 ms、離線補同步 209 ms；加入、presence、綁定、停用輪替、復原皆通過 | ✅ 本機通過；Windows 已經自架部署加入組織，⏳ §5.4 其餘項目待測 |
+| 多節點同步（hills-node） | 即時 ≤ 2 秒、離線補同步 ≤ 5 秒 | 本機：gossip + 直連 120 ms、離線補同步 209 ms；加入、presence、綁定、停用輪替、復原皆通過 | ✅ 本機通過；Mac + Windows 跨網路：加入、presence < 1 秒、綁定新裝置通過，⏳ 離線補同步待測 |
 | 加密 bundle + mailbox | 補同步 ≤ 5 秒 | 3 份 bundle 補同步 77–90 ms（debug）、6 ms（release），本機直連 | ✅ 通過（跨網路待 §5.1 一併實測） |
 | RS 與 SwarmStorage 相容 | 逐位元組一致 | 5 組向量全部一致 | ✅ 通過 |
 | 前端加密 / 編碼效能 | 每平台 ≥ 50 MB/s、記憶體 < 200 MB | **macOS WKWebView 366–401 MB/s、WebContent 行程 78.5 MB；Windows WebView2 120–125 MB/s，記憶體在 200 MB 內**；Node 192 MB/s、Chromium Worker 123 MB/s | ✅ macOS、Windows 通過 |
@@ -184,9 +184,9 @@ push 後 CI 的「Desktop bundle」job 會產生未簽章的 `.dmg`、`.exe`、`
 | 項目 | 結果 |
 |------|------|
 | Mac 建立組織、Windows 以邀請碼加入（不同網路） | ✅ 2026-11-06，經自架 mailbox + relay（relay.cafeca.io）加入成功 |
-| 狀態文字同步時間 | ✗ 2026-11-06 第一次試用：始終未同步，雙方互相顯示離線 |
+| 狀態文字同步時間 | ✅ 修正後 < 1 秒（第一次試用 ✗：始終未同步，見下方原因） |
 | 組織名稱即時同步時間 | 約 2 秒（經 mailbox） |
 | Windows 關閉期間的變更，重新開啟後補同步 | |
-| 綁定第二台裝置 | ✗ 2026-11-06：「無法連線到新裝置：timed out」 |
+| 綁定第二台裝置 | ✅ 修正後成功（第一次試用 ✗：「無法連線到新裝置：timed out」） |
 
-**第一次試用的原因**：組織是以部署初期、尚未含 relay 的 mailbox 連線碼建立（當時 relay 因 `relay.toml` 掛載問題未啟動），node 的 relay 取自已存的 mailbox 位址且之後不再更新，因此所有裝置都在無 relay 狀態運作：跨網路只連得到 mailbox 的公網 IP，需要裝置直連的 presence（gossip）、直連同步與裝置綁定全部失敗，只有經 mailbox 的資料同步成功。由 technical-design v0.8 §16.1「mailbox 位址更新」修正，更新後重新測試。
+**第一次試用的原因**：組織是以部署初期、尚未含 relay 的 mailbox 連線碼建立（當時 relay 因 `relay.toml` 掛載問題未啟動），node 的 relay 取自已存的 mailbox 位址且之後不再更新，因此所有裝置都在無 relay 狀態運作：跨網路只連得到 mailbox 的公網 IP，需要裝置直連的 presence（gossip）、直連同步與裝置綁定全部失敗，只有經 mailbox 的資料同步成功。由 technical-design v0.8 §16.1「mailbox 位址更新」修正（另將無 relay 時的 endpoint 改為空 RelayMap，`RelayMode::Disabled` 下執行中加入的 relay 不會生效）。2026-11-06 更新 mailbox 與兩台 app 後重測：上線狀態 1 秒內同步、綁定新裝置成功，既有組織不需重建。

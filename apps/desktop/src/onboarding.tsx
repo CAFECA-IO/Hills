@@ -1,18 +1,16 @@
-/** 初次啟動與加入（ui-spec「初次啟動與加入」、technical-design §16.2–16.4）。 */
+/** 初次啟動、以 CAFECA 登入加入（ui-spec「初次啟動與加入」、technical-design §17、D41）。 */
 import { useEffect, useRef, useState } from 'react';
-import { api, EVENTS, listen, type Code } from './api';
-import { defaultDeviceName } from './hooks';
+import { api, errorMessage, type OnboardArgs, type SignInInfo } from './api';
+import { defaultDeviceName, useNodeEvents } from './hooks';
 import { getLocale, t, type MessageKey } from './i18n';
-import { Button, Card, Centered, CodeBox, ErrorText, Field, useAction } from './ui';
+import { Button, Card, Centered, ErrorText, Field, useAction } from './ui';
 
-export type Start = 'create' | 'join' | 'link' | 'recover';
+export type Start = 'create' | 'join';
 
 export function Welcome({ onPick }: { onPick: (s: Start) => void }) {
   const items: [Start, MessageKey, MessageKey][] = [
     ['create', 'welcome.create', 'welcome.create.desc'],
     ['join', 'welcome.join', 'welcome.join.desc'],
-    ['link', 'welcome.link', 'welcome.link.desc'],
-    ['recover', 'welcome.recover', 'welcome.recover.desc'],
   ];
   return (
     <Centered title={t('welcome.title')}>
@@ -61,7 +59,16 @@ function Actions({
   );
 }
 
-export function CreateOrgForm({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
+/** 完成後的去向：created → 匯出備份；approval → 等待核准；linked → 直接進入。 */
+export type Finished = 'created' | 'approval' | 'linked';
+
+export function CreateOrgForm({
+  onBack,
+  onDone,
+}: {
+  onBack: () => void;
+  onDone: (f: Finished) => void;
+}) {
   // 自架組織可在建置時設定預設值（ui-spec「初次啟動與加入」；repo 不內建，D20）
   const [mailboxCode, setMailbox] = useState(
     import.meta.env.VITE_HILLS_DEFAULT_MAILBOX?.trim() ?? '',
@@ -71,22 +78,23 @@ export function CreateOrgForm({ onBack, onDone }: { onBack: () => void; onDone: 
   const [deviceName, setDevice] = useState(defaultDeviceName());
   const [teamName, setTeam] = useState(t('field.teamName.default'));
   const [touched, setTouched] = useState(false);
-  const { busy, error, attempt } = useAction();
-  const submit = async () => {
+  const [args, setArgs] = useState<OnboardArgs | null>(null);
+  if (args) {
+    return <SignInFlow args={args} onBack={() => setArgs(null)} onDone={onDone} />;
+  }
+  const submit = () => {
     setTouched(true);
     if ([mailboxCode, orgName, myName, deviceName, teamName].some((v) => !v.trim())) return;
-    const ok = await attempt(() =>
-      api.createOrg({
-        mailboxCode,
-        orgName,
-        myName,
-        deviceName,
-        teamName,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        locale: getLocale(),
-      }),
-    );
-    if (ok) onDone();
+    setArgs({
+      kind: 'create',
+      code: mailboxCode,
+      orgName,
+      myName,
+      deviceName,
+      teamName,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      locale: getLocale(),
+    });
   };
   return (
     <Centered title={t('create.title')}>
@@ -125,34 +133,43 @@ export function CreateOrgForm({ onBack, onDone }: { onBack: () => void; onDone: 
           error={touched ? required(deviceName) : null}
         />
       </Card>
-      <ErrorText message={error} />
       <Actions
         onBack={onBack}
-        submit={t('create.submit')}
-        busy={busy}
-        busyLabel={t('create.working')}
-        onSubmit={() => void submit()}
+        submit={t('signin.continue')}
+        busy={false}
+        busyLabel={t('common.loading')}
+        onSubmit={submit}
       />
     </Centered>
   );
 }
 
-export function JoinForm({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
+export function JoinForm({
+  onBack,
+  onDone,
+}: {
+  onBack: () => void;
+  onDone: (f: Finished) => void;
+}) {
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [device, setDevice] = useState(defaultDeviceName());
   const [touched, setTouched] = useState(false);
-  const { busy, error, attempt } = useAction();
-  const submit = async () => {
+  const [args, setArgs] = useState<OnboardArgs | null>(null);
+  if (args) {
+    return <SignInFlow args={args} onBack={() => setArgs(null)} onDone={onDone} />;
+  }
+  const submit = () => {
     setTouched(true);
-    if ([code, name, device].some((v) => !v.trim())) return;
-    if (await attempt(() => api.joinOrg(code, name, device))) onDone();
+    if ([code, device].some((v) => !v.trim())) return;
+    setArgs({ kind: 'join', code, myName: name, deviceName: device });
   };
   return (
     <Centered title={t('join.title')}>
       <Card className="flex flex-col gap-4">
         <Field
-          label={t('field.inviteCode')}
+          label={t('field.orgCode')}
+          hint={t('field.orgCode.hint')}
           value={code}
           onChange={setCode}
           multiline
@@ -161,9 +178,9 @@ export function JoinForm({ onBack, onDone }: { onBack: () => void; onDone: () =>
         />
         <Field
           label={t('field.myName')}
+          hint={t('join.nameHint')}
           value={name}
           onChange={setName}
-          error={touched ? required(name) : null}
         />
         <Field
           label={t('field.deviceName')}
@@ -172,278 +189,240 @@ export function JoinForm({ onBack, onDone }: { onBack: () => void; onDone: () =>
           error={touched ? required(device) : null}
         />
       </Card>
-      <ErrorText message={error} />
       <Actions
         onBack={onBack}
-        submit={t('join.submit')}
-        busy={busy}
-        busyLabel={t('join.working')}
-        onSubmit={() => void submit()}
+        submit={t('signin.continue')}
+        busy={false}
+        busyLabel={t('common.loading')}
+        onSubmit={submit}
       />
     </Centered>
   );
 }
 
-export function RecoverForm({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
-  const [words, setWords] = useState('');
-  const [orgCode, setOrgCode] = useState('');
-  const [device, setDevice] = useState(defaultDeviceName());
-  const [touched, setTouched] = useState(false);
-  const { busy, error, attempt } = useAction();
-  const submit = async () => {
-    setTouched(true);
-    if ([words, orgCode, device].some((v) => !v.trim())) return;
-    if (await attempt(() => api.recover(words, orgCode, device))) onDone();
-  };
-  return (
-    <Centered title={t('recover.title')}>
-      <p className="text-sm text-muted">{t('recover.desc')}</p>
-      <Card className="flex flex-col gap-4">
-        <Field
-          label={t('field.words')}
-          value={words}
-          onChange={setWords}
-          multiline
-          autoFocus
-          error={touched ? required(words) : null}
-        />
-        <Field
-          label={t('field.orgCode')}
-          hint={t('field.orgCode.hint')}
-          value={orgCode}
-          onChange={setOrgCode}
-          multiline
-          error={touched ? required(orgCode) : null}
-        />
-        <Field
-          label={t('field.deviceName')}
-          value={device}
-          onChange={setDevice}
-          error={touched ? required(device) : null}
-        />
-      </Card>
-      <ErrorText message={error} />
-      <Actions
-        onBack={onBack}
-        submit={t('recover.submit')}
-        busy={busy}
-        busyLabel={t('recover.working')}
-        onSubmit={() => void submit()}
-      />
-    </Centered>
-  );
+/** 每秒更新的目前時間（Unix 秒）。 */
+function useNowSecs(): number {
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return now;
 }
 
-/** 新裝置端綁定：輸入組織連線碼 → 顯示綁定碼 → 顯示 SAS → 等待舊裝置確認。 */
-export function LinkNewDevice({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
-  const [orgCode, setOrgCode] = useState('');
-  const [device, setDevice] = useState(defaultDeviceName());
-  const [code, setCode] = useState<Code | null>(null);
-  const [sas, setSas] = useState<string | null>(null);
-  const [failed, setFailed] = useState<string | null>(null);
-  const [touched, setTouched] = useState(false);
-  const { busy, error, run } = useAction();
+const POLL_MS = 2000;
+/** 新裝置等待本人其他裝置的時間，逾時後主動提示還原（technical-design §17.6 步驟 6）。 */
+const DEVICE_WAIT_SECS = 10 * 60;
+
+type FlowState =
+  | { s: 'starting' }
+  | { s: 'signin'; info: SignInInfo }
+  | { s: 'device'; since: number; handle: string | null }
+  | { s: 'denied' }
+  | { s: 'expired' }
+  | { s: 'error'; message: string };
+
+/** 「以 CAFECA 登入」畫面（ui-spec「以 CAFECA 登入」）：QR、在這台電腦開啟、確認碼、倒數。 */
+export function SignInFlow({
+  args,
+  onBack,
+  onDone,
+}: {
+  args: OnboardArgs;
+  onBack: () => void;
+  onDone: (f: Finished) => void;
+}) {
+  const [state, setState] = useState<FlowState>({ s: 'starting' });
+  const [attempt, setAttempt] = useState(0);
+  const [recover, setRecover] = useState<'ask' | 'go' | null>(null);
   const done = useRef(onDone);
   useEffect(() => {
     done.current = onDone;
   });
 
+  // 開始登入
   useEffect(() => {
-    const offs: Promise<() => void>[] = [
-      listen<string | null>(EVENTS.linkSas, (s) => setSas(s)),
-      listen<string | null>(EVENTS.linkDone, (err) => {
-        if (err) setFailed(err);
-        else done.current();
-      }),
-    ];
+    let alive = true;
+    api
+      .onboardBegin(args)
+      .then((info) => alive && setState({ s: 'signin', info }))
+      .catch((e: unknown) => alive && setState({ s: 'error', message: errorMessage(e) }));
     return () => {
-      offs.forEach((p) => void p.then((off) => off()));
+      alive = false;
     };
-  }, []);
+  }, [args, attempt]);
 
-  const start = async () => {
-    setTouched(true);
-    if (!orgCode.trim() || !device.trim()) return;
-    setFailed(null);
-    setSas(null);
-    const c = await run(() => api.linkStart(orgCode, device));
-    if (c) setCode(c);
-  };
-  const back = () => {
-    void api.linkCancel();
+  // 輪詢進度
+  const polling = state.s === 'signin' || state.s === 'device';
+  useEffect(() => {
+    if (!polling) return;
+    let alive = true;
+    const id = setInterval(() => {
+      api
+        .onboardPoll()
+        .then((r) => {
+          if (!alive) return;
+          switch (r.step) {
+            case 'signin':
+              break;
+            case 'device':
+              setState((cur) =>
+                cur.s === 'device'
+                  ? cur
+                  : { s: 'device', since: Math.floor(Date.now() / 1000), handle: r.handle },
+              );
+              break;
+            case 'denied':
+            case 'expired':
+              setState({ s: r.step });
+              break;
+            default:
+              done.current(r.step);
+          }
+        })
+        .catch((e: unknown) => alive && setState({ s: 'error', message: errorMessage(e) }));
+    }, POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [polling]);
+
+  const now = useNowSecs();
+  const cancel = () => {
+    void api.onboardCancel();
     onBack();
   };
+  const retry = () => {
+    setState({ s: 'starting' });
+    setAttempt((n) => n + 1);
+  };
 
-  return (
-    <Centered title={t('link.title')}>
-      {!code ? (
-        <>
-          <Card className="flex flex-col gap-4">
-            <Field
-              label={t('field.orgCode')}
-              hint={t('link.step1')}
-              value={orgCode}
-              onChange={setOrgCode}
-              multiline
-              autoFocus
-              error={touched ? required(orgCode) : null}
-            />
-            <Field
-              label={t('field.deviceName')}
-              value={device}
-              onChange={setDevice}
-              error={touched ? required(device) : null}
-            />
-          </Card>
-          <ErrorText message={error} />
-          <Actions
-            onBack={back}
-            submit={t('link.start')}
-            busy={busy}
-            busyLabel={t('common.loading')}
-            onSubmit={() => void start()}
-          />
-        </>
-      ) : (
-        <>
-          <Card className="flex flex-col gap-4">
-            {sas ? (
-              <div className="flex flex-col items-center gap-3 py-4">
-                <p>{t('link.sas')}</p>
-                <p className="font-mono text-4xl tracking-[0.3em]" aria-live="polite">
-                  {sas}
-                </p>
-                <p className="text-sm text-muted">{t('link.sasWait')}</p>
-              </div>
-            ) : (
-              <>
-                <p className="text-sm">{t('link.showCode')}</p>
-                <CodeBox code={code.code} qrSvg={code.qrSvg} />
-                <p className="text-center text-sm text-muted" aria-live="polite">
-                  {t('link.waiting')}
-                </p>
-              </>
-            )}
-          </Card>
-          {failed && <ErrorText message={t('link.failed', { message: failed })} />}
-          <div>
-            <Button variant="secondary" onClick={back}>
-              {t('common.cancel')}
-            </Button>
-          </div>
-        </>
-      )}
-    </Centered>
-  );
-}
-
-function pickPositions(n: number): number[] {
-  const picks = new Set<number>();
-  const buf = new Uint32Array(1);
-  while (picks.size < Math.min(3, n)) {
-    crypto.getRandomValues(buf);
-    picks.add((buf[0] ?? 0) % n);
-  }
-  return [...picks].sort((a, b) => a - b);
-}
-
-/** 復原詞顯示 + 隨機 3 字驗證（ui-spec「復原詞畫面」，語言跟隨介面 D38）。 */
-export function PhraseFlow({ onDone, onCancel }: { onDone: () => void; onCancel?: () => void }) {
-  const [words, setWords] = useState<string[] | null>(null);
-  const [ack, setAck] = useState(false);
-  const [verify, setVerify] = useState(false);
-  const [positions, setPositions] = useState<number[]>([]);
-  const [answers, setAnswers] = useState<string[]>(['', '', '']);
-  const [wrong, setWrong] = useState(false);
-  const { error, run } = useAction();
-
-  useEffect(() => {
-    void run(() => api.recoveryWords(getLocale())).then((w) => {
-      if (w) {
-        setWords(w);
-        setPositions(pickPositions(w.length));
-      }
-    });
-    // 只在開啟時讀取一次
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (!words) {
+  if (recover === 'go') {
     return (
-      <Centered title={t('phrase.title')}>
-        <ErrorText message={error} />
-        {!error && <p className="text-muted">{t('common.loading')}</p>}
-      </Centered>
+      <SignInFlow
+        args={{ kind: 'recover', code: args.code, deviceName: args.deviceName }}
+        onBack={() => setRecover(null)}
+        onDone={onDone}
+      />
     );
   }
+  if (recover === 'ask') {
+    return <RecoverConfirm onBack={() => setRecover(null)} onGo={() => setRecover('go')} />;
+  }
 
-  if (verify) {
-    const check = () => {
-      const ok = positions.every(
-        (p, i) => (answers[i] ?? '').trim().toLowerCase() === (words[p] ?? '').toLowerCase(),
-      );
-      setWrong(!ok);
-      if (ok) {
-        setWords(null);
-        onDone();
-      }
-    };
+  const title = t(args.kind === 'recover' ? 'recover.title' : 'signin.title');
+  if (state.s === 'device') {
+    const waited = now - state.since;
     return (
-      <Centered title={t('phrase.verify.title')}>
-        <p className="text-sm text-muted">{t('phrase.verify.desc')}</p>
-        <Card className="flex flex-col gap-4">
-          {positions.map((p, i) => (
-            <Field
-              key={p}
-              label={t('phrase.verify.word', { n: p + 1 })}
-              value={answers[i] ?? ''}
-              autoFocus={i === 0}
-              onChange={(v) => setAnswers((a) => a.map((x, j) => (j === i ? v : x)))}
-            />
-          ))}
-          {wrong && (
-            <p role="alert" className="text-sm text-danger">
-              {t('phrase.verify.wrong')}
+      <Centered title={t('device.title')}>
+        <Card className="flex flex-col gap-3">
+          {state.handle && (
+            <p className="text-sm text-muted">{t('signin.as', { handle: state.handle })}</p>
+          )}
+          <p aria-live="polite">{t('device.desc')}</p>
+          <p className="text-sm text-muted">{t('device.wait')}</p>
+          {waited >= DEVICE_WAIT_SECS && (
+            <p className="text-sm" role="status">
+              {t('device.timeout')}
             </p>
           )}
         </Card>
         <div className="flex justify-between">
-          <Button variant="secondary" onClick={() => setVerify(false)}>
-            {t('common.back')}
+          <Button variant="secondary" onClick={cancel}>
+            {t('common.cancel')}
           </Button>
-          <Button onClick={check}>{t('phrase.verify.submit')}</Button>
+          <Button variant="secondary" onClick={() => setRecover('ask')}>
+            {t('device.noOther')}
+          </Button>
         </div>
       </Centered>
     );
   }
-
   return (
-    <Centered title={t('phrase.title')}>
-      <p className="text-sm text-muted">{t('phrase.desc')}</p>
-      <Card>
-        <ol className="grid grid-cols-2 gap-x-6 gap-y-2 font-mono sm:grid-cols-4 select-none">
-          {words.map((w, i) => (
-            <li key={i} className="flex gap-2">
-              <span className="w-6 text-right text-muted">{i + 1}</span>
-              <span>{w}</span>
-            </li>
-          ))}
-        </ol>
+    <Centered title={title}>
+      {state.s === 'starting' && <p className="text-muted">{t('common.loading')}</p>}
+      {state.s === 'signin' && <SignInCard info={state.info} now={now} />}
+      {(state.s === 'denied' || state.s === 'expired' || state.s === 'error') && (
+        <Card className="flex flex-col gap-3">
+          <p role="alert">
+            {state.s === 'denied'
+              ? t('signin.denied')
+              : state.s === 'expired'
+                ? t('signin.expired')
+                : t('signin.failed', { message: state.message })}
+          </p>
+          <div>
+            <Button onClick={retry}>{t('signin.retry')}</Button>
+          </div>
+        </Card>
+      )}
+      <div>
+        <Button variant="secondary" onClick={cancel}>
+          {t('common.cancel')}
+        </Button>
+      </div>
+    </Centered>
+  );
+}
+
+function SignInCard({ info, now }: { info: SignInInfo; now: number }) {
+  const { error, attempt } = useAction();
+  const left = Math.max(0, info.expiresAt - now);
+  const mm = Math.floor(left / 60);
+  const ss = String(left % 60).padStart(2, '0');
+  return (
+    <Card className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-6">
+        <div className="flex flex-col items-center gap-2">
+          <div
+            className="rounded bg-qr p-2"
+            role="img"
+            aria-label={t('signin.qr')}
+            // 來源為本機 Rust（qrcode crate）產生的 SVG，不含外部輸入的標記
+            dangerouslySetInnerHTML={{ __html: info.qrSvg }}
+          />
+          <span className="text-xs text-muted">{t('signin.scan')}</span>
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <span className="text-sm text-muted">{t('signin.code')}</span>
+          <span className="font-mono text-3xl tracking-[0.2em]" aria-live="polite">
+            {info.code}
+          </span>
+          <span className="text-sm">{t('signin.codeHint')}</span>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Button onClick={() => void attempt(() => api.onboardOpenLink())}>
+          {t('signin.openHere')}
+        </Button>
+        <span className="text-sm text-muted" role="timer">
+          {t('signin.waiting', { time: `${mm}:${ss}` })}
+        </span>
+      </div>
+      <ErrorText message={error} />
+    </Card>
+  );
+}
+
+/** 還原前說明限制（ui-spec「等待核准」還原）。 */
+function RecoverConfirm({ onBack, onGo }: { onBack: () => void; onGo: () => void }) {
+  const [ack, setAck] = useState(false);
+  return (
+    <Centered title={t('recover.title')}>
+      <Card className="flex flex-col gap-3">
+        <p className="text-sm">{t('recover.desc')}</p>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
+          {t('recover.ack')}
+        </label>
       </Card>
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
-        {t('phrase.ack')}
-      </label>
       <div className="flex justify-between">
-        {onCancel ? (
-          <Button variant="secondary" onClick={onCancel}>
-            {t('common.cancel')}
-          </Button>
-        ) : (
-          <span />
-        )}
-        <Button disabled={!ack} onClick={() => setVerify(true)}>
-          {t('phrase.toVerify')}
+        <Button variant="secondary" onClick={onBack}>
+          {t('common.back')}
+        </Button>
+        <Button disabled={!ack} onClick={onGo}>
+          {t('recover.submit')}
         </Button>
       </div>
     </Centered>
@@ -528,12 +507,54 @@ export function BackupStep({ onDone }: { onDone: () => void }) {
   );
 }
 
-export function Pending() {
+export function Pending({ onReset }: { onReset: () => void }) {
+  const [rejected, setRejected] = useState(false);
+  const { busy, error, attempt } = useAction();
+  useNodeEvents((name) => {
+    if (name === 'rejected') setRejected(true);
+  });
   return (
-    <Centered title={t('pending.title')}>
-      <Card>
-        <p className="text-sm">{t('pending.desc')}</p>
+    <Centered title={t(rejected ? 'pending.rejected.title' : 'pending.title')}>
+      <Card className="flex flex-col gap-3">
+        <p className="text-sm">{t(rejected ? 'pending.rejected.desc' : 'pending.desc')}</p>
+        {rejected && (
+          <div>
+            <Button
+              disabled={busy}
+              onClick={async () => {
+                if (await attempt(() => api.resetLocalData())) onReset();
+              }}
+            >
+              {t('pending.restart')}
+            </Button>
+          </div>
+        )}
       </Card>
+      <ErrorText message={error} />
+    </Centered>
+  );
+}
+
+/** 舊版資料（以復原詞與邀請碼建立）：清除後重新開始（technical-design §17.9）。 */
+export function Legacy({ onReset }: { onReset: () => void }) {
+  const { busy, error, attempt } = useAction();
+  return (
+    <Centered title={t('legacy.title')}>
+      <Card className="flex flex-col gap-3">
+        <p className="text-sm">{t('legacy.desc')}</p>
+        <div>
+          <Button
+            variant="danger"
+            disabled={busy}
+            onClick={async () => {
+              if (await attempt(() => api.resetLocalData())) onReset();
+            }}
+          >
+            {t('legacy.reset')}
+          </Button>
+        </div>
+      </Card>
+      <ErrorText message={error} />
     </Centered>
   );
 }

@@ -6,11 +6,10 @@ import {
   BackupStep,
   CreateOrgForm,
   JoinForm,
-  LinkNewDevice,
+  Legacy,
   Pending,
-  PhraseFlow,
-  RecoverForm,
   Welcome,
+  type Finished,
   type Start,
 } from './onboarding';
 import { Shell } from './shell';
@@ -42,8 +41,8 @@ function DevLink() {
   );
 }
 
-/** 建立 / 加入後依序經過的步驟（ui-spec「初次啟動與加入」）。 */
-type Step = 'phrase' | 'backup' | null;
+/** 建立組織後依序經過的步驟（ui-spec「初次啟動與加入」）。 */
+type Step = 'backup' | null;
 
 export function App() {
   return (
@@ -99,29 +98,25 @@ function Main() {
 
   const step = steps[0];
   const nextStep = () => setSteps((s) => s.slice(1));
-  if (step === 'phrase') return <PhraseFlow onDone={nextStep} />;
   if (step === 'backup') return <BackupStep onDone={nextStep} />;
 
+  if (info.phase === 'legacy') return <Legacy onReset={refresh} />;
   if (info.phase === 'welcome') {
     const back = () => setStart(null);
-    const finished = (next: Step[]) => () => {
-      setSteps(next);
+    const finished = (f: Finished) => {
+      setSteps(f === 'created' ? ['backup'] : []);
       setStart(null);
       refresh();
     };
     switch (start) {
       case 'create':
-        return <CreateOrgForm onBack={back} onDone={finished(['phrase', 'backup'])} />;
+        return <CreateOrgForm onBack={back} onDone={finished} />;
       case 'join':
-        return <JoinForm onBack={back} onDone={finished(['phrase'])} />;
-      case 'recover':
-        return <RecoverForm onBack={back} onDone={finished([])} />;
-      case 'link':
-        return <LinkNewDevice onBack={back} onDone={finished([])} />;
+        return <JoinForm onBack={back} onDone={finished} />;
       default:
         return <Welcome onPick={setStart} />;
     }
   }
-  if (info.phase === 'pending') return <Pending />;
+  if (info.phase === 'pending') return <Pending onReset={refresh} />;
   return <Shell info={info} />;
 }

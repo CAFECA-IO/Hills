@@ -1,14 +1,15 @@
 /**
  * 開發用假後端：在瀏覽器（非 Tauri）預覽畫面時使用，只在 dev build 載入。
- * 資料皆為虛構示範內容，復原詞不是有效的金鑰。
+ * 資料皆為虛構示範內容。CAFECA 登入以計時模擬（`?signin=device` 模擬新增裝置、`?signin=denied` 模擬拒絕）。
  */
 import type {
   AppInfo,
   Code,
-  CreateOrgArgs,
   DeviceInfo,
-  InviteView,
+  JoinRequestView,
   MemberView,
+  OnboardArgs,
+  OnboardStatus,
   Overview,
   PresenceState,
 } from '../api';
@@ -21,11 +22,6 @@ const emit = (event: string, payload: unknown) =>
 const QR =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21" width="220" height="220"><rect width="21" height="21" fill="#fff"/><path d="M1 1h7v7H1zM13 1h7v7h-7zM1 13h7v7H1zM10 10h2v2h-2zM14 14h3v3h-3z" fill="#000"/></svg>';
 const code = (c: string): Code => ({ code: c, qrSvg: QR });
-
-const SAMPLE_WORDS_EN =
-  'river cloud stone maple orbit candle meadow silver harbor puzzle lantern velvet ' +
-  'thunder copper garden pepper rocket saddle timber walnut yellow zebra anchor basket';
-const SAMPLE_WORDS_ZH = '山 丘 河 雲 石 楓 星 燈 草 銀 港 謎 光 絨 雷 銅 園 椒 箭 鞍 木 核 黃 斑';
 
 const params = new URLSearchParams(window.location.search);
 const state = {
@@ -140,9 +136,21 @@ const syncStatus = (t: MockTask) => {
   else if (t.steps.some((x) => x.done)) t.status = 'doing';
 };
 const touch = (name = 'doc') => emit('hills://node', name);
-let invites: InviteView[] = [
-  { id: 'a1b2c3d4', admin: false, expiresAt: Date.now() + 70 * 3600_000, mine: true },
+let joins: JoinRequestView[] = [
+  {
+    device: 'ef'.repeat(32),
+    kind: 'join',
+    memberId: 'mem-new',
+    name: '周小宇',
+    deviceName: 'ThinkPad',
+    handle: 'yu_chou',
+    account: '0x' + '3f'.repeat(20),
+    accountShort: '0x3f3f…3f3f',
+    receivedAt: Date.now() - 20 * 60_000,
+  },
 ];
+/** 模擬中的 CAFECA 登入。 */
+let onboard: { args: OnboardArgs; started: number } | null = null;
 let devices: DeviceInfo[] = [
   { id: 'ab'.repeat(32), name: 'MacBook Pro', issuedAt: Date.now() - 86400_000, thisDevice: true },
   { id: 'cd'.repeat(32), name: 'Windows 筆電', issuedAt: Date.now() - 3600_000, thisDevice: false },
@@ -221,23 +229,49 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     sync: state.phase === 'welcome' ? null : state.phase === 'pending' ? 'Pending' : 'Synced',
     hasOrgRoot: state.isAdmin,
   }),
-  create_org: (a) => {
-    state.orgName = (a.args as CreateOrgArgs).orgName;
-    state.phase = 'ready';
+  reset_local_data: () => {
+    state.phase = 'welcome';
   },
-  join_org: () => {
+  onboard_begin: (a) => {
+    onboard = { args: a.args as OnboardArgs, started: Date.now() };
+    return {
+      ...code('https://wallet.example/dl/auth?v=1&req=...'),
+      code: 'K7QD-M2XA',
+      expiresAt: Math.floor(Date.now() / 1000) + 600,
+    };
+  },
+  onboard_open_link: () => undefined,
+  onboard_cancel: () => {
+    onboard = null;
+  },
+  onboard_poll: (): OnboardStatus => {
+    if (!onboard) throw new Error('沒有進行中的登入');
+    const elapsed = Date.now() - onboard.started;
+    const mode = params.get('signin');
+    if (elapsed < 4000) return { step: 'signin', handle: null };
+    if (mode === 'denied') return { step: 'denied', handle: null };
+    const kind = onboard.args.kind;
+    if (kind === 'create') {
+      state.orgName = onboard.args.orgName ?? state.orgName;
+      state.phase = 'ready';
+      onboard = null;
+      return { step: 'created', handle: 'me' };
+    }
+    if (kind === 'join' && mode === 'device') {
+      if (elapsed < 9000) return { step: 'device', handle: 'me' };
+      state.phase = 'ready';
+      onboard = null;
+      return { step: 'linked', handle: 'me' };
+    }
     state.phase = 'pending';
     state.isAdmin = false;
+    onboard = null;
     setTimeout(() => {
       state.phase = 'ready';
       emit('hills://node', 'activated');
     }, 4000);
+    return { step: 'approval', handle: 'me' };
   },
-  recover: () => {
-    state.phase = 'ready';
-  },
-  recovery_words: (a) =>
-    (String(a.locale).startsWith('en') ? SAMPLE_WORDS_EN : SAMPLE_WORDS_ZH).split(' '),
   export_org_root_backup: () => '~/Downloads/hills-org-root.hillsbackup',
   link_start: () => {
     setTimeout(() => emit('hills://link-sas', '284913'), 1500);
@@ -363,19 +397,20 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   sync_status: () => (state.phase === 'pending' ? 'Pending' : 'Synced'),
   sync_now: () => undefined,
   org_code: () => code('hills-org1-' + 'y'.repeat(90)),
-  create_invite: (a) => {
-    invites = [
-      ...invites,
-      {
-        id: Math.random().toString(16).slice(2, 10),
-        admin: Boolean(a.admin),
-        expiresAt: Date.now() + 72 * 3600_000,
-        mine: true,
-      },
-    ];
-    return code('hills1-' + 'z'.repeat(100));
+  cafeca_account: () => ({
+    address: '0x' + 'a1'.repeat(20),
+    short: '0xa1a1…a1a1',
+    handle: 'demo_me',
+  }),
+  pending_joins: () => joins,
+  approve_join: (a) => {
+    joins = joins.filter((j) => j.device !== a.device);
+    touch('joins');
   },
-  invites: () => invites,
+  reject_join: (a) => {
+    joins = joins.filter((j) => j.device !== a.device);
+    touch('joins');
+  },
   conversations: () =>
     convs.map((c) => {
       const list = msgs.filter((m) => m.conv === c.id);

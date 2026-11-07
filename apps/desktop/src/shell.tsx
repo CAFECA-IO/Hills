@@ -5,6 +5,7 @@ import {
   PRESENCE_STATES,
   type AppInfo,
   type Code,
+  type JoinRequestView,
   type Look,
   type MemberView,
   type OfficeView,
@@ -26,7 +27,7 @@ import {
   t,
   type MessageKey,
 } from './i18n';
-import { BackupForm, PhraseFlow } from './onboarding';
+import { BackupForm } from './onboarding';
 import { LOOK_PALETTE, lookOf } from './summit';
 import { Tasks } from './tasks';
 import { Button, Card, CodeBox, ConfirmButton, ErrorText, Field, useAction } from './ui';
@@ -75,6 +76,8 @@ const PAGE_TITLE: Record<Page, MessageKey> = {
   settings: 'settings.title',
 };
 
+const noJoins = () => Promise.resolve<JoinRequestView[]>([]);
+
 export function Shell({ info }: { info: AppInfo }) {
   const [page, setPage] = useState<Page>('home');
   const [openConv, setOpenConv] = useState<string | null>(null);
@@ -85,6 +88,9 @@ export function Shell({ info }: { info: AppInfo }) {
   useIdleAway(() => (me ? { state: me.presence ?? 'Online', note: me.note } : null));
   const convs = useLoad(api.conversations, ['convs', 'message', 'doc']);
   const unread = (convs.data ?? []).reduce((n, c) => n + c.unread, 0);
+  // 管理者：待核准的加入與還原申請數（設定徽章，ui-spec「設定」D41 補充）
+  const joins = useLoad(info.isAdmin ? api.pendingJoins : noJoins, ['joins', 'roster']);
+  const pendingJoins = joins.data?.length ?? 0;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     // 倒數與回來時間每 30 秒更新
@@ -127,6 +133,14 @@ export function Shell({ info }: { info: AppInfo }) {
                 />
               </svg>
               {t(PAGE_TITLE[p])}
+              {p === 'settings' && pendingJoins > 0 && (
+                <span
+                  className="absolute top-1 right-3 min-w-[18px] rounded-full bg-st-busy px-1 text-[11px] leading-[18px] font-bold text-on-primary"
+                  aria-label={t('joins.badge', { count: pendingJoins })}
+                >
+                  {pendingJoins}
+                </span>
+              )}
               {p === 'chat' && unread > 0 && (
                 <span
                   className="absolute top-1 right-3 min-w-[18px] rounded-full bg-st-busy px-1 text-[11px] leading-[18px] font-bold text-on-primary"
@@ -651,19 +665,15 @@ function Settings({
       </div>
       {tab === 'personal' && <PersonalTab me={members.find((m) => m.isMe)} />}
       {tab === 'org' && <OrgTab info={info} orgName={orgName} overview={overview} />}
-      {tab === 'members' && <MembersTab info={info} members={members} />}
+      {tab === 'members' && <MembersTab info={info} members={members} overview={overview} />}
     </div>
   );
 }
 
 function PersonalTab({ me }: { me: MemberView | undefined }) {
-  const devices = useLoad(api.devices, ['roster']);
-  const [linking, setLinking] = useState(false);
-  const [reverify, setReverify] = useState(false);
+  const devices = useLoad(api.devices, ['roster', 'device-added']);
+  const account = useLoad(api.cafecaAccount, ['org']);
   const { error, attempt } = useAction();
-  if (reverify) {
-    return <PhraseFlow onDone={() => setReverify(false)} onCancel={() => setReverify(false)} />;
-  }
   return (
     <>
       {me && <MyLook me={me} />}
@@ -684,23 +694,17 @@ function PersonalTab({ me }: { me: MemberView | undefined }) {
           ))}
         </select>
       </Card>
+      {account.data && (
+        <Card className="flex flex-col gap-2">
+          <h2 className="font-medium">{t('settings.cafeca')}</h2>
+          {account.data.handle && <p className="text-sm">@{account.data.handle}</p>}
+          <code className="break-all text-xs text-muted select-all">{account.data.address}</code>
+          <p className="text-xs text-muted">{t('settings.cafeca.desc')}</p>
+        </Card>
+      )}
       <Card className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-medium">{t('settings.devices')}</h2>
-          {!linking && (
-            <Button variant="secondary" onClick={() => setLinking(true)}>
-              {t('settings.linkDevice')}
-            </Button>
-          )}
-        </div>
-        {linking && (
-          <LinkOldDevice
-            onClose={() => {
-              setLinking(false);
-              devices.reload();
-            }}
-          />
-        )}
+        <h2 className="font-medium">{t('settings.devices')}</h2>
+        <p className="text-sm text-muted">{t('settings.devices.add')}</p>
         <ul className="flex flex-col divide-y divide-line">
           {(devices.data ?? []).map((d) => (
             <li key={d.id} className="flex items-center justify-between gap-3 py-2">
@@ -723,81 +727,9 @@ function PersonalTab({ me }: { me: MemberView | undefined }) {
             </li>
           ))}
         </ul>
-        <ErrorText message={error ?? devices.error} />
+        <ErrorText message={error ?? devices.error ?? account.error} />
       </Card>
-      <div>
-        <Button variant="secondary" onClick={() => setReverify(true)}>
-          {t('settings.reverify')}
-        </Button>
-      </div>
     </>
-  );
-}
-
-/** 舊裝置端：貼上新裝置綁定碼 → 比對 SAS → 確認。 */
-function LinkOldDevice({ onClose }: { onClose: () => void }) {
-  const [code, setCode] = useState('');
-  const [name, setName] = useState('');
-  const [sas, setSas] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
-  const { busy, error, run, attempt } = useAction();
-  const cancel = () => {
-    void api.linkCancel();
-    onClose();
-  };
-  if (done) {
-    return (
-      <div className="flex items-center justify-between rounded-control border border-primary p-3 text-sm">
-        <span role="status">{t('link.old.done')}</span>
-        <Button variant="secondary" onClick={onClose}>
-          {t('common.close')}
-        </Button>
-      </div>
-    );
-  }
-  return (
-    <div className="flex flex-col gap-3 rounded-control border border-line p-3">
-      {!sas ? (
-        <>
-          <p className="text-sm text-muted">{t('link.old.desc')}</p>
-          <Field label={t('link.old.code')} value={code} onChange={setCode} multiline autoFocus />
-          <Field label={t('field.deviceName')} value={name} onChange={setName} />
-          <div className="flex gap-2">
-            <Button
-              disabled={busy || !code.trim() || !name.trim()}
-              onClick={async () => {
-                const s = await run(() => api.linkDevice(code));
-                if (s) setSas(s);
-              }}
-            >
-              {busy ? t('common.loading') : t('link.old.connect')}
-            </Button>
-            <Button variant="secondary" onClick={cancel}>
-              {t('common.cancel')}
-            </Button>
-          </div>
-        </>
-      ) : (
-        <>
-          <p className="text-sm">{t('link.old.sas')}</p>
-          <p className="text-center font-mono text-4xl tracking-[0.3em]">{sas}</p>
-          <div className="flex gap-2">
-            <Button
-              disabled={busy}
-              onClick={async () => {
-                if (await attempt(() => api.linkConfirm(name))) setDone(true);
-              }}
-            >
-              {t('link.old.match')}
-            </Button>
-            <Button variant="danger" onClick={cancel}>
-              {t('link.old.mismatch')}
-            </Button>
-          </div>
-        </>
-      )}
-      <ErrorText message={error} />
-    </div>
   );
 }
 
@@ -859,59 +791,34 @@ function OrgTab({
   );
 }
 
-const INVITE_HOURS = 72;
-
-function MembersTab({ info, members }: { info: AppInfo; members: MemberView[] }) {
-  const invites = useLoad(api.invites, ['org']);
-  const [code, setCode] = useState<Code | null>(null);
-  const [asAdmin, setAsAdmin] = useState(false);
-  const { busy, error, run, attempt } = useAction();
+function MembersTab({
+  info,
+  members,
+  overview,
+}: {
+  info: AppInfo;
+  members: MemberView[];
+  overview: Overview | null;
+}) {
+  const joins = useLoad(api.pendingJoins, ['joins', 'roster']);
+  const { error, attempt } = useAction();
   if (!info.isAdmin) {
     return <p className="text-sm text-muted">{t('members.adminOnly')}</p>;
   }
   return (
     <>
       <Card className="flex flex-col gap-3">
-        <h2 className="font-medium">{t('members.invite')}</h2>
-        <p className="text-sm text-muted">{t('members.invite.desc', { hours: INVITE_HOURS })}</p>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={asAdmin} onChange={(e) => setAsAdmin(e.target.checked)} />
-          {t('members.invite.admin')}
-        </label>
-        <div>
-          <Button
-            disabled={busy}
-            onClick={async () => {
-              const c = await run(() => api.createInvite(asAdmin));
-              if (c) {
-                setCode(c);
-                invites.reload();
-              }
-            }}
-          >
-            {t('members.invite')}
-          </Button>
-        </div>
-        {code && <CodeBox code={code.code} qrSvg={code.qrSvg} />}
-      </Card>
-      <Card className="flex flex-col gap-2">
-        <h2 className="font-medium">{t('members.invites')}</h2>
-        {(invites.data ?? []).length === 0 && (
-          <p className="text-sm text-muted">{t('members.invites.empty')}</p>
+        <h2 className="font-medium">{t('joins.title')}</h2>
+        <p className="text-sm text-muted">{t('joins.desc')}</p>
+        {(joins.data ?? []).length === 0 && (
+          <p className="text-sm text-muted">{t('joins.empty')}</p>
         )}
-        <ul className="flex flex-col divide-y divide-line text-sm">
-          {(invites.data ?? []).map((i) => (
-            <li key={i.id} className="flex justify-between gap-3 py-2">
-              <span className="font-mono">{i.id}</span>
-              <span>{t(i.admin ? 'members.invite.role.admin' : 'members.invite.role.member')}</span>
-              <span className="text-muted">
-                {i.mine
-                  ? t('members.invite.expires', { time: formatTime(i.expiresAt) })
-                  : t('members.invite.notMine')}
-              </span>
-            </li>
+        <ul className="flex flex-col divide-y divide-line">
+          {(joins.data ?? []).map((j) => (
+            <JoinRow key={j.device} join={j} overview={overview} onDone={joins.reload} />
           ))}
         </ul>
+        <ErrorText message={joins.error} />
       </Card>
       <Card className="flex flex-col gap-2">
         <h2 className="font-medium">{t('members.title')}</h2>
@@ -940,7 +847,89 @@ function MembersTab({ info, members }: { info: AppInfo; members: MemberView[] })
           ))}
         </ul>
       </Card>
-      <ErrorText message={error ?? invites.error} />
+      <ErrorText message={error} />
     </>
+  );
+}
+
+/** 一筆待核准申請：加入時選擇角色與小組；還原沿用原角色（ui-spec「設定」D41 補充）。 */
+function JoinRow({
+  join,
+  overview,
+  onDone,
+}: {
+  join: JoinRequestView;
+  overview: Overview | null;
+  onDone: () => void;
+}) {
+  const [admin, setAdmin] = useState(false);
+  const teams = overview?.teams ?? [];
+  const [team, setTeam] = useState<string>('');
+  const { busy, error, attempt } = useAction();
+  const recover = join.kind === 'recover';
+  return (
+    <li className="flex flex-col gap-2 py-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="font-medium">
+          {t(recover ? 'joins.kind.recover' : 'joins.kind.join')} ·{' '}
+          {join.handle ? `@${join.handle}` : join.accountShort}
+        </span>
+        <span className="text-xs text-muted">{formatTime(join.receivedAt)}</span>
+      </div>
+      <span className="text-sm text-muted">
+        {t('joins.detail', {
+          name: join.name || '—',
+          device: join.deviceName,
+          account: join.accountShort,
+        })}
+      </span>
+      {recover ? (
+        <p className="text-sm">{t('joins.recoverHint')}</p>
+      ) : (
+        <div className="flex flex-wrap items-center gap-4 text-sm">
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={admin} onChange={(e) => setAdmin(e.target.checked)} />
+            {t('joins.asAdmin')}
+          </label>
+          {teams.length > 0 && (
+            <label className="flex items-center gap-2">
+              {t('joins.team')}
+              <select
+                className="rounded-control border border-line bg-surface px-2 py-1"
+                value={team}
+                onChange={(e) => setTeam(e.target.value)}
+              >
+                <option value="">{t('joins.team.default')}</option>
+                {teams.map((tm) => (
+                  <option key={tm.id} value={tm.id}>
+                    {tm.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <Button
+          disabled={busy}
+          onClick={async () => {
+            if (await attempt(() => api.approveJoin(join.device, admin, team ? [team] : []))) {
+              onDone();
+            }
+          }}
+        >
+          {t('joins.approve')}
+        </Button>
+        <ConfirmButton
+          label={t('joins.reject')}
+          message={t('joins.reject.confirm')}
+          onConfirm={async () => {
+            if (await attempt(() => api.rejectJoin(join.device))) onDone();
+          }}
+        />
+      </div>
+      <ErrorText message={error} />
+    </li>
   );
 }

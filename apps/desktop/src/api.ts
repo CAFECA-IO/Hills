@@ -29,7 +29,8 @@ export interface Look {
 }
 
 export interface AppInfo {
-  phase: 'welcome' | 'pending' | 'ready';
+  /** legacy：舊版資料（復原詞時代），需清除後重新開始（technical-design §17.9） */
+  phase: 'welcome' | 'pending' | 'ready' | 'legacy';
   memberId: string | null;
   orgName: string | null;
   isAdmin: boolean;
@@ -123,11 +124,53 @@ export interface Code {
   qrSvg: string;
 }
 
-export interface InviteView {
-  id: string;
-  admin: boolean;
+/** 以 CAFECA 登入（technical-design §17）。 */
+export interface SignInInfo {
+  /** 確認碼 XXXX-XXXX */
+  code: string;
+  /** Unix 秒 */
   expiresAt: number;
-  mine: boolean;
+  /** 登入連結的 QR（SVG） */
+  qrSvg: string;
+}
+
+export type OnboardStepName =
+  'signin' | 'device' | 'approval' | 'created' | 'linked' | 'denied' | 'expired';
+
+export interface OnboardStatus {
+  step: OnboardStepName;
+  handle: string | null;
+}
+
+export type OnboardKind = 'create' | 'join' | 'recover';
+
+export interface OnboardArgs {
+  kind: OnboardKind;
+  code: string;
+  deviceName: string;
+  orgName?: string;
+  myName?: string;
+  timezone?: string;
+  locale?: string;
+  teamName?: string;
+}
+
+export interface AccountView {
+  address: string;
+  short: string;
+  handle: string | null;
+}
+
+export interface JoinRequestView {
+  device: string;
+  kind: 'join' | 'recover';
+  memberId: string;
+  name: string;
+  deviceName: string;
+  handle: string | null;
+  account: string;
+  accountShort: string;
+  receivedAt: number;
 }
 
 export interface DeviceInfo {
@@ -135,16 +178,6 @@ export interface DeviceInfo {
   name: string;
   issuedAt: number;
   thisDevice: boolean;
-}
-
-export interface CreateOrgArgs {
-  orgName: string;
-  myName: string;
-  deviceName: string;
-  mailboxCode: string;
-  timezone: string;
-  locale: string;
-  teamName: string;
 }
 
 export type ConvKind = 'dm' | 'group';
@@ -173,8 +206,6 @@ export interface ConvRow {
 
 export const EVENTS = {
   node: 'hills://node',
-  linkSas: 'hills://link-sas',
-  linkDone: 'hills://link-done',
 } as const;
 
 type InvokeOptions = { headers: Record<string, string> };
@@ -253,18 +284,12 @@ export const errorMessage = (e: unknown): string =>
 
 export const api = {
   appInfo: () => call<AppInfo>('app_info'),
-  createOrg: (args: CreateOrgArgs) => call<void>('create_org', { args }),
-  joinOrg: (inviteCode: string, myName: string, deviceName: string) =>
-    call<void>('join_org', { inviteCode, myName, deviceName }),
-  recover: (words: string, orgCode: string, deviceName: string) =>
-    call<void>('recover', { words, orgCode, deviceName }),
-  recoveryWords: (locale: string) => call<string[]>('recovery_words', { locale }),
+  resetLocalData: () => call<void>('reset_local_data'),
+  onboardBegin: (args: OnboardArgs) => call<SignInInfo>('onboard_begin', { args }),
+  onboardOpenLink: () => call<void>('onboard_open_link'),
+  onboardPoll: () => call<OnboardStatus>('onboard_poll'),
+  onboardCancel: () => call<void>('onboard_cancel'),
   exportOrgRootBackup: (password: string) => call<string>('export_org_root_backup', { password }),
-  linkStart: (orgCode: string, deviceName: string) =>
-    call<Code>('link_start', { orgCode, deviceName }),
-  linkCancel: () => call<void>('link_cancel'),
-  linkDevice: (code: string) => call<string>('link_device', { code }),
-  linkConfirm: (deviceName: string) => call<void>('link_confirm', { deviceName }),
   overview: () => call<Overview>('overview'),
   /** 只改狀態與文字（保留回來時間與地點），供閒置自動暫離使用。 */
   setPresence: (presence: PresenceState, note: string) =>
@@ -316,8 +341,11 @@ export const api = {
   syncStatus: () => call<SyncStatus | null>('sync_status'),
   syncNow: () => call<void>('sync_now'),
   orgCode: () => call<Code>('org_code'),
-  createInvite: (admin: boolean) => call<Code>('create_invite', { admin }),
-  invites: () => call<InviteView[]>('invites'),
+  cafecaAccount: () => call<AccountView | null>('cafeca_account'),
+  pendingJoins: () => call<JoinRequestView[]>('pending_joins'),
+  approveJoin: (device: string, admin: boolean, teams: string[]) =>
+    call<void>('approve_join', { device, admin, teams }),
+  rejectJoin: (device: string) => call<void>('reject_join', { device }),
   renameOrg: (name: string) => call<void>('rename_org', { name }),
   revokeMember: (memberId: string) => call<void>('revoke_member', { memberId }),
   devices: () => call<DeviceInfo[]>('devices'),

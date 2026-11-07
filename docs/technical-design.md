@@ -110,7 +110,7 @@ CAFECA 帳戶（chainId + 身分合約地址 account，由使用者的 Passkey /
 收到任何簽章資料時依序檢查：
 
 1. `DeviceCert` 由該成員**目前有效**的 IK 簽發，且裝置未被撤銷。
-2. 該成員的 `MemberCert` 由有效管理者簽發，且成員未被停用；`memberId` 必須等於由 `cafeca` 欄位推導的值。同一 `memberId` 有多張憑證時，以 `issuedAt` 最新者為準（還原會換發新憑證），由舊 IK 簽發的 DeviceCert 隨之失效。
+2. 該成員的 `MemberCert` 由有效管理者簽發，且成員未被停用；`memberId` 必須等於由 `cafeca` 欄位推導的值。同一 `memberId` 有多張憑證時，以 `issuedAt` 最新者為準（還原會換發新憑證），由舊 IK 簽發的 DeviceCert 隨之失效。被取代的管理者 IK 只接受時間（憑證 `issuedAt`、撤銷 `at`）早於取代時間的簽章，讓還原前簽發的成員憑證仍可驗證；roster 因此保留每位成員的全部憑證。
 3. 管理者有效性可追溯至 OK 簽發的第一張管理者憑證。
 4. 此操作在該成員的角色權限內（§5.3）。
 
@@ -739,8 +739,8 @@ secret 不放在 org 文件，因為所有成員都能讀 org 文件；代價是
 | `PutDevice` | ✓ | 本人 | 上傳本人裝置的 DeviceCert（新裝置綁定） |
 | `PutRevocation` | ✓ | 管理者（成員）/ 本人或管理者（裝置） | |
 | `Config` | ✗ | 任何人 | v0.13：回傳 `{ cafeca_wallet }`（部署設定，§17.1） |
-| `Join{org_id, application}` | ✗ | 有效 CAFECA 登入證明 | v0.13：加入 / 新裝置 / 還原申請，§17.8 |
-| `JoinStatus{org_id, device_pub}` | ✗ | 任何人 | v0.13：`Pending` / `Rejected` / `Unknown` |
+| `Join{org_id, application}` | ✗ | 有效 CAFECA 登入證明 | v0.13：加入 / 新裝置 / 還原申請，回應申請狀態，§17.8 |
+| `JoinStatus{org_id, device_pub}` | ✗ | 申請裝置本人 | v0.13：`Pending` / `AwaitingDevice` / `Rejected` / `Unknown` |
 | `FetchJoins` | ✓ | 管理者 | v0.13：待核准的加入與還原申請 |
 | `ResolveJoin{device_pub, approved}` | ✓ | 管理者 | v0.13：核准（已 `PutRoster` 後）或拒絕 |
 | `FetchDeviceRequests` | ✓ | 本人裝置 | v0.13：本人的新裝置申請 |
@@ -826,10 +826,10 @@ SignInRequest {
 
 ```
 SignInBinding {
-  v, org_id, kind: create | join | device | recover,
+  v, org_id, kind: create | join | recover,   // join 同時用於加入與新增裝置
   device_pub: DK.pub,
-  ik_pub: Option<IK.pub>,       // create / join / recover：新成員金鑰；device：無
-  key_pub: X25519 公鑰,          // create / join / recover：EK.pub；device：臨時金鑰 e.pub
+  ik_pub: Option<IK.pub>,       // 申請裝置新產生的 IK
+  key_pub: X25519 公鑰,          // 申請裝置新產生的 EK；新增裝置時作為接收封裝的臨時金鑰
   issued_at,
 }
 h       = blake3("hills/v1/cafeca-signin" ‖ postcard(SignInBinding))
@@ -878,16 +878,15 @@ CafecaProof {
 4. 核准：管理者指定角色與小組 → 簽發 MemberCert → `PutRoster`（含新成員的 DeviceCert）→ org 文件新增成員（`approvedBy`）→ 封裝 GK、所屬小組 TK、新成員的 AK → `PutKeys` → `ResolveJoin{approved: true}`。拒絕：`ResolveJoin{approved: false}`。
 5. 申請者每 5 秒嘗試 Hello，roster 出現自己後成功；同時以 `JoinStatus` 得知是否被拒。
 
-**新裝置**（kind = `device`）：
+**新裝置**（同樣以 kind = `join` 登入，使用者不需事先選擇）：
 
-1. 貼上組織連線碼 → `Config`；產生 DK 與臨時 X25519 金鑰 `e`；登入。
-2. `Join{org_id, Application::Device{proof, device_pub, eph_pub, name}}`。mailbox 驗證證明，且帳戶推導出的成員在 roster 中、未被停用，通過後暫存給該成員。
-3. 本人任一在線裝置以 `FetchDeviceRequests` 取得，再次驗證（`binding.key_pub == eph_pub`、`device_pub` 相符）後：
-   - `sealed = HPKE-Seal(e.pub, info = "hills/v1/device-grant", aad = device_pub, plaintext = postcard{ik_secret, ek_secret, member_id})`；
-   - IK 簽發新裝置的 DeviceCert → `PutDevice`；`PutDeviceGrant{device_pub, sealed}`。
-4. 新裝置以 `FetchDeviceGrant` 取回、解開後存入安全儲存區，之後與一般啟動相同（Hello、`FetchKeys`、補同步）。
-5. 本人其他裝置看到 roster 多出新裝置時通知「新裝置〈名稱〉已加入」，可直接撤銷。
-6. 申請 10 分鐘內沒有本人裝置回應時，介面提供「我沒有其他裝置了」改走還原（§17.7）。
+1. 流程同「加入」步驟 1–2；mailbox 發現帳戶推導出的成員已在 roster 中、未被停用，就把申請轉為 `Application::Device{proof, device_pub, eph_pub = 申請中的 EK, name = 裝置名稱}` 暫存給該成員，回應 `JoinState::AwaitingDevice`（加入則回 `Pending`）。也可直接送出 `Application::Device`。
+2. 本人任一在線裝置以 `FetchDeviceRequests` 取得，再次驗證（帳戶是本人、`binding.key_pub == eph_pub`、`device_pub` 相符）後：
+   - IK 簽發新裝置的 DeviceCert → `PutDevice`；
+   - `sealed = enc ‖ HPKE-Seal(eph_pub, info = "hills/v1/device-grant", aad = device_pub, plaintext = postcard{v, member_id, account, device_cert, ik_secret, ek_secret})`；`PutDeviceGrant{device_pub, sealed}`。
+3. 新裝置每 2 秒以 `FetchDeviceGrant` 查詢，取回後以申請時的 EK 私鑰解開，確認帳戶、成員與 DeviceCert 相符後把成員 IK / EK 存入安全儲存區（申請時產生的 IK / EK 丟棄），之後與一般啟動相同（Hello、`FetchKeys`、補同步）。
+4. 本人其他裝置看到 roster 多出新裝置時通知「新裝置〈名稱〉已加入」，可直接撤銷。
+5. 介面隨時提供「我沒有其他裝置了」改走還原（§17.7，需重新登入），等待 10 分鐘後主動提示。
 
 ### 17.7 還原
 
@@ -902,7 +901,8 @@ kind = `recover`，流程與加入相同（產生**新的** IK / EK / DK、`Appl
 
 ### 17.8 mailbox 申請處理
 
-- `Application` 由 mailbox 以 `hills-cafeca::RpcVerifier` 驗證；驗證失敗回 `BadRequest`。
+- `Application` 由 mailbox 以 `hills-cafeca::RpcVerifier` 驗證；驗證失敗回 `BadRequest`；通過後回應 `JoinStatus(Pending | AwaitingDevice)`。
+- `JoinStatus` 只能查詢連線 NodeId 自己的申請；`FetchDeviceGrant` 只能取回連線 NodeId 自己的封裝。
 - 限流：每組織待處理申請最多 50 筆、每帳戶每種類最多 1 筆（新的取代舊的）、每個來源 NodeId 每分鐘最多 5 次；申請 7 天後清除，新裝置封裝（grant）取回後或 1 天後清除。
 - **mailbox 可看到的明文（新增）**：申請者的 CAFECA 帳戶地址、代稱、裝置名稱、公鑰；不含任何組織資料。
 - mailbox 需能連出到 CAFECA 錢包（`.well-known`、代稱查詢）與 RPC。

@@ -8,7 +8,7 @@
     {
       "title": "M1 計劃、Scrum、對話與檔案（MVP）",
       "due": "2027-07-31",
-      "desc": "macOS + Windows：即時狀態、完整假勤、台灣假日曆、團隊看板、五層計劃（OKR）、任務、每日 Scrum、日 / 週報；一對一 / 群組對話；SwarmStorage 原理的檔案與資料夾分享。驗收：Mac 與 Windows 筆電可安裝、互相對話與分享檔案，全員試用 4 週達成 feature-plan §8.2 指標。"
+      "desc": "macOS + Windows：即時狀態、完整假勤、台灣假日曆、團隊看板、五層計劃（OKR）、任務、每日 Scrum、日 / 週報；知識庫（手動版）；以 CAFECA 登入；一對一 / 群組對話；SwarmStorage 原理的檔案與資料夾分享。驗收：Mac 與 Windows 筆電可安裝、互相對話與分享檔案，全員試用 4 週達成 feature-plan §8.2 指標。"
     }
   ],
   "labels": [
@@ -692,6 +692,47 @@
         "priority:high"
       ],
       "body": "## 目標\n\n以數據決定是否進入 M2（D24）。\n\n## 工作項目\n\n- [ ] 試用計畫與說明文件\n- [ ] 每週檢視指標與問題\n- [ ] 試用報告 docs/m1-pilot-report.md\n\n## 驗收條件\n\n- 達成 feature-plan §8.2 全部指標\n\n## 參考\n\nfeature-plan §8.2\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M1] 以 CAFECA 登入（取代邀請碼與復原詞）",
+      "milestone": "M1 計劃、Scrum、對話與檔案（MVP）",
+      "labels": [
+        "type:feature",
+        "area:identity",
+        "area:server",
+        "priority:high"
+      ],
+      "body": "## 目標\n\n成員身分改以 CAFECA 帳戶為根（D41）：建立組織、加入（管理者核准）、新裝置、還原都以 CAFECA 登入完成。\n\n## 工作項目\n\n- [ ] CAFECA 原生 App 模式（CAFECA repo）\n- [ ] crates/hills-cafeca：登入請求、中繼解密、EIP-712、鏈上驗證\n- [ ] 成員 ID 由 CAFECA 帳戶推導；移除復原詞、邀請碼、掃碼綁定\n- [ ] mailbox：Config、Join 驗證、待核准、新裝置封裝\n- [ ] 桌機：登入畫面（QR、本機開啟、確認碼）、待核准、我的裝置\n- [ ] 舊資料偵測與清除；deploy 重置步驟\n\n## 驗收條件\n\n- Mac 建立組織、Windows 申請加入並由 Mac 核准後可對話與分享檔案\n- 第二台裝置自動授權；遺失全部裝置後可經管理者核准還原\n\n## 參考\n\nfeature-plan D41；technical-design §3、§17；ui-spec「初次啟動與加入」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M1] 版面 1280 × 720 不捲動與對話「焦點營地」",
+      "milestone": "M1 計劃、Scrum、對話與檔案（MVP）",
+      "labels": [
+        "type:feature",
+        "area:ui",
+        "area:chat"
+      ],
+      "body": "## 目標\n\n桌機最小 1280 × 720 整頁不出現捲軸；對話改為焦點營地（D43）。\n\n## 工作項目\n\n- [ ] Tauri 最小視窗、外框改為固定高度三段式、面板內捲動\n- [ ] 導覽列 7 項（首頁、目標、任務、訊息、知識庫、團隊、設定）\n- [ ] 對話頂部任務山、步驟系統訊息、敲門提示、快速動作、右側抽屜\n\n## 驗收條件\n\n- 1280 × 720 與 1920 × 1080 各畫面無整頁捲軸\n\n## 參考\n\nfeature-plan D43；ui-spec「版面」「聊天」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M1] 目標「階梯」介面",
+      "milestone": "M1 計劃、Scrum、對話與檔案（MVP）",
+      "labels": [
+        "type:feature",
+        "area:plan",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n年 / 季 / 月 / 週 / 日五欄並排的目標畫面（D43），對應五層計劃。\n\n## 工作項目\n\n- [ ] 五欄、選取後下一欄顯示對齊子目標與連線\n- [ ] 已選目標的關鍵結果與每週趨勢\n- [ ] 新增 / 編輯 / 拆解、可見度\n\n## 驗收條件\n\n- 從年度目標一路點到今天的日目標\n\n## 參考\n\nfeature-plan §5.3、D8、D43；ui-spec「目標」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M1] 知識庫（手動版、星空）",
+      "milestone": "M1 計劃、Scrum、對話與檔案（MVP）",
+      "labels": [
+        "type:feature",
+        "area:ui",
+        "area:sync"
+      ],
+      "body": "## 目標\n\n全組織知識庫，依分類 → 主題 → 知識歸納，以星空知識圖譜呈現（D42）。\n\n## 工作項目\n\n- [ ] 資料模型與加密文件（technical-design 補充後實作）\n- [ ] 新增 / 編輯 / 分類 / 主題 / 引用；從對話存成知識\n- [ ] 星空圖譜、預覽卡、關聯圖例、時間軸；清單檢視\n\n## 驗收條件\n\n- 兩台裝置新增的知識互相同步並出現在星空中\n\n## 參考\n\nfeature-plan §5.13、D42；ui-spec「知識庫」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
     }
   ]
 }

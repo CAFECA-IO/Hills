@@ -432,6 +432,15 @@
         "priority:high"
       ],
       "body": "## 目標\n\nD25：開放外部貢獻。\n\n## 工作項目\n\n- [ ] SECURITY.md、CONTRIBUTING.md、Code of Conduct\n- [ ] 自架指南、升級指南、協定文件\n- [ ] 檢查 commit 歷史無機密\n\n## 驗收條件\n\n- 外部使用者可依文件完成自架\n\n## 參考\n\ntechnical-design-m2-m5 §7\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M3] 知識庫 AI 歸納建議",
+      "milestone": "M3 AI 助理與整合",
+      "labels": [
+        "type:feature",
+        "area:ai"
+      ],
+      "body": "## 目標\n\nAI 從對話與檔案歸納待確認的知識、分類與關聯（D42）。\n\n## 工作項目\n\n- [ ] 待歸納清單與預覽卡建議\n- [ ] 套用 / 略過（D17，未經確認不寫入）\n\n## 驗收條件\n\n- 所有建議需使用者按「套用」才寫入知識庫\n\n## 參考\n\nfeature-plan §5.13、D17、D42\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
     }
   ]
 }

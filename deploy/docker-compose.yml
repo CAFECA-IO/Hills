@@ -47,6 +47,9 @@ services:
       HILLS_UDP_PORT: ${HILLS_UDP_PORT:-7843}
       HILLS_ORG_ROOT_PUB: ${HILLS_ORG_ROOT_PUB:-}
       HILLS_STORAGE_CODES_DIR: /storage-codes
+      # 以 CAFECA 登入（technical-design §17.1）
+      HILLS_CAFECA_WALLET: ${HILLS_CAFECA_WALLET:?請在 .env 設定 HILLS_CAFECA_WALLET}
+      HILLS_CAFECA_RPC: ${HILLS_CAFECA_RPC:-}
       RUST_LOG: info,iroh=warn
     ports:
       - "${HILLS_UDP_PORT:-7843}:${HILLS_UDP_PORT:-7843}/udp"

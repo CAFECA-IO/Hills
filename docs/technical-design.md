@@ -1,7 +1,7 @@
 # Hills 技術設計文件
 
-> 版本：v0.12 草案 · 2026-11-06 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
-> 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15。
+> 版本：v0.13 草案 · 2026-11-08 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
 
@@ -62,12 +62,13 @@ deploy/
 | 金鑰推導 | HKDF-SHA256 | `hkdf` |
 | 封裝（wrap） | HPKE（X25519 / HKDF-SHA256 / ChaCha20Poly1305） | `hpke` |
 | 雜湊 / ID | BLAKE3 | `blake3` |
-| 復原詞 | BIP39 24 字（256-bit entropy） | `bip39` |
 | 安全儲存 | macOS Keychain / Windows Credential Manager / Linux Secret Service | `keyring` |
 | 密碼金鑰推導 | Argon2id（組織根金鑰備份檔） | `argon2` |
-| 訊息鑑別（MAC） | BLAKE3 keyed hash（邀請加入申請） | `blake3` |
+| CAFECA 登入：EIP-712 結構雜湊、keccak256 | EIP-712 / keccak256（僅計算要驗證的雜湊，簽章由鏈上合約驗證） | `alloy-sol-types`、`alloy-primitives` |
+| CAFECA 登入：中繼回應解密 | ECDH P-256 → HKDF-SHA256 → AES-256-GCM（依 CAFECA 中繼信箱格式） | `p256`、`hkdf`、`aes-gcm` |
+| CAFECA 登入：鏈上查詢 | JSON-RPC `eth_call`（HTTPS） | `reqwest` |
 
-原則：不自行設計密碼學原語；所有訊息格式帶版本號 `v`，以便日後升級（例如 M2 群組聊天改用 OpenMLS）。
+原則：不自行設計密碼學原語；CAFECA 相關演算法只用於 §17 的登入協定，不用於 Hills 自身資料加密；所有訊息格式帶版本號 `v`，以便日後升級（例如 M2 群組聊天改用 OpenMLS）。
 
 **簽章輸入格式**（所有 Ed25519 簽章一致）：
 
@@ -82,83 +83,63 @@ type ∈ { device-cert, member-cert, revocation, change, roster, … }
 
 ### 3.1 金鑰階層
 
+> v0.13（D41）：成員身分改由 CAFECA 帳戶決定，不再有復原詞；協定細節見 §17。
+
 ```
-復原詞（24 字，成員自行保管）
-  └─ seed ─HKDF─► 成員身分金鑰 IK（Ed25519，簽章）
-              └─► 成員協商金鑰 EK（X25519，接收封裝的金鑰）
-成員 ID = blake3(IK.pub) 前 16 bytes（base32 顯示）
+CAFECA 帳戶（chainId + 身分合約地址 account，由使用者的 Passkey / CAFECA 卡控制）
+成員 ID = blake3("hills/v1/member" ‖ chainId(u64 BE) ‖ account(20B)) 前 16 bytes（base32 顯示）
+
+成員身分金鑰 IK（Ed25519，簽章）、成員協商金鑰 EK（X25519，接收封裝的金鑰）
+  └─ 成員第一台裝置隨機產生；之後由本人其他裝置封裝傳給新裝置（§17.6）
 
 裝置金鑰 DK（Ed25519，每台裝置隨機產生；同時作為 iroh NodeId）
 裝置憑證 DeviceCert = Sign_IK(memberId, DK.pub, deviceName, issuedAt)
 
 組織根金鑰 OK（Ed25519，建立者產生；組織 ID = blake3(OK.pub)）
-成員憑證 MemberCert = Sign_admin(memberId, IK.pub, EK.pub, roles, issuedAt)
+成員憑證 MemberCert = Sign_admin(memberId, IK.pub, EK.pub, roles, cafeca{chainId, account}, issuedAt)
 ```
 
-- **推導細節**（`hills-identity`，有固定測試向量）：IKM = BIP39 **熵**（32 bytes，不使用 BIP39 PBKDF2 seed），HKDF-SHA256 salt = `hills/v1/identity`，info = `hills/v1/ik` / `hills/v1/ek`，各輸出 32 bytes 作為 Ed25519 / X25519 私鑰。因為由熵推導，同一組復原詞以**英文或繁體中文字表**顯示都對應同一個身分；UI 預設顯示語言於 M0「組織建立」Issue 決定。變更 salt / info 等同變更所有身分，屬協定變更。
-- IK / EK 私鑰存於每台已綁定裝置的系統安全儲存區，可由復原詞重建。
-- DK 為每台裝置隨機產生的 Ed25519 金鑰（不由復原詞推導），同時作為 iroh `SecretKey` / NodeId；私鑰永不離開裝置。
-- `DeviceCert` 保留 `expiresAt?` 欄位（M0 不設期限）。
-- OK 只用來簽發第一張管理者憑證，之後的管理操作由任一管理者 IK 簽章。OK 是信任根與災難復原用途，建立後匯出離線備份。
+- 成員 ID 只由 CAFECA 帳戶決定，因此成員還原（換 IK / EK）後 ID 不變，計劃、任務、對話中的成員參照都不受影響。
+- IK / EK 私鑰存於每台已綁定裝置的系統安全儲存區；遺失全部裝置時無法取回，改走還原流程換發新金鑰（§17.7）。
+- DK 為每台裝置隨機產生的 Ed25519 金鑰，同時作為 iroh `SecretKey` / NodeId；私鑰永不離開裝置。
+- `DeviceCert` 保留 `expiresAt?` 欄位（M1 不設期限）。
+- OK 只用來簽發第一張管理者憑證，之後的管理操作由任一管理者 IK 簽章。OK 是信任根與災難復原用途，建立後以密碼加密匯出離線備份。
 
 ### 3.2 信任鏈驗證
 
 收到任何簽章資料時依序檢查：
 
-1. `DeviceCert` 由某成員 IK 簽發，且裝置未被撤銷。
-2. 該成員的 `MemberCert` 由有效管理者簽發，且成員未被停用。
+1. `DeviceCert` 由該成員**目前有效**的 IK 簽發，且裝置未被撤銷。
+2. 該成員的 `MemberCert` 由有效管理者簽發，且成員未被停用；`memberId` 必須等於由 `cafeca` 欄位推導的值。同一 `memberId` 有多張憑證時，以 `issuedAt` 最新者為準（還原會換發新憑證），由舊 IK 簽發的 DeviceCert 隨之失效。
 3. 管理者有效性可追溯至 OK 簽發的第一張管理者憑證。
 4. 此操作在該成員的角色權限內（§5.3）。
 
 ### 3.3 建立組織（Genesis）
 
-1. 建立者產生復原詞 → IK / EK；產生 DK、OK。
-2. 建立 `org` 文件：組織設定、由 OK 簽署的第一張管理者 `MemberCert`。
-3. 引導建立者抄寫復原詞並驗證（隨機抽 3 個字），並以密碼加密匯出 OK 備份檔。
+1. 建立者貼上 mailbox 連線碼，產生 OK、IK、EK、DK，以 CAFECA 登入（§17.5，kind = `create`）。
+2. 建立 `org` 文件：組織設定、由 OK 簽署的第一張管理者 `MemberCert`（含 CAFECA 帳戶）。
+3. 引導建立者以密碼加密匯出 OK 備份檔。
 
-### 3.4 邀請與加入
+### 3.4 加入組織
 
-> v0.7：邀請碼內容、MAC 與處理者以 §16.2 為準。
+> v0.13（D41）：取代邀請碼。流程見 §17.6。
 
-邀請碼：`hills1-<base32(orgId[0..8] ‖ inviteId(8B) ‖ secret(16B))>`。QR Code 另含 relay URL 與 mailbox NodeId；文字邀請碼需另輸入伺服器網址。
-
-```
-管理者裝置                        hills-mailbox                     新成員裝置
- │ 1. 建立 Invite{inviteId, role, teams,                             │
- │    expiresAt, H=blake3(secret)} 寫入 org 文件                      │
- │ 2. 將邀請碼交給新成員（私訊或當面）                                   │
- │                                   │◄── 3. JoinRequest ───────────│
- │                                   │  {inviteId, IK.pub, EK.pub,   │
- │                                   │   DeviceCert, name,           │
- │                                   │   mac=HMAC(K_inv, 以上欄位)}  │
- │◄── 4. 管理者上線後取得 ────────────│  K_inv = HKDF(secret,"join") │
- │ 5. 驗證 mac、邀請未過期未使用                                       │
- │ 6. 簽發 MemberCert 寫入 org 文件；標記邀請已使用                     │
- │ 7. 以 HPKE 將 GK 與所屬小組的目前金鑰封裝給 EK.pub                   │
- │──────────── 8. JoinAccepted（經 mailbox 或直連）─────────────────►│
-```
-
-- 邀請一次性、預設 72 小時過期；`secret` 不寫入任何文件，只存雜湊。
-- 任一在線管理者裝置都可處理 JoinRequest。
-- 新成員加入後通知全員，降低邀請碼外洩風險。
+新成員取得組織連線碼（任何成員可在設定中匯出），以 CAFECA 登入後送出加入申請；mailbox 驗證登入證明後暫存，任一管理者核准（指定角色與小組）時簽發 MemberCert 並封裝金鑰，拒絕則刪除申請。
 
 ### 3.5 新裝置綁定
 
-> v0.7：協定細節以 §16.3 為準。
+> v0.13（D41）：取代掃碼與 6 位數 SAS。流程見 §17.6。
 
-1. 新裝置產生 DK 與臨時 X25519 金鑰，顯示 QR（含 DK.pub、臨時公鑰、relay 位址）。
-2. 既有裝置掃碼，經 ALPN `hills/link/1` 連線。
-3. 雙方顯示 6 位數 SAS（由雙方公鑰雜湊得出），使用者確認一致。
-4. 既有裝置以臨時金鑰加密傳送 IK / EK 私鑰，並寫入新的 `DeviceCert`。
+新裝置以 CAFECA 登入，登入證明綁定新裝置的 DK 與一把臨時 X25519 公鑰；本人任一在線裝置驗證後，以 HPKE 把 IK / EK 封裝給該臨時公鑰並簽發 DeviceCert。本人其他裝置收到「新裝置已加入」通知，可立即撤銷。
 
-### 3.6 金鑰復原（遺失所有裝置）
+### 3.6 成員還原（遺失所有裝置）
 
-> v0.7：不需要 `RecoveryAnnounce`，以 §16.4 為準。
+> v0.13（D41）：取代復原詞。流程見 §17.7。
 
-1. 新裝置輸入復原詞 → 重建 IK / EK，產生新 DK 並自簽 `DeviceCert`。
-2. 經 mailbox 廣播 `RecoveryAnnounce`；其他成員裝置確認 IK 對應既有 MemberCert 後，將其有權取得的金鑰（含歷史 epoch）重新封裝給 EK。
-3. 成員本人簽署撤銷舊裝置的 `DeviceCert`。
-4. 無復原詞時：管理者停用舊身分（§3.7）並重新邀請；只有舊身分能解密的私人資料無法還原。
+1. 新裝置產生新的 IK / EK / DK，以 CAFECA 登入送出還原申請。
+2. 管理者核准後簽發新的 `MemberCert`（同一 memberId、新金鑰、沿用原角色），舊裝置的 DeviceCert 隨即失效。
+3. 管理者與對話建立者把該成員有權取得的金鑰（含歷史 epoch）重新封裝給新 EK。
+4. 只封裝給舊 EK 的私人金鑰（`PK_member`）無法還原，介面需明示。
 
 ### 3.7 停用成員與金鑰輪替
 
@@ -175,13 +156,13 @@ type ∈ { device-cert, member-cert, revocation, change, roster, … }
 
 | 文件 | 寫入者 | 讀取者 | 金鑰 | 內容 |
 |------|--------|--------|------|------|
-| `org` | 管理者 | 全員 | `GK` | 設定、品牌、成員憑證、小組、邀請、假日曆、假別、工作規則、核准規則 |
+| `org` | 管理者 | 全員 | `GK` | 設定、品牌、成員憑證與 CAFECA 帳戶、小組、假日曆、假別、工作規則、核准規則 |
 | `team/<teamId>` | 小組成員 | 小組成員 | `TK_team` | 任務、小組目標 |
 | `member/<id>/plans/{private,team,org}` | 本人 | 依可見度 | `PK` / `TK` / `GK` | 五層計劃（見 §4.3） |
 | `member/<id>/scrum/<yyyy-mm>` | 本人 | 小組成員 | `TK_team` | 每日 Scrum |
 | `member/<id>/attendance/<yyyy-mm>` | 本人 | 本人、負責人、管理者 | `AK_member` | 打卡紀錄 |
 | `member/<id>/requests` | 本人 | 本人、核准者 | `AK_member` | 請假、加班、補打卡申請 |
-| `member/<id>/secrets` | 本人 | 本人 | `PK_member` | 本人的邀請 secret 等私密設定（§16.2） |
+| `member/<id>/secrets` | 本人 | 本人 | `PK_member` | 本人的私密設定 |
 | `approvals/<approverId>` | 核准者本人 | 申請者、管理者 | 申請者的 `AK_member` | 核准 / 退回決定 |
 | `member/<id>/reports` | 本人 | 依發佈範圍 | `TK_team` | 日 / 週報 |
 
@@ -243,9 +224,8 @@ AAD = utf8(docId) ‖ 0x00 ‖ utf8(keyId)
 |------|------|--------|
 | `hills/sync/1` | Automerge 同步（單一連線多工多份文件） | 成員裝置 ↔ 成員裝置 |
 | `hills/gossip/1` | iroh-gossip：Presence、HeadsAnnounce | 全組織 |
-| `hills/mailbox/1` | PUT / LIST / GET bundle、JoinRequest 投遞 | 裝置 ↔ mailbox |
+| `hills/mailbox/1` | PUT / LIST / GET bundle、加入 / 新裝置 / 還原申請投遞 | 裝置 ↔ mailbox |
 | `hills/tsa/1` | 時間戳請求 | 裝置 ↔ tsa |
-| `hills/link/1` | 新裝置綁定 | 同一成員的兩台裝置 |
 
 訊息以 `postcard` 序列化，外層帶 `v`、`type`、`requestId`，所有請求設逾時。
 
@@ -273,7 +253,7 @@ FETCH_JOINS { orgId }                                → [JoinRequest]   // 限�
 
 - 存取控制：iroh 連線本身已驗證對方的 NodeId（= DK），因此每條連線開頭送一次 `Hello{DeviceCert, MemberCert}`，mailbox 確認 `DeviceCert.devicePub == 連線的 NodeId` 且信任鏈有效後，該連線上的請求不需逐一簽章。
 - mailbox 以設定檔中的 OK.pub 與管理者推送的 **roster 快照**驗證：`PUT_ROSTER{memberCerts[], revocations[]}`，每筆憑證與撤銷各自驗證簽章（第一位管理者由 OK 簽發，其他由有效管理者簽發）。roster 只含公鑰與角色，不含其他組織資料。
-- `JOIN` 例外（尚無憑證），以 inviteId 與來源限流（與邀請流程同批實作）。
+- `Join` 等申請相關請求例外（尚無憑證），改以 CAFECA 登入證明驗證並限流（§17.8）。
 - 儲存：SQLite 索引 + 檔案系統存 ciphertext（M1 規模足夠）。
 - 配額：每組織、每裝置限流。
 
@@ -428,12 +408,16 @@ services:
 | 威脅 | 對策 |
 |------|------|
 | 伺服器被入侵 | relay / mailbox 只有密文；TSA 被入侵只能偽造時間，無法讀資料 |
-| 邀請碼外洩 | 一次性、72 小時過期、可撤銷；新成員加入通知全員 |
+| 組織連線碼外洩 | 連線碼不是機密，只含 mailbox 位址與 OK.pub；加入需 CAFECA 登入並經管理者核准 |
+| CAFECA 帳戶遭盜用 | 等同取得該成員身分：新成員需管理者核准；新裝置加入時本人其他裝置收到通知並可撤銷；還原需管理者核准 |
+| 冒用登入（QR 轉送、假冒 App） | 原生 App 模式無法綁定網域，登入簽章改綁定裝置金鑰（§17.3 nonce），錢包與 Hills 顯示相同確認碼供比對 |
+| RPC 節點說謊 | 可設定自架 RPC（`HILLS_CAFECA_RPC`）；管理者裝置核准前再次驗證 |
+| CAFECA 簽章挪用 | 依賴 CAFECA 錢包只簽自己組出的 `SignIn`；合約層 ERC-7739 防重放尚未完成（CAFECA README §7），正式試用前確認 |
 | 裝置遺失 | 本人或管理者撤銷 DeviceCert；本機資料靜態加密 |
 | 離職成員 | 撤銷 + epoch 輪替；已同步資料無法撤回（明示） |
 | 竄改打卡 | DK 簽章 + TSA 時間憑證；異常標示給負責人 |
 | 惡意成員寫入他人文件 | single-writer 驗證層拒絕 |
-| 裝置綁定的中間人攻擊 | 6 位數 SAS 比對 |
+| 新裝置綁定被調包 | 臨時公鑰寫在 CAFECA 簽署的 nonce 中，mailbox 無法替換 |
 | 公開 repo 洩漏機密 | GitHub secret scanning、pre-commit 掃描、`.env` 範本化 |
 
 ## 12. M0 技術驗證（PoC）
@@ -660,7 +644,7 @@ M1 自行實作輕量物件節點（Rust），部署 8 個實例；日後可替�
 
 `crates/hills-node` 是 app 核心，組合 identity / crypto / store / sync / net，桌機 app 只透過它操作：
 
-- `create_org`、`create_invite`、`join`、`link_new_device` / `link_existing_device`、`recover`、`revoke_member`、`revoke_device`
+- `create_org`、`join`、`add_device`、`recover`（v0.13，§17）、`approve_join` / `reject_join`、`revoke_member`、`revoke_device`
 - `doc(id)` / `change(id, |doc| …)`：讀寫文件，寫入時自動簽章、保存、推送
 - `events()`：同步狀態、roster、presence 變化
 
@@ -668,16 +652,18 @@ M1 自行實作輕量物件節點（Rust），部署 8 個實例；日後可替�
 
 | 位置 | 內容 | 保護 |
 |------|------|------|
-| `SecretStore`（系統 keychain） | 復原詞熵、DK、本機儲存金鑰 | OS |
+| `SecretStore`（系統 keychain） | IK / EK 私鑰、DK、本機儲存金鑰 | OS |
 | `node.json` | OK.pub、mailbox 位址、本人 memberId、介面設定 | 非機密 |
 | `docs/*.am` | Automerge 文件 + 每筆 change 的簽章（§16.5） | 儲存金鑰（§9） |
 | `keyring.enc`、`trust.enc` | KeyRing、TrustStore 快照 | 儲存金鑰 |
 
 網路：node 的 iroh 金鑰就是 DK；relay 使用 mailbox 連線碼中的 relay URL（自架，D1），連線碼沒有 relay 時只用直連（測試用）。
 
-**mailbox 位址更新**（v0.8）：`node.json` 中的 mailbox 位址不是固定值。每次同步呼叫 `Info` 取得 mailbox 目前的位址；NodeId 與已存的相同時，若 relay 或直連位址不同，就更新 `node.json`、把新 relay 加入執行中的 endpoint（不需重啟），再 `Announce` 自己的新位址。NodeId 不同時忽略（mailbox 身分不能以此方式更換）。之後產生的邀請碼、組織連線碼、綁定碼都帶新位址。mailbox 只能藉此指定 relay，而 relay 只看得到端對端加密的 QUIC，因此不增加信任範圍。這讓部署後才補上 relay、或更換 relay 網域時，既有安裝會自動修正。M0 只支援 `org`、`team/<id>`、`member/<id>/secrets` 三種文件，其他文件類型隨 M1 功能加入。
+**mailbox 位址更新**（v0.8）：`node.json` 中的 mailbox 位址不是固定值。每次同步呼叫 `Info` 取得 mailbox 目前的位址；NodeId 與已存的相同時，若 relay 或直連位址不同，就更新 `node.json`、把新 relay 加入執行中的 endpoint（不需重啟），再 `Announce` 自己的新位址。NodeId 不同時忽略（mailbox 身分不能以此方式更換）。之後產生的組織連線碼帶新位址。mailbox 只能藉此指定 relay，而 relay 只看得到端對端加密的 QUIC，因此不增加信任範圍。這讓部署後才補上 relay、或更換 relay 網域時，既有安裝會自動修正。M0 只支援 `org`、`team/<id>`、`member/<id>/secrets` 三種文件，其他文件類型隨 M1 功能加入。
 
 ### 16.2 邀請與加入
+
+> **v0.13：由 §17 取代**（D41 不再使用邀請碼）。以下保留作為 M0 紀錄，不再實作。
 
 **邀請碼**：`hills1-` + base32（小寫、無補齊）of postcard：
 
@@ -703,6 +689,8 @@ secret 不放在 org 文件，因為所有成員都能讀 org 文件；代價是
 
 ### 16.3 新裝置綁定
 
+> **v0.13：由 §17.6 取代**（不再使用 `hills/link/1` 與 SAS）。以下保留作為 M0 紀錄。
+
 1. 新裝置先貼上舊裝置匯出的**組織連線碼**（§16.4 `OrgTicket`，取得自架 relay 與 mailbox 位址，跨網路時舊裝置才連得到新裝置），再產生 DK 與臨時 X25519 `e_new`，顯示 `LinkTicket{v, device addr, e_new.pub}`（文字碼 + QR）。
 2. 舊裝置以 ALPN `hills/link/1` 連線，送出臨時公鑰 `e_old.pub`。
 3. 雙方計算 `shared = X25519(e_old, e_new)`，`SAS = 6 位數(blake3("hills/v1/sas" ‖ shared ‖ e_old.pub ‖ e_new.pub))`，`K_link = HKDF(shared, "hills/v1/link")`。
@@ -710,6 +698,8 @@ secret 不放在 org 文件，因為所有成員都能讀 org 文件；代價是
 5. 新裝置由熵重建 IK / EK，之後與一般啟動相同（`FetchKeys` 取回所有封裝給本人 EK 的金鑰）。
 
 ### 16.4 金鑰復原
+
+> **v0.13：由 §17.7 取代**（不再使用復原詞）；`OrgTicket` 保留，見 §17.1。以下保留作為 M0 紀錄。
 
 所有封裝金鑰都封裝給**成員的 EK**（不是裝置），且 mailbox 永久保存，因此：
 
@@ -746,11 +736,16 @@ secret 不放在 org 文件，因為所有成員都能讀 org 文件；代價是
 | `Hello` | — | 有效裝置 | §5.2；`member_cert` 可省略（復原、剛加入時本機尚無自己的成員憑證），省略時 mailbox 使用已知的成員憑證 |
 | `GetRoster` | ✓ | 成員 | 回傳 MemberCert、DeviceCert、Revocation；每筆可獨立驗證，mailbox 只能扣留、不能偽造 |
 | `PutRoster` | ✓ | 管理者 | 成員憑證與撤銷 |
-| `PutDevice` | ✓ | 本人 | 上傳自己的 DeviceCert（綁定、復原） |
+| `PutDevice` | ✓ | 本人 | 上傳本人裝置的 DeviceCert（新裝置綁定） |
 | `PutRevocation` | ✓ | 管理者（成員）/ 本人或管理者（裝置） | |
-| `RegisterInvite` / `CloseInvite` | ✓ | 管理者 | |
-| `Join` | ✗ | 已登記、未過期的邀請 | 每邀請最多 5 筆待處理 |
-| `FetchJoins` | ✓ | 管理者 | |
+| `Config` | ✗ | 任何人 | v0.13：回傳 `{ cafeca_wallet }`（部署設定，§17.1） |
+| `Join{org_id, application}` | ✗ | 有效 CAFECA 登入證明 | v0.13：加入 / 新裝置 / 還原申請，§17.8 |
+| `JoinStatus{org_id, device_pub}` | ✗ | 任何人 | v0.13：`Pending` / `Rejected` / `Unknown` |
+| `FetchJoins` | ✓ | 管理者 | v0.13：待核准的加入與還原申請 |
+| `ResolveJoin{device_pub, approved}` | ✓ | 管理者 | v0.13：核准（已 `PutRoster` 後）或拒絕 |
+| `FetchDeviceRequests` | ✓ | 本人裝置 | v0.13：本人的新裝置申請 |
+| `PutDeviceGrant{device_pub, sealed}` | ✓ | 本人裝置 | v0.13：封裝給新裝置的 IK / EK |
+| `FetchDeviceGrant{org_id, device_pub}` | ✗ | 任何人（內容已加密） | v0.13：新裝置取回封裝 |
 | `PutKeys` | ✓ | 管理者（org、team、attendance）/ 本人（private） | `Signed<WrappedKey>`，由簽署裝置的權限決定 |
 | `FetchKeys{since}` | ✓ | 收件者本人 | 只回傳 `recipient == 本人` 的封裝 |
 | `Announce{addr}` / `Peers` | ✓ | 成員 | 自架位址簿：裝置的 iroh 位址與最後上線時間，取代 n0 DNS 探索（D1、D26 全自架） |
@@ -765,9 +760,8 @@ secret 不放在 org 文件，因為所有成員都能讀 org 文件；代價是
 ```
 org = {
   name, timezone, locale,
-  members: { <memberId>: { name, joinedAt } },
+  members: { <memberId>: { name, joinedAt, cafeca: "eip155:<chainId>:<account>", handle?, approvedBy? } },   // v0.13
   teams:   { <teamId>: { name, leadIds: [..], memberIds: [..] } },
-  invites: { <inviteId>: { secretHash, role, teamIds, expiresAt, createdBy, usedBy?, revoked } },
   offices: { <officeId>: { name, wifiHashes: [] } },     // v0.11（D40）；M1 wifiHashes 為空
   lunchBreak?: { start: "12:00", end: "13:30" },          // v0.11；組織時區
 }
@@ -795,3 +789,124 @@ team/<teamId> = {                                         // v0.11（D40）
 - **綁定組織**：mailbox 未設定 `HILLS_ORG_ROOT_PUB` 時為「未綁定」狀態，第一位以組織根金鑰簽發之管理者憑證連線者即完成綁定（寫入資料庫，之後不可更換），未綁定前其他請求一律拒絕。部署後應立即建立組織；若要事先固定組織，可設定 `HILLS_ORG_ROOT_PUB`。
 - 步驟見 [deploy.md](./deploy.md)。
 
+## 17. 以 CAFECA 登入（v0.13，D41）
+
+取代 §3.4–3.6、§16.2–16.4 的邀請碼、掃碼綁定與復原詞。協定依據 CAFECA「Sign in with CAFECA」（[CAFECA README](https://github.com/CAFECA-IO/CAFECA) §3–§5、§8）與其**原生 App 模式**（`mode: "relay"`，由 CAFECA 新增，本節列出 Hills 需要的內容）。CAFECA repo 未附授權條款，Hills 不複製其程式碼，只依公開協定實作（`crates/hills-cafeca`）。
+
+### 17.1 設定與連線碼
+
+- **CAFECA 錢包網址**（例如 `https://<錢包網域>`）是部署設定：mailbox 環境變數 `HILLS_CAFECA_WALLET`（必填），客戶端以 `Config` 請求取得（不需 Hello），不寫死在程式中（D20）。
+- 鏈與合約設定取自 `<錢包>/.well-known/cafeca-configuration`（`chainId`、`rpcUrl`、`contracts.recovery` 等）；mailbox 可用 `HILLS_CAFECA_RPC` 改用自架 RPC。客戶端與 mailbox 各自快取 1 小時。
+- **組織連線碼** `OrgTicket{v, org_root, mailbox}`（`hills-org1-`）保留，加入、新裝置、還原都從它開始；邀請碼 `InviteTicket` 與綁定碼 `LinkTicket` 移除。
+- App ID：`io.cafeca.hills`（Hills 桌機 App 的套件識別碼）；登入請求的 `domain` 與 `uri` 固定為 `app://io.cafeca.hills`。
+
+### 17.2 登入請求（原生 App 模式）
+
+Hills 產生一把臨時 P-256 金鑰 `r`、中繼通道 id `ch`（16 bytes 隨機，hex）與請求 id `id`（16 bytes 隨機，hex），組出：
+
+```
+SignInRequest {
+  v: 1,
+  domain: "app://io.cafeca.hills", uri: "app://io.cafeca.hills",
+  nonce,                                   // §17.3
+  issuedAt, expiresAt = issuedAt + 600,    // Unix 秒
+  mode: "relay",
+  statement: "<動作>「<組織名稱>」· 確認碼 XXXX-XXXX",   // 動作：建立組織 / 加入 / 新增裝置 / 還原
+  claims: ["handle"],
+  relay: { ch, id, pub: base64url(r.pub 未壓縮 65 bytes) }
+}
+```
+
+- 連結 `https://<錢包>/dl/auth?v=1&req=<base64url(JSON)>`：介面同時提供「在這台電腦開啟」（以系統瀏覽器開啟）與 QR Code（以手機上的 CAFECA 掃描）。
+- 錢包簽署後，以自己的臨時 P-256 金鑰 `w` 加密回應，放入 CAFECA 中繼信箱 `/api/channel`（`op: "reply"`）；Hills 每 2 秒以 `GET /api/channel?ch=<ch>&r=<id>&res=1` 輪詢，最多到 `expiresAt`。
+- 回應 Box：`{ v: 1, ch, id, epk: base64url(w.pub), iv, ct }`；金鑰 `K = HKDF-SHA256(ikm = ECDH(r, w), salt = ch, info = "CAFECA-channel-v1")`，`AES-256-GCM(K, iv, aad = "<ch>|<id>|res")`，與 CAFECA 簽章通道相同。解出的明文即 CAFECA 登入回應（README §4）；`error` 欄位為 `access_denied` 時顯示「已在 CAFECA 拒絕」。
+- 中繼只看得到密文；`r` 只存在記憶體，登入結束即丟棄。
+
+### 17.3 nonce 與確認碼
+
+```
+SignInBinding {
+  v, org_id, kind: create | join | device | recover,
+  device_pub: DK.pub,
+  ik_pub: Option<IK.pub>,       // create / join / recover：新成員金鑰；device：無
+  key_pub: X25519 公鑰,          // create / join / recover：EK.pub；device：臨時金鑰 e.pub
+  issued_at,
+}
+h       = blake3("hills/v1/cafeca-signin" ‖ postcard(SignInBinding))
+nonce   = base64url(h)                       // 43 字元，符合 CAFECA 8–128 字元限制
+確認碼  = base32(h[0..5]) 8 字元，以 XXXX-XXXX 顯示
+```
+
+- 登入簽章因此綁定裝置與金鑰：攔截到回應的人只能把**原本那台裝置**加入，無法換成自己的裝置。
+- 錢包在授權畫面顯示 statement（含確認碼），Hills 同時以大字顯示確認碼，請使用者確認兩邊一致後再簽署（防 QR 轉送與假冒 App）。
+
+### 17.4 登入證明與驗證
+
+```
+CafecaProof {
+  v, binding: SignInBinding,
+  chain_id: u64, account: [u8; 20],
+  message: { domain, uri, nonce, issued_at, expires_at, statement, claims, channel },
+  signature: bytes,
+  handle: Option<String>,        // 回應中自稱的代稱，只供顯示
+}
+```
+
+驗證（`hills-cafeca::Verifier`，mailbox 與客戶端共用）：
+
+1. `message.nonce == nonce(binding)`；`message.domain == message.uri == "app://io.cafeca.hills"`；`message.channel == ""`；`message.issued_at == binding.issued_at`；`expires_at - issued_at ≤ 600`。
+2. 時效：收到時（mailbox 的 `received_at`、或本機登入當下）早於 `expires_at`。管理者與本人裝置事後驗證時，以 mailbox 記錄的 `received_at` 判斷。
+3. `chain_id` 等於 `.well-known` 設定。
+4. `hash = EIP-712 hashTypedData({ name: "CAFECA Sign-In", version: "1", chainId, verifyingContract: account }, SignIn, message)`；`eth_call account.isValidSignature(hash, signature)` 必須回傳 `0x1626ba7e`。
+5. 有 `contracts.recovery` 時，`recovery.isPending(account)` 必須為 false（身分恢復中不接受）。
+6. 代稱以 `GET <錢包>/api/profile?q=<account>` 查詢，只用於顯示；查不到時顯示帳戶縮寫。
+7. 不要求實名等級（D41）。
+
+### 17.5 建立組織
+
+1. 貼上 mailbox 連線碼 → `Config` 取得錢包網址。
+2. 產生 OK、IK、EK、DK；登入（kind = `create`、`org_id = blake3(OK.pub)`）；本機驗證證明。
+3. 由帳戶推導 memberId，OK 簽發第一張管理者 MemberCert（含 `cafeca`），IK 簽發 DeviceCert；建立 org 文件（`members[me].cafeca`、`handle`）。之後與 M0 相同（綁定 mailbox、匯出 OK 備份）。
+
+### 17.6 加入與新裝置
+
+**加入**（kind = `join`）：
+
+1. 貼上組織連線碼 → `Config`；產生 IK、EK、DK；登入；由帳戶推導 memberId，IK 簽發 DeviceCert。
+2. `Join{org_id, Application::Join{proof, ik_pub, ek_pub, device_cert, name}}`。mailbox 驗證證明（§17.4）、`binding` 的金鑰與 payload 一致、`device_cert.member_id` 與帳戶相符、此帳戶尚非成員，通過後暫存（同一帳戶只保留最新一筆）。
+3. 任一在線管理者裝置 `FetchJoins`，再次驗證後在「設定 › 成員 › 待核准」列出（代稱、帳戶縮寫、裝置名稱、申請時間）。
+4. 核准：管理者指定角色與小組 → 簽發 MemberCert → `PutRoster`（含新成員的 DeviceCert）→ org 文件新增成員（`approvedBy`）→ 封裝 GK、所屬小組 TK、新成員的 AK → `PutKeys` → `ResolveJoin{approved: true}`。拒絕：`ResolveJoin{approved: false}`。
+5. 申請者每 5 秒嘗試 Hello，roster 出現自己後成功；同時以 `JoinStatus` 得知是否被拒。
+
+**新裝置**（kind = `device`）：
+
+1. 貼上組織連線碼 → `Config`；產生 DK 與臨時 X25519 金鑰 `e`；登入。
+2. `Join{org_id, Application::Device{proof, device_pub, eph_pub, name}}`。mailbox 驗證證明，且帳戶推導出的成員在 roster 中、未被停用，通過後暫存給該成員。
+3. 本人任一在線裝置以 `FetchDeviceRequests` 取得，再次驗證（`binding.key_pub == eph_pub`、`device_pub` 相符）後：
+   - `sealed = HPKE-Seal(e.pub, info = "hills/v1/device-grant", aad = device_pub, plaintext = postcard{ik_secret, ek_secret, member_id})`；
+   - IK 簽發新裝置的 DeviceCert → `PutDevice`；`PutDeviceGrant{device_pub, sealed}`。
+4. 新裝置以 `FetchDeviceGrant` 取回、解開後存入安全儲存區，之後與一般啟動相同（Hello、`FetchKeys`、補同步）。
+5. 本人其他裝置看到 roster 多出新裝置時通知「新裝置〈名稱〉已加入」，可直接撤銷。
+6. 申請 10 分鐘內沒有本人裝置回應時，介面提供「我沒有其他裝置了」改走還原（§17.7）。
+
+### 17.7 還原
+
+kind = `recover`，流程與加入相同（產生**新的** IK / EK / DK、`Application::Recover`），差別：
+
+- mailbox 與管理者確認帳戶**已是**成員。
+- 核准時管理者簽發同一 memberId、新金鑰、沿用原角色的 MemberCert（`issuedAt` 較新，§3.2），`PutRoster`；舊裝置的 DeviceCert 因簽發的 IK 已被取代而失效。
+- 重新封裝：核准的管理者裝置把它持有的 GK、該成員所屬小組 TK、該成員的 AK（皆含歷史 epoch）封裝給新 EK；各對話的建立者裝置看到該成員的 EK 改變時，把該對話的 CK（含歷史 epoch）封裝給新 EK。該成員本人建立的對話，舊訊息無法再讀取，之後由本人輪替新 epoch。
+- `PK_member` 只封裝給舊 EK，無法還原；還原後產生新的 `PK_member`。介面在送出申請前說明此限制。
+
+`WrappedKey` 新增 `recipient_ek: Pub32`（封裝對象的 EK），客戶端只解開封裝給自己目前 EK 的項目。
+
+### 17.8 mailbox 申請處理
+
+- `Application` 由 mailbox 以 `hills-cafeca::RpcVerifier` 驗證；驗證失敗回 `BadRequest`。
+- 限流：每組織待處理申請最多 50 筆、每帳戶每種類最多 1 筆（新的取代舊的）、每個來源 NodeId 每分鐘最多 5 次；申請 7 天後清除，新裝置封裝（grant）取回後或 1 天後清除。
+- **mailbox 可看到的明文（新增）**：申請者的 CAFECA 帳戶地址、代稱、裝置名稱、公鑰；不含任何組織資料。
+- mailbox 需能連出到 CAFECA 錢包（`.well-known`、代稱查詢）與 RPC。
+
+### 17.9 版本與既有資料
+
+- `FORMAT_VERSION` 由 1 升為 2（MemberCert、WrappedKey、mailbox 請求格式改變）。客戶端啟動時偵測到 v1 的本機資料，提示後清除重新開始；mailbox 與 storage 依 deploy.md 重置（M1 試用前，D41）。

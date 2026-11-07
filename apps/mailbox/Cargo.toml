@@ -13,6 +13,7 @@ anyhow.workspace = true
 axum.workspace = true
 blake3.workspace = true
 data-encoding.workspace = true
+hills-cafeca.workspace = true
 hills-identity.workspace = true
 hills-net.workspace = true
 hills-proto.workspace = true
@@ -24,6 +25,8 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+hills-identity = { workspace = true, features = ["testing"] }
+hills-cafeca = { workspace = true, features = ["testing"] }
 automerge.workspace = true
 hills-crypto.workspace = true
 hills-sync.workspace = true

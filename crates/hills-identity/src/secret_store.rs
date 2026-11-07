@@ -57,7 +57,7 @@ impl SecretStore for MemoryStore {
 /// 固定的項目名稱。
 pub mod names {
     pub const DEVICE_KEY: &str = "hills.device-key";
-    pub const RECOVERY_ENTROPY: &str = "hills.member-entropy";
+    pub const MEMBER_KEYS: &str = "hills.member-keys-v2";
     pub const STORAGE_KEY: &str = "hills.storage-key";
 }
 

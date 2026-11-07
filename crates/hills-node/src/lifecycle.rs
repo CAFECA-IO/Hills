@@ -1,246 +1,26 @@
-//! 組織生命週期：建立、加入、復原、邀請、停用（technical-design §3.3、§3.7、§16.2、§16.4）。
+//! 組織設定與停用（technical-design §3.7、§16）。建立、加入、還原見 [`crate::onboarding`]（§17）。
 
-use std::path::Path;
-use std::sync::Arc;
-
-use anyhow::{Context, Result, anyhow, bail};
-use hills_crypto::exchange::join_mac;
-use hills_crypto::{KeyRing, rotate};
-use hills_identity::cert::{OrgRootKey, org_id_for};
-use hills_identity::secret_store::SecretStore;
-use hills_identity::trust::TrustStore;
-use hills_identity::{PhraseLanguage, RecoveryPhrase};
-use hills_net::mailbox::MailboxClient;
-use hills_net::to_endpoint_addr;
+use anyhow::{Result, anyhow, bail};
+use hills_crypto::rotate;
+use hills_identity::cert::OrgRootKey;
+use hills_proto::cafeca::CafecaAccount;
 use hills_proto::gossip::GossipMsg;
-use hills_proto::ticket::{InviteTicket, MailboxTicket, OrgTicket, Ticket};
-use hills_proto::{
-    FORMAT_VERSION, JoinRequest, KeyFamily, MemberId, Pub32, RevocationTarget, Role,
-};
+use hills_proto::ticket::{OrgTicket, Ticket};
+use hills_proto::{FORMAT_VERSION, KeyFamily, MemberId, Pub32, RevocationTarget};
 
-use crate::config::{MemberStatus, NodeConfig, ORG_ROOT_SECRET, Secrets};
-use crate::node::{Event, Node, NodeOptions, lock, now_ms};
-use crate::org::{self, InviteRec, NewOrg};
-
-/// 建立組織時的輸入。
-pub struct CreateOrg {
-    pub org_name: String,
-    pub my_name: String,
-    pub device_name: String,
-    pub mailbox_code: String,
-    pub timezone: String,
-    pub locale: String,
-    pub team_name: String,
-}
+use crate::config::ORG_ROOT_SECRET;
+use crate::node::{Event, Node, lock, now_ms};
+use crate::org;
 
 pub const DEFAULT_TEAM: &str = "general";
 
-fn pub_of(keys: &hills_identity::MemberKeys) -> (Pub32, Pub32) {
-    (
-        Pub32(keys.identity_public().to_bytes()),
-        Pub32(keys.exchange_public().to_bytes()),
-    )
-}
-
-fn ensure_empty(dir: &Path) -> Result<()> {
-    if NodeConfig::load(dir)?.is_some() {
-        bail!("此裝置已加入組織");
-    }
-    Ok(())
-}
-
 impl Node {
-    /// 建立組織（technical-design §3.3）。回傳組織根金鑰，呼叫端應引導使用者匯出備份。
-    pub async fn create_org(
-        dir: &Path,
-        secret_store: Arc<dyn SecretStore>,
-        req: CreateOrg,
-        opts: NodeOptions,
-    ) -> Result<(Self, OrgRootKey)> {
-        ensure_empty(dir)?;
-        let mailbox = MailboxTicket::from_code(&req.mailbox_code)
-            .context("mailbox 連線碼無效")?
-            .mailbox;
-        let secrets = Secrets::fresh(RecoveryPhrase::generate()?)?;
-        let ok = OrgRootKey::generate()?;
-        let now = now_ms();
-        let me = secrets.keys.member_id();
-
-        let mut trust = TrustStore::new(ok.public());
-        trust.add_member_cert(ok.issue_first_admin(&secrets.keys, now)?)?;
-        let dc = secrets
-            .keys
-            .issue_device_cert(&secrets.device.public(), &req.device_name, now)?;
-        trust.add_device_cert(dc.clone())?;
-
-        // GK、預設小組 TK、本人 PK
-        let (_, ek) = pub_of(&secrets.keys);
-        let mut ring = KeyRing::default();
-        let mut wrapped = Vec::new();
-        for family in [
-            KeyFamily::Org,
-            KeyFamily::Team(DEFAULT_TEAM.into()),
-            KeyFamily::MemberPrivate(me),
-        ] {
-            let r = rotate(&ring, &family, &[(me, ek)])?;
-            wrapped.extend(r.wrapped);
-            ring.insert(r.key_id, r.key);
-        }
-
-        secrets.save(&secret_store)?;
-        secret_store.set(ORG_ROOT_SECRET, &ok.secret_bytes()[..])?;
-        let cfg = NodeConfig {
-            org_root: ok.public(),
-            mailbox,
-            member_id: me,
-            device_name: req.device_name.clone(),
-            status: MemberStatus::Active,
-            bundle_cursor: 0,
-            keys_cursor: 0,
-            storage: vec![],
-        };
-        cfg.save(dir)?;
-        let node = Self::start(
-            dir,
-            secret_store,
-            cfg,
-            secrets,
-            Some((trust, ring, dc)),
-            opts,
-        )
-        .await?;
-        {
-            let inner = &node.inner;
-            let mut st = lock(&inner.st);
-            for w in wrapped {
-                let s = inner.secrets.device.sign_body(w)?;
-                st.key_outbox.push(s);
-            }
-            inner.change_locked(&mut st, "org", |doc| {
-                org::init(
-                    doc,
-                    &NewOrg {
-                        name: &req.org_name,
-                        timezone: &req.timezone,
-                        locale: &req.locale,
-                        creator: me,
-                        creator_name: &req.my_name,
-                        team_id: DEFAULT_TEAM,
-                        team_name: &req.team_name,
-                        now,
-                    },
-                )?;
-                Ok(())
-            })?;
-        }
-        node.inner.wake.notify_one();
-        Ok((node, ok))
+    /// 本人的 CAFECA 帳戶（§17）。
+    pub fn cafeca(&self) -> Option<CafecaAccount> {
+        lock(&self.inner.cfg).cafeca
     }
 
-    /// 以邀請碼加入（technical-design §16.2）。送出申請後狀態為 Pending，核准後自動轉為 Active。
-    pub async fn join(
-        dir: &Path,
-        secret_store: Arc<dyn SecretStore>,
-        invite_code: &str,
-        my_name: &str,
-        device_name: &str,
-        opts: NodeOptions,
-    ) -> Result<Self> {
-        ensure_empty(dir)?;
-        let t = InviteTicket::from_code(invite_code).context("邀請碼無效")?;
-        let secrets = Secrets::fresh(RecoveryPhrase::generate()?)?;
-        let now = now_ms();
-        let dc = secrets
-            .keys
-            .issue_device_cert(&secrets.device.public(), device_name, now)?;
-        let (ik, ek) = pub_of(&secrets.keys);
-        let mut req = JoinRequest {
-            v: FORMAT_VERSION,
-            ik_pub: ik,
-            ek_pub: ek,
-            device_cert: dc.clone(),
-            name: my_name.chars().take(100).collect(),
-            mac: [0; 32],
-        };
-        req.mac = join_mac(&t.secret, &t.invite_id, &req.mac_input()?);
-
-        secrets.save(&secret_store)?;
-        let cfg = NodeConfig {
-            org_root: t.org_root,
-            mailbox: t.mailbox.clone(),
-            member_id: secrets.keys.member_id(),
-            device_name: device_name.to_owned(),
-            status: MemberStatus::Pending,
-            bundle_cursor: 0,
-            keys_cursor: 0,
-            storage: vec![],
-        };
-        cfg.save(dir)?;
-        let node = Self::start(
-            dir,
-            secret_store,
-            cfg,
-            secrets,
-            Some((TrustStore::new(t.org_root), KeyRing::default(), dc)),
-            opts,
-        )
-        .await?;
-        MailboxClient::join(
-            &node.inner.endpoint,
-            to_endpoint_addr(&t.mailbox)?,
-            org_id_for(&t.org_root),
-            t.invite_id,
-            req,
-        )
-        .await
-        .context("無法送出加入申請")?;
-        Ok(node)
-    }
-
-    /// 以復原詞與組織連線碼還原（technical-design §16.4）。
-    pub async fn recover(
-        dir: &Path,
-        secret_store: Arc<dyn SecretStore>,
-        words: &str,
-        org_code: &str,
-        device_name: &str,
-        opts: NodeOptions,
-    ) -> Result<Self> {
-        ensure_empty(dir)?;
-        let t = OrgTicket::from_code(org_code).context("組織連線碼無效")?;
-        let secrets = Secrets::fresh(RecoveryPhrase::parse(words)?)?;
-        let dc = secrets
-            .keys
-            .issue_device_cert(&secrets.device.public(), device_name, now_ms())?;
-        secrets.save(&secret_store)?;
-        let cfg = NodeConfig {
-            org_root: t.org_root,
-            mailbox: t.mailbox,
-            member_id: secrets.keys.member_id(),
-            device_name: device_name.to_owned(),
-            status: MemberStatus::Active,
-            bundle_cursor: 0,
-            keys_cursor: 0,
-            storage: vec![],
-        };
-        cfg.save(dir)?;
-        Self::start(
-            dir,
-            secret_store,
-            cfg,
-            secrets,
-            Some((TrustStore::new(t.org_root), KeyRing::default(), dc)),
-            opts,
-        )
-        .await
-    }
-
-    /// 以介面語言顯示復原詞（D38）。
-    pub fn recovery_words(&self, lang: PhraseLanguage) -> Vec<String> {
-        self.inner.secrets.phrase.words(lang).to_vec()
-    }
-
-    /// 匯出組織連線碼（復原、裝置綁定用）。
+    /// 匯出組織連線碼（加入、新裝置、還原用，§17.1）。
     pub fn org_ticket(&self) -> Result<String> {
         let cfg = lock(&self.inner.cfg);
         Ok(OrgTicket {
@@ -263,61 +43,6 @@ impl Node {
             .try_into()
             .map_err(|_| anyhow!("組織根金鑰格式錯誤"))?;
         Ok(OrgRootKey::from_secret_bytes(&arr).export_backup(password)?)
-    }
-
-    /// 管理者建立邀請，回傳邀請碼（technical-design §16.2 步驟 1）。
-    pub async fn create_invite(&self, role: Role, team_ids: Vec<String>) -> Result<String> {
-        let inner = &self.inner;
-        let mut invite_id = [0u8; 8];
-        let mut secret = [0u8; 16];
-        getrandom::fill(&mut invite_id).map_err(|_| anyhow!("無法取得亂數"))?;
-        getrandom::fill(&mut secret).map_err(|_| anyhow!("無法取得亂數"))?;
-        let id_hex = data_encoding::HEXLOWER.encode(&invite_id);
-        let expires_at = now_ms() + inner.opts.invite_ttl.as_millis() as i64;
-        let me = self.member_id();
-        let team_ids = if team_ids.is_empty() {
-            vec![DEFAULT_TEAM.to_owned()]
-        } else {
-            team_ids
-        };
-        {
-            let mut st = lock(&inner.st);
-            let secrets_doc = format!("member/{me}/secrets");
-            let secret_hex = data_encoding::HEXLOWER.encode(&secret);
-            inner.change_locked(&mut st, &secrets_doc, |doc| {
-                Ok(org::put_invite_secret(doc, &id_hex, &secret_hex)?)
-            })?;
-            let rec = InviteRec {
-                secret_hash: data_encoding::HEXLOWER.encode(blake3::hash(&secret).as_bytes()),
-                role,
-                team_ids,
-                expires_at,
-                created_by: me,
-                used_by: None,
-                revoked: false,
-            };
-            inner.change_locked(&mut st, "org", |doc| {
-                Ok(org::add_invite(doc, &id_hex, &rec)?)
-            })?;
-        }
-        inner.emit(Event::OrgChanged);
-        {
-            let g = self.mailbox_guard().await?;
-            g.as_ref()
-                .ok_or_else(|| anyhow!("mailbox"))?
-                .register_invite(invite_id, expires_at)
-                .await?;
-        }
-        inner.wake.notify_one();
-        let cfg = lock(&inner.cfg);
-        Ok(InviteTicket {
-            v: FORMAT_VERSION,
-            org_root: cfg.org_root,
-            invite_id,
-            secret,
-            mailbox: cfg.mailbox.clone(),
-        }
-        .to_code()?)
     }
 
     /// 管理者修改組織名稱。

@@ -1,11 +1,12 @@
 //! mailbox 客戶端（ALPN `hills/mailbox/1`，technical-design §5.2）。
 
+use hills_proto::cafeca::Application;
 use hills_proto::mailbox::{
-    ALPN, Hello, KeyItem, ListItem, MAX_FRAME, MAX_LIST, PeerInfo, PendingJoin, Request, Response,
+    ALPN, Hello, JoinState, KeyItem, ListItem, MAX_FRAME, MAX_LIST, PeerInfo, PendingApplication,
+    Request, Response, ServerConfig,
 };
 use hills_proto::{
-    DeviceCert, EncryptedBundle, JoinRequest, OrgId, PeerAddr, Revocation, Roster, Signed,
-    WrappedKey,
+    DeviceCert, EncryptedBundle, OrgId, PeerAddr, Pub32, Revocation, Roster, Signed, WrappedKey,
 };
 use iroh::endpoint::Connection;
 use iroh::{Endpoint, EndpointAddr};
@@ -56,30 +57,81 @@ impl MailboxClient {
         self.conn.close_reason().is_some()
     }
 
-    /// 送出加入申請（不需 Hello，technical-design §16.2）。連線完成後即關閉。
-    pub async fn join(
+    /// 不需 Hello 的單次請求（申請相關，technical-design §17.8）。連線完成後即關閉。
+    pub async fn anonymous(
         endpoint: &Endpoint,
         addr: EndpointAddr,
-        org_id: OrgId,
-        invite_id: [u8; 8],
-        request: JoinRequest,
-    ) -> Result<(), NetError> {
+        req: &Request,
+    ) -> Result<Response, NetError> {
         let conn = endpoint
             .connect(addr, ALPN)
             .await
             .map_err(|e| NetError::Connect(e.to_string()))?;
-        let resp: Response = request_on(
-            &conn,
-            &Request::Join {
-                org_id,
-                invite_id,
-                request: Box::new(request),
-            },
-        )
-        .await?;
+        let resp = request_on(&conn, req).await;
         conn.close(0u32.into(), b"bye");
-        match resp {
-            Response::Ok => Ok(()),
+        resp
+    }
+
+    /// 部署設定（CAFECA 錢包網址，§17.1）。
+    pub async fn config(endpoint: &Endpoint, addr: EndpointAddr) -> Result<ServerConfig, NetError> {
+        match Self::anonymous(endpoint, addr, &Request::Config).await? {
+            Response::Config(c) => Ok(c),
+            other => Err(remote(other)),
+        }
+    }
+
+    /// 送出加入 / 新裝置 / 還原申請（§17.6–17.8）；回傳申請狀態（已是成員的加入會轉為新裝置）。
+    pub async fn join(
+        endpoint: &Endpoint,
+        addr: EndpointAddr,
+        org_id: OrgId,
+        application: Application,
+    ) -> Result<JoinState, NetError> {
+        let req = Request::Join {
+            org_id,
+            application: Box::new(application),
+        };
+        match Self::anonymous(endpoint, addr, &req).await? {
+            Response::JoinStatus(s) => Ok(s),
+            other => Err(remote(other)),
+        }
+    }
+
+    /// 已登入連線上的部署設定。
+    pub async fn server_config(&self) -> Result<ServerConfig, NetError> {
+        match self.call(&Request::Config).await? {
+            Response::Config(c) => Ok(c),
+            other => Err(remote(other)),
+        }
+    }
+
+    pub async fn join_status(
+        endpoint: &Endpoint,
+        addr: EndpointAddr,
+        org_id: OrgId,
+        device: Pub32,
+    ) -> Result<JoinState, NetError> {
+        match Self::anonymous(endpoint, addr, &Request::JoinStatus { org_id, device }).await? {
+            Response::JoinStatus(s) => Ok(s),
+            other => Err(remote(other)),
+        }
+    }
+
+    /// 新裝置取回封裝（尚未封裝時為 None）。
+    pub async fn fetch_device_grant(
+        endpoint: &Endpoint,
+        addr: EndpointAddr,
+        org_id: OrgId,
+        device: Pub32,
+    ) -> Result<Option<Vec<u8>>, NetError> {
+        match Self::anonymous(
+            endpoint,
+            addr,
+            &Request::FetchDeviceGrant { org_id, device },
+        )
+        .await?
+        {
+            Response::DeviceGrant(g) => Ok(g),
             other => Err(remote(other)),
         }
     }
@@ -106,27 +158,28 @@ impl MailboxClient {
         self.expect_ok(&Request::PutRevocation(Box::new(rev))).await
     }
 
-    pub async fn register_invite(
-        &self,
-        invite_id: [u8; 8],
-        expires_at: i64,
-    ) -> Result<(), NetError> {
-        self.expect_ok(&Request::RegisterInvite {
-            invite_id,
-            expires_at,
-        })
-        .await
-    }
-
-    pub async fn close_invite(&self, invite_id: [u8; 8]) -> Result<(), NetError> {
-        self.expect_ok(&Request::CloseInvite { invite_id }).await
-    }
-
-    pub async fn fetch_joins(&self) -> Result<Vec<PendingJoin>, NetError> {
+    pub async fn fetch_joins(&self) -> Result<Vec<PendingApplication>, NetError> {
         match self.call(&Request::FetchJoins).await? {
             Response::Joins(j) => Ok(j),
             other => Err(remote(other)),
         }
+    }
+
+    pub async fn resolve_join(&self, device: Pub32, approved: bool) -> Result<(), NetError> {
+        self.expect_ok(&Request::ResolveJoin { device, approved })
+            .await
+    }
+
+    pub async fn fetch_device_requests(&self) -> Result<Vec<PendingApplication>, NetError> {
+        match self.call(&Request::FetchDeviceRequests).await? {
+            Response::Joins(j) => Ok(j),
+            other => Err(remote(other)),
+        }
+    }
+
+    pub async fn put_device_grant(&self, device: Pub32, sealed: Vec<u8>) -> Result<(), NetError> {
+        self.expect_ok(&Request::PutDeviceGrant { device, sealed })
+            .await
     }
 
     pub async fn put_keys(&self, wrapped: Vec<Signed<WrappedKey>>) -> Result<(), NetError> {

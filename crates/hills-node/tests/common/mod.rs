@@ -1,16 +1,20 @@
 #![allow(dead_code, unused_imports, clippy::unwrap_used, clippy::expect_used)]
-//! 整合測試共用：本機 mailbox、建立組織、邀請加入、輪詢等待。
+//! 整合測試共用：本機 mailbox、以（測試用）CAFECA 登入建立組織與加入、輪詢等待。
 
 pub use std::future::Future;
 pub use std::path::Path;
 pub use std::sync::Arc;
 pub use std::time::{Duration, Instant};
 
+pub use hills_cafeca::Verifier;
 pub use hills_mailbox::{MAILBOX_ALPN, Mailbox, serve};
 pub use hills_net::to_peer_addr;
 pub use hills_node::{
-    CreateOrg, LinkListener, MemoryStore, Node, NodeOptions, PresenceState, Role, SecretStore,
-    SyncStatus,
+    CreateOrg, MemoryStore, Node, NodeOptions, OnboardKind, OnboardStep, Onboarding, PresenceState,
+    Role, SecretStore, SyncStatus,
+};
+pub use hills_proto::cafeca::{
+    APP_DOMAIN, CafecaAccount, CafecaProof, SignInBinding, SignInMessage,
 };
 pub use hills_proto::ticket::{MailboxTicket, Ticket};
 pub use iroh::protocol::Router;
@@ -21,8 +25,57 @@ pub fn opts() -> NodeOptions {
         presence_interval: Duration::from_millis(500),
         presence_timeout: Duration::from_secs(3),
         poll_interval: Duration::from_secs(1),
-        invite_ttl: Duration::from_secs(3600),
+        verifier: Some(Arc::new(Verifier::OfflineForTests)),
     }
+}
+
+/// 隨機的測試 CAFECA 帳戶。
+pub fn account() -> CafecaAccount {
+    let mut address = [0u8; 20];
+    getrandom::fill(&mut address).unwrap();
+    CafecaAccount {
+        chain_id: 8018,
+        address,
+    }
+}
+
+/// 測試用登入證明（OfflineForTests 只檢查綁定內容與時效，不查鏈上）。
+pub fn proof(binding: SignInBinding, account: CafecaAccount, handle: &str) -> CafecaProof {
+    CafecaProof {
+        v: hills_proto::FORMAT_VERSION,
+        account,
+        message: SignInMessage {
+            domain: APP_DOMAIN.into(),
+            uri: APP_DOMAIN.into(),
+            nonce: hills_cafeca::nonce_for(&binding),
+            issued_at: binding.issued_at,
+            expires_at: binding.issued_at + 600,
+            statement: "測試".into(),
+            claims: "handle".into(),
+            channel: String::new(),
+        },
+        binding,
+        signature: vec![1; 64],
+        handle: Some(handle.into()),
+    }
+}
+
+/// 以指定帳戶完成登入，回傳下一步。
+pub async fn sign_in(
+    dir: &Path,
+    ss: Arc<dyn SecretStore>,
+    kind: OnboardKind,
+    account: CafecaAccount,
+    handle: &str,
+) -> (Onboarding, OnboardStep) {
+    let (mut ob, view) = Onboarding::begin(dir, ss, kind, opts()).await.unwrap();
+    assert_eq!(view.code.len(), 9);
+    let b = ob.binding_for_tests().unwrap();
+    let step = ob
+        .submit_proof_for_tests(proof(b, account, handle))
+        .await
+        .unwrap();
+    (ob, step)
 }
 
 pub fn store() -> Arc<dyn SecretStore> {
@@ -40,6 +93,10 @@ pub struct MailboxServer {
 pub async fn mailbox() -> MailboxServer {
     let dir = tempfile::tempdir().unwrap();
     let mb = Mailbox::open(dir.path(), None).unwrap();
+    mb.set_cafeca(
+        "https://wallet.example".into(),
+        Arc::new(Verifier::OfflineForTests),
+    );
     let ep = Endpoint::builder(presets::Minimal)
         .secret_key(SecretKey::generate())
         .relay_mode(RelayMode::Disabled)
@@ -59,10 +116,10 @@ pub async fn mailbox() -> MailboxServer {
 }
 
 pub async fn create(dir: &Path, ss: Arc<dyn SecretStore>, code: &str) -> Node {
-    let (node, _ok) = Node::create_org(
+    let (_, step) = sign_in(
         dir,
         ss,
-        CreateOrg {
+        OnboardKind::Create(CreateOrg {
             org_name: "測試組織".into(),
             my_name: "Admin".into(),
             device_name: "admin-mac".into(),
@@ -70,11 +127,14 @@ pub async fn create(dir: &Path, ss: Arc<dyn SecretStore>, code: &str) -> Node {
             timezone: "Asia/Taipei".into(),
             locale: "zh-TW".into(),
             team_name: "預設小組".into(),
-        },
-        opts(),
+        }),
+        account(),
+        "admin",
     )
-    .await
-    .unwrap();
+    .await;
+    let OnboardStep::Created(node, _ok) = step else {
+        panic!("應完成建立組織");
+    };
     node.sync_now().await.unwrap();
     node
 }
@@ -95,18 +155,41 @@ where
     false
 }
 
-/// 管理者邀請 → 送出加入（管理者可能離線）→ 核准 → 成員 Active。
+/// 送出加入申請 → 管理者核准 → 成員 Active。
 pub async fn invite_and_join(
     admin: &Node,
     dir: &Path,
     ss: Arc<dyn SecretStore>,
     name: &str,
 ) -> Node {
-    let code = admin.create_invite(Role::Member, vec![]).await.unwrap();
-    let node = Node::join(dir, ss, &code, name, &format!("{name}-pc"), opts())
-        .await
-        .unwrap();
-    admin.sync_now().await.unwrap();
+    join_as(admin, dir, ss, name, account()).await
+}
+
+/// 以指定帳戶申請加入並由管理者核准。
+pub async fn join_as(
+    admin: &Node,
+    dir: &Path,
+    ss: Arc<dyn SecretStore>,
+    name: &str,
+    acct: CafecaAccount,
+) -> Node {
+    let org_code = admin.org_ticket().unwrap();
+    let (_, step) = sign_in(
+        dir,
+        ss,
+        OnboardKind::Join {
+            org_code,
+            my_name: name.into(),
+            device_name: format!("{name}-pc"),
+        },
+        acct,
+        name,
+    )
+    .await;
+    let OnboardStep::WaitingApproval(node) = step else {
+        panic!("應等待核准");
+    };
+    approve_pending(admin, &node).await;
     assert!(
         eventually(Duration::from_secs(10), || async {
             let _ = node.sync_now().await;
@@ -117,6 +200,20 @@ pub async fn invite_and_join(
         "{name} 未完成加入"
     );
     node
+}
+
+/// 管理者等到申請出現後核准。
+pub async fn approve_pending(admin: &Node, node: &Node) {
+    let device = node.device();
+    assert!(
+        eventually(Duration::from_secs(10), || async {
+            let _ = admin.sync_now().await;
+            admin.pending_joins().iter().any(|j| j.device == device)
+        })
+        .await,
+        "管理者未收到申請"
+    );
+    admin.approve_join(device, false, vec![]).await.unwrap();
 }
 
 pub fn org_name(n: &Node) -> String {

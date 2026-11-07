@@ -7,6 +7,9 @@
 //!
 //! 語意：憑證在**簽發當時**簽發者有效即可。之後撤銷某位管理者，不會讓他先前加入的成員失效；
 //! 若要移除那些成員，需各自撤銷。
+//!
+//! v0.13（§17.7）：同一成員可有多張憑證（還原換發），以 `issued_at` 最新者為準；被取代的 IK
+//! 只接受時間早於取代時間的簽章，由它簽發的 DeviceCert 一律失效。
 
 use std::collections::{HashMap, HashSet};
 
@@ -17,6 +20,7 @@ use hills_proto::{
 };
 
 use crate::{IdentityError, cert::org_id_for, cert::verify_signature, member_id_for};
+use hills_proto::Timestamp;
 
 /// 驗證通過的裝置與其成員。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,7 +41,10 @@ impl Verified {
 pub struct TrustStore {
     org_root: Pub32,
     org_id: OrgId,
+    /// 目前有效的憑證（每位成員 `issued_at` 最新者）
     members: HashMap<MemberId, Signed<MemberCert>>,
+    /// 每位成員的全部憑證，依 `issued_at` 排序（含已被取代者，供驗證歷史簽章與 roster 分發）
+    history: HashMap<MemberId, Vec<Signed<MemberCert>>>,
     by_ik: HashMap<Pub32, MemberId>,
     devices: HashMap<Pub32, Signed<DeviceCert>>,
     revoked_members: HashSet<MemberId>,
@@ -51,6 +58,7 @@ impl TrustStore {
             org_root,
             org_id: org_id_for(&org_root),
             members: HashMap::new(),
+            history: HashMap::new(),
             by_ik: HashMap::new(),
             devices: HashMap::new(),
             revoked_members: HashSet::new(),
@@ -67,32 +75,57 @@ impl TrustStore {
         self.org_root
     }
 
-    fn active_admin_by_ik(&self, ik: &Pub32) -> bool {
-        self.by_ik
-            .get(ik)
-            .and_then(|m| self.members.get(m))
-            .is_some_and(|c| c.body.is_admin() && !self.revoked_members.contains(&c.body.member_id))
+    /// `ik` 在時間 `at` 是否為有效管理者：持有該 IK 的憑證具管理者角色，且在 `at` 時尚未被較新的憑證取代。
+    fn admin_at(&self, ik: &Pub32, at: Timestamp) -> bool {
+        let Some(m) = self.by_ik.get(ik) else {
+            return false;
+        };
+        if self.revoked_members.contains(m) {
+            return false;
+        }
+        let Some(list) = self.history.get(m) else {
+            return false;
+        };
+        list.iter().enumerate().any(|(i, c)| {
+            c.body.ik_pub == *ik
+                && c.body.is_admin()
+                && list.get(i + 1).is_none_or(|next| at < next.body.issued_at)
+        })
     }
 
-    /// 加入一張成員憑證：簽署者必須是 OK（僅限管理者憑證）或有效管理者。
+    /// 加入一張成員憑證：簽署者必須是 OK（僅限管理者憑證）或簽發當時有效的管理者。
+    /// 同一成員已有較新的憑證時，這張只記入歷史。
     pub fn add_member_cert(&mut self, cert: Signed<MemberCert>) -> Result<(), IdentityError> {
         let b = &cert.body;
         hills_proto::check_version(b.v)?;
         if b.org_id != self.org_id {
             return Err(IdentityError::OrgMismatch);
         }
-        let ik =
-            VerifyingKey::from_bytes(&b.ik_pub.0).map_err(|_| IdentityError::InconsistentCert)?;
-        if member_id_for(&ik) != b.member_id {
+        if VerifyingKey::from_bytes(&b.ik_pub.0).is_err() || member_id_for(&b.cafeca) != b.member_id
+        {
             return Err(IdentityError::InconsistentCert);
         }
         verify_signature(&cert)?;
         let by_root = cert.signer == self.org_root && b.is_admin();
-        if !by_root && !self.active_admin_by_ik(&cert.signer) {
+        if !by_root && !self.admin_at(&cert.signer, b.issued_at) {
             return Err(IdentityError::UnauthorizedSigner);
         }
+        let list = self.history.entry(b.member_id).or_default();
+        if list.iter().any(|c| c.sig == cert.sig) {
+            return Ok(());
+        }
+        // 同一 IK 不能屬於兩位成員
+        if let Some(other) = self.by_ik.get(&b.ik_pub)
+            && *other != b.member_id
+        {
+            return Err(IdentityError::InconsistentCert);
+        }
         self.by_ik.insert(b.ik_pub, b.member_id);
-        self.members.insert(b.member_id, cert);
+        let pos = list.partition_point(|c| c.body.issued_at <= b.issued_at);
+        list.insert(pos, cert.clone());
+        if let Some(latest) = list.last() {
+            self.members.insert(b.member_id, latest.clone());
+        }
         Ok(())
     }
 
@@ -121,7 +154,7 @@ impl TrustStore {
             return Err(IdentityError::OrgMismatch);
         }
         verify_signature(rev)?;
-        let admin = self.active_admin_by_ik(&rev.signer);
+        let admin = self.admin_at(&rev.signer, rev.body.at);
         match &rev.body.target {
             RevocationTarget::Member(m) => {
                 if !admin {
@@ -178,11 +211,23 @@ impl TrustStore {
         Roster {
             v: hills_proto::FORMAT_VERSION,
             org_id: self.org_id,
-            member_certs: self.member_certs(),
-            device_certs: self.devices.values().cloned().collect(),
+            member_certs: self.history.values().flatten().cloned().collect(),
+            device_certs: self
+                .devices
+                .values()
+                .filter(|c| self.signed_by_current_ik(c))
+                .cloned()
+                .collect(),
             revocations: self.revocations.clone(),
             issued_at,
         }
+    }
+
+    /// 裝置憑證是否由該成員目前的 IK 簽發（還原後舊裝置失效）。
+    fn signed_by_current_ik(&self, cert: &Signed<DeviceCert>) -> bool {
+        self.members
+            .get(&cert.body.member_id)
+            .is_some_and(|m| m.body.ik_pub == cert.signer)
     }
 
     /// 某位成員目前有效的裝置。
@@ -190,10 +235,20 @@ impl TrustStore {
         self.devices
             .values()
             .filter(|c| {
-                &c.body.member_id == member && !self.revoked_devices.contains(&c.body.device_pub)
+                &c.body.member_id == member
+                    && !self.revoked_devices.contains(&c.body.device_pub)
+                    && self.signed_by_current_ik(c)
             })
             .map(|c| &c.body)
             .collect()
+    }
+
+    /// 由 CAFECA 帳戶找成員（不論是否停用）。
+    pub fn member_by_cafeca(
+        &self,
+        account: &hills_proto::cafeca::CafecaAccount,
+    ) -> Option<&MemberCert> {
+        self.members.get(&member_id_for(account)).map(|c| &c.body)
     }
 
     /// 目前有效的成員。
@@ -219,18 +274,16 @@ impl TrustStore {
 
     /// 合併另一份 roster 快照（來自 mailbox 或其他節點）；回傳是否有變更。
     pub fn merge_roster(&mut self, roster: &Roster) -> Result<bool, IdentityError> {
-        let before = (
-            self.members.len(),
-            self.devices.len(),
-            self.revocations.len(),
-        );
+        let count = |t: &Self| {
+            (
+                t.history.values().map(Vec::len).sum::<usize>(),
+                t.devices.len(),
+                t.revocations.len(),
+            )
+        };
+        let before = count(self);
         self.import_roster(roster)?;
-        Ok(before
-            != (
-                self.members.len(),
-                self.devices.len(),
-                self.revocations.len(),
-            ))
+        Ok(before != count(self))
     }
 
     /// 匯出目前的 roster 內容（供推送給 mailbox）。
@@ -263,6 +316,9 @@ impl TrustStore {
             .members
             .get(&member_id)
             .ok_or(IdentityError::UnknownMember)?;
+        if member.body.ik_pub != cert.signer {
+            return Err(IdentityError::Revoked);
+        }
         Ok(Verified {
             member_id,
             device: *device,
@@ -308,17 +364,52 @@ impl TrustStore {
 mod tests {
     use super::*;
     use crate::cert::{DeviceKey, MemberPublic, OrgRootKey};
-    use crate::{MemberKeys, RecoveryPhrase};
+    use crate::{MemberKeys, member_id_for};
     use hills_proto::FORMAT_VERSION;
+    use hills_proto::cafeca::CafecaAccount;
 
     struct Org {
         ok: OrgRootKey,
         trust: TrustStore,
-        admin: MemberKeys,
+        admin: M,
     }
 
-    fn keys() -> MemberKeys {
-        RecoveryPhrase::generate().unwrap().derive_keys()
+    fn account() -> CafecaAccount {
+        let mut address = [0u8; 20];
+        getrandom::fill(&mut address).unwrap();
+        CafecaAccount {
+            chain_id: 8018,
+            address,
+        }
+    }
+
+    /// 新成員：隨機 CAFECA 帳戶與金鑰。
+    struct M {
+        keys: MemberKeys,
+        cafeca: CafecaAccount,
+    }
+
+    impl std::ops::Deref for M {
+        type Target = MemberKeys;
+        fn deref(&self) -> &MemberKeys {
+            &self.keys
+        }
+    }
+
+    impl M {
+        fn public(&self) -> MemberPublic {
+            MemberPublic::of(&self.keys, self.cafeca)
+        }
+    }
+
+    fn keys() -> M {
+        let cafeca = account();
+        M {
+            keys: MemberKeys::generate()
+                .unwrap()
+                .with_member(member_id_for(&cafeca)),
+            cafeca,
+        }
     }
 
     fn org() -> Org {
@@ -326,16 +417,16 @@ mod tests {
         let admin = keys();
         let mut trust = TrustStore::new(ok.public());
         trust
-            .add_member_cert(ok.issue_first_admin(&admin, 1).unwrap())
+            .add_member_cert(ok.issue_first_admin(admin.public(), 1).unwrap())
             .unwrap();
         Org { ok, trust, admin }
     }
 
-    fn add_member(o: &mut Org, roles: Vec<Role>) -> MemberKeys {
+    fn add_member(o: &mut Org, roles: Vec<Role>) -> M {
         let m = keys();
         let cert = o
             .admin
-            .issue_member_cert(o.trust.org_id(), MemberPublic::from(&m), roles, 2)
+            .issue_member_cert(o.trust.org_id(), m.public(), roles, 2)
             .unwrap();
         o.trust.add_member_cert(cert).unwrap();
         m
@@ -377,7 +468,7 @@ mod tests {
         let m = keys();
         let mut t = o.trust.clone();
         // OK 直接簽發一般成員憑證 → 拒絕
-        let mut body = o.ok.issue_first_admin(&m, 1).unwrap().body;
+        let mut body = o.ok.issue_first_admin(m.public(), 1).unwrap().body;
         body.roles = vec![Role::Member];
         let signed = o.ok.sign_raw(body).unwrap();
         assert!(matches!(
@@ -385,7 +476,7 @@ mod tests {
             Err(IdentityError::UnauthorizedSigner)
         ));
         // 改了內容 → 簽章失效
-        let mut tampered = o.ok.issue_first_admin(&m, 1).unwrap();
+        let mut tampered = o.ok.issue_first_admin(m.public(), 1).unwrap();
         tampered.body.issued_at = 99;
         assert!(matches!(
             t.add_member_cert(tampered),
@@ -399,12 +490,7 @@ mod tests {
         let m = add_member(&mut o, vec![Role::Member]);
         let x = keys();
         let cert = m
-            .issue_member_cert(
-                o.trust.org_id(),
-                MemberPublic::from(&x),
-                vec![Role::Member],
-                4,
-            )
+            .issue_member_cert(o.trust.org_id(), x.public(), vec![Role::Member], 4)
             .unwrap();
         assert!(matches!(
             o.trust.add_member_cert(cert),
@@ -418,12 +504,7 @@ mod tests {
         let a2 = add_member(&mut o, vec![Role::Admin, Role::Member]);
         let x = keys();
         let cert = a2
-            .issue_member_cert(
-                o.trust.org_id(),
-                MemberPublic::from(&x),
-                vec![Role::Member],
-                5,
-            )
+            .issue_member_cert(o.trust.org_id(), x.public(), vec![Role::Member], 5)
             .unwrap();
         assert!(o.trust.add_member_cert(cert).is_ok());
     }
@@ -435,7 +516,7 @@ mod tests {
         let x = keys();
         assert!(matches!(
             o.trust
-                .add_member_cert(other.issue_first_admin(&x, 1).unwrap()),
+                .add_member_cert(other.issue_first_admin(x.public(), 1).unwrap()),
             Err(IdentityError::OrgMismatch)
         ));
     }
@@ -542,12 +623,7 @@ mod tests {
         let a2 = add_member(&mut o, vec![Role::Admin, Role::Member]);
         let x = keys();
         let cx = a2
-            .issue_member_cert(
-                o.trust.org_id(),
-                MemberPublic::from(&x),
-                vec![Role::Member],
-                9,
-            )
+            .issue_member_cert(o.trust.org_id(), x.public(), vec![Role::Member], 9)
             .unwrap();
         o.trust.add_member_cert(cx).unwrap();
         let mut certs = o.trust.member_certs();
@@ -607,5 +683,96 @@ mod tests {
             o.trust.verify_hello(&dc, &mc, &other.public()),
             Err(IdentityError::InconsistentCert)
         ));
+    }
+
+    #[test]
+    fn recovery_replaces_cert_and_invalidates_old_devices() {
+        let mut o = org();
+        let a2 = add_member(&mut o, vec![Role::Admin, Role::Member]);
+        let m = add_member(&mut o, vec![Role::Member]);
+        let old_dev = add_device(&mut o, &m);
+        // a2 在還原前（時間 5）簽發一位成員
+        let x = keys();
+        let cx = a2
+            .issue_member_cert(o.trust.org_id(), x.public(), vec![Role::Member], 5)
+            .unwrap();
+        o.trust.add_member_cert(cx.clone()).unwrap();
+        // m 還原：同一 CAFECA 帳戶、新金鑰，由管理者在時間 20 換發
+        let m2 = M {
+            keys: MemberKeys::generate().unwrap().with_member(m.member_id()),
+            cafeca: m.cafeca,
+        };
+        let c2 = o
+            .admin
+            .issue_member_cert(o.trust.org_id(), m2.public(), vec![Role::Member], 20)
+            .unwrap();
+        o.trust.add_member_cert(c2).unwrap();
+        assert_eq!(
+            o.trust.member(&m.member_id()).unwrap().ik_pub,
+            m2.public().ik_pub
+        );
+        assert!(matches!(
+            o.trust.verify_device(&old_dev.public()),
+            Err(IdentityError::Revoked)
+        ));
+        assert!(o.trust.devices_of(&m.member_id()).is_empty());
+        let new_dev = add_device(&mut o, &m2);
+        assert!(o.trust.verify_device(&new_dev.public()).is_ok());
+        // 舊 IK 不能再簽發裝置
+        assert!(
+            o.trust
+                .add_device_cert(
+                    m.issue_device_cert(&DeviceKey::generate().unwrap().public(), "x", 30)
+                        .unwrap()
+                )
+                .is_err()
+        );
+        // a2 還原後：之前簽發的 x 仍可在新裝置上匯入；舊 IK 之後的簽發被拒
+        let a2b = M {
+            keys: MemberKeys::generate().unwrap().with_member(a2.member_id()),
+            cafeca: a2.cafeca,
+        };
+        let ca = o
+            .admin
+            .issue_member_cert(
+                o.trust.org_id(),
+                a2b.public(),
+                vec![Role::Admin, Role::Member],
+                40,
+            )
+            .unwrap();
+        o.trust.add_member_cert(ca).unwrap();
+        let y = keys();
+        let late = a2
+            .issue_member_cert(o.trust.org_id(), y.public(), vec![Role::Member], 41)
+            .unwrap();
+        assert!(matches!(
+            o.trust.add_member_cert(late),
+            Err(IdentityError::UnauthorizedSigner)
+        ));
+        let mut fresh = TrustStore::new(o.ok.public());
+        let mut roster = o.trust.to_roster(50);
+        roster.member_certs.reverse();
+        assert_eq!(fresh.import_roster(&roster).unwrap(), 0);
+        assert!(fresh.is_active_member(&x.member_id()));
+        assert!(fresh.verify_device(&new_dev.public()).is_ok());
+        assert!(fresh.verify_device(&old_dev.public()).is_err());
+    }
+
+    #[test]
+    fn member_id_must_match_cafeca() {
+        let mut o = org();
+        let x = keys();
+        let mut p = x.public();
+        p.cafeca.address[0] ^= 1;
+        let cert = o
+            .admin
+            .issue_member_cert(o.trust.org_id(), p, vec![Role::Member], 3)
+            .unwrap();
+        // 簽發時以 p.cafeca 推導，因此一致；竄改帳戶後簽章失效
+        o.trust.add_member_cert(cert.clone()).unwrap();
+        let mut tampered = cert;
+        tampered.body.cafeca.address[1] ^= 1;
+        assert!(o.trust.add_member_cert(tampered).is_err());
     }
 }

@@ -249,3 +249,62 @@ async fn revoked_org_member_is_pruned_from_conversations() {
     }
     mb.router.shutdown().await.unwrap();
 }
+
+/// 成員還原後（§17.7）：對話建立者重新封裝對話金鑰，還原的成員讀得到還原前的訊息。
+#[tokio::test]
+async fn recovered_member_reads_history() {
+    let mb = mailbox().await;
+    let d_admin = tempfile::tempdir().unwrap();
+    let admin = create(d_admin.path(), store(), &mb.code).await;
+    let d_alice = tempfile::tempdir().unwrap();
+    let acct = account();
+    let alice = join_as(&admin, d_alice.path(), store(), "alice", acct).await;
+    sync_all(&[&admin, &alice]).await;
+    let conv = admin
+        .create_conv(ConvKind::Dm, "", &[alice.member_id()])
+        .await
+        .unwrap();
+    admin
+        .send_message(&conv, "還原前的訊息", &[], serde_json::Value::Null)
+        .await
+        .unwrap();
+    assert!(
+        eventually(Duration::from_secs(10), || async {
+            let _ = alice.sync_now().await;
+            bodies(&alice, &conv) == ["還原前的訊息"]
+        })
+        .await
+    );
+    let org_code = alice.org_ticket().unwrap();
+    alice.shutdown().await;
+    drop(alice);
+    drop(d_alice);
+
+    let d_new = tempfile::tempdir().unwrap();
+    let (_, step) = sign_in(
+        d_new.path(),
+        store(),
+        OnboardKind::Recover {
+            org_code,
+            device_name: "new-pc".into(),
+        },
+        acct,
+        "alice",
+    )
+    .await;
+    let OnboardStep::WaitingApproval(restored) = step else {
+        panic!("還原應等待核准");
+    };
+    approve_pending(&admin, &restored).await;
+    assert!(
+        eventually(Duration::from_secs(15), || async {
+            sync_all(&[&admin, &restored]).await;
+            bodies(&restored, &conv) == ["還原前的訊息"]
+        })
+        .await,
+        "還原後應讀得到對話歷史"
+    );
+    restored.shutdown().await;
+    admin.shutdown().await;
+    mb.router.shutdown().await.unwrap();
+}

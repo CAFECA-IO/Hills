@@ -15,6 +15,7 @@ hills-proto.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+hills-identity = { workspace = true, features = ["testing"] }
 proptest.workspace = true
 
 [lints]

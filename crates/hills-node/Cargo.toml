@@ -15,6 +15,7 @@ blake3.workspace = true
 bytes.workspace = true
 data-encoding.workspace = true
 getrandom.workspace = true
+hills-cafeca.workspace = true
 hills-crypto.workspace = true
 hills-identity.workspace = true
 hills-net.workspace = true
@@ -22,6 +23,7 @@ hills-proto.workspace = true
 hills-store.workspace = true
 hills-sync.workspace = true
 iroh.workspace = true
+reqwest.workspace = true
 iroh-gossip.workspace = true
 n0-future.workspace = true
 postcard.workspace = true
@@ -33,6 +35,8 @@ tracing.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+hills-cafeca = { workspace = true, features = ["testing"] }
+hills-identity = { workspace = true, features = ["testing"] }
 hills-mailbox = { path = "../../apps/mailbox" }
 hills-storage = { path = "../../apps/storage" }
 sha2.workspace = true

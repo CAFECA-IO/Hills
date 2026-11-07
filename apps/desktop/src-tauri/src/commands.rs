@@ -1,18 +1,18 @@
 //! Tauri commands：包裝 hills-node，前端只透過這裡讀取投影、送出意圖（development-guidelines §4.2）。
 //!
-//! 錯誤以字串回傳給前端顯示；不得包含金鑰、復原詞或業務資料內容。
+//! 錯誤以字串回傳給前端顯示；不得包含金鑰或業務資料內容。
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use hills_node::{
-    ConvKind, CreateOrg, Event, LinkListener, LinkSession, Location, Look, MemberId, MemberStatus,
-    Message, Node, NodeOptions, PhraseLanguage, PresenceState, Pub32, Role, SecretStore, StepInput,
-    SyncStatus, Task, TaskInput, TaskStatus,
+    ConvKind, CreateOrg, Event, LegacyData, Location, Look, MemberId, MemberStatus, Message, Node,
+    NodeOptions, OnboardKind, OnboardStep, Onboarding, PresenceState, Pub32, SecretStore,
+    StepInput, SyncStatus, Task, TaskInput, TaskStatus,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::Mutex;
 
 use crate::keychain::Keychain;
 
@@ -25,8 +25,6 @@ pub(crate) fn e(err: impl std::fmt::Display) -> String {
 /// 前端事件名稱（`hills://…`）。
 pub mod events {
     pub const NODE: &str = "hills://node";
-    pub const LINK_SAS: &str = "hills://link-sas";
-    pub const LINK_DONE: &str = "hills://link-done";
 }
 
 pub struct AppState {
@@ -35,10 +33,8 @@ pub struct AppState {
     pub(crate) node: Mutex<Option<Node>>,
     /// 使用者本次選擇的檔案與下載目標（technical-design §15.2–15.5）
     pub(crate) files: std::sync::Mutex<crate::files::Registry>,
-    /// 新裝置端：等待舊裝置（取消用）
-    link_cancel: Mutex<Option<oneshot::Sender<()>>>,
-    /// 舊裝置端：已計算 SAS、等待使用者確認
-    link_session: Mutex<Option<LinkSession>>,
+    /// 進行中的 CAFECA 登入（technical-design §17）與其登入連結
+    onboarding: Mutex<Option<(Onboarding, String)>>,
     /// 前端目前開著的對話（該對話的新訊息不發通知）
     active_conv: std::sync::Mutex<Option<String>>,
     /// 會議 / 午休 / 專注期間延後的通知數（technical-design §5.1 v0.11）
@@ -51,8 +47,7 @@ impl AppState {
             dir,
             secrets: Arc::new(Keychain::new()),
             node: Mutex::new(None),
-            link_cancel: Mutex::new(None),
-            link_session: Mutex::new(None),
+            onboarding: Mutex::new(None),
             active_conv: std::sync::Mutex::new(None),
             deferred: std::sync::Mutex::new(0),
             files: std::sync::Mutex::new(crate::files::Registry::default()),
@@ -82,7 +77,13 @@ fn forward_events(app: &AppHandle, node: &Node) {
                         Event::DocChanged(_) => "doc",
                         Event::ConvsChanged => "convs",
                         Event::Message { .. } => "message",
+                        Event::JoinsChanged => "joins",
+                        Event::DeviceAdded { .. } => "device-added",
+                        Event::Rejected => "rejected",
                     };
+                    if let Event::DeviceAdded { name, .. } = &ev {
+                        notify_device_added(&app, &node, name);
+                    }
                     if let Event::Message {
                         conv,
                         author,
@@ -139,6 +140,25 @@ fn notify_message(app: &AppHandle, node: &Node, conv: &str, author: &MemberId, p
         .builder()
         .title(title)
         .body(preview)
+        .show();
+}
+
+/// 本人的新裝置已加入（technical-design §17.6 步驟 5）：可在「設定 → 我的裝置」撤銷。
+fn notify_device_added(app: &AppHandle, node: &Node, name: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    let zh = !node.org().locale.starts_with("en");
+    let body = if zh {
+        format!("新裝置「{name}」已加入你的帳戶。如果不是你本人，請到「設定 → 我的裝置」撤銷。")
+    } else {
+        format!(
+            "New device “{name}” was added to your account. If it wasn't you, revoke it in Settings → My devices."
+        )
+    };
+    let _ = app
+        .notification()
+        .builder()
+        .title("Hills")
+        .body(body)
         .show();
 }
 
@@ -213,7 +233,7 @@ pub fn app_version() -> &'static str {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInfo {
-    /// welcome / pending / ready
+    /// welcome / pending / ready / legacy（舊版資料，需清除，technical-design §17.9）
     phase: &'static str,
     member_id: Option<String>,
     org_name: Option<String>,
@@ -226,13 +246,25 @@ pub struct AppInfo {
 #[tauri::command]
 pub async fn app_info(app: AppHandle, state: State<'_, AppState>) -> CmdResult<AppInfo> {
     let mut guard = state.node.lock().await;
-    if guard.is_none()
-        && let Some(node) = Node::open(&state.dir, state.secrets.clone(), opts())
-            .await
-            .map_err(e)?
-    {
-        forward_events(&app, &node);
-        *guard = Some(node);
+    if guard.is_none() {
+        match Node::open(&state.dir, state.secrets.clone(), opts()).await {
+            Ok(Some(node)) => {
+                forward_events(&app, &node);
+                *guard = Some(node);
+            }
+            Ok(None) => {}
+            Err(err) if err.downcast_ref::<LegacyData>().is_some() => {
+                return Ok(AppInfo {
+                    phase: "legacy",
+                    member_id: None,
+                    org_name: None,
+                    is_admin: false,
+                    sync: None,
+                    has_org_root: false,
+                });
+            }
+            Err(err) => return Err(e(err)),
+        }
     }
     let Some(n) = guard.as_ref() else {
         return Ok(AppInfo {
@@ -264,103 +296,175 @@ pub async fn app_info(app: AppHandle, state: State<'_, AppState>) -> CmdResult<A
     })
 }
 
+/// 清除本機所有 Hills 資料（舊版資料，或使用者要重新開始；technical-design §17.9）。
+#[tauri::command]
+pub async fn reset_local_data(state: State<'_, AppState>) -> CmdResult<()> {
+    let mut guard = state.node.lock().await;
+    if let Some(n) = guard.take() {
+        n.shutdown().await;
+    }
+    if let Some((ob, _)) = state.onboarding.lock().await.take() {
+        ob.cancel().await;
+    }
+    hills_node::config::wipe_secrets(&state.secrets).map_err(e)?;
+    if state.dir.exists() {
+        std::fs::remove_dir_all(&state.dir).map_err(e)?;
+    }
+    std::fs::create_dir_all(&state.dir).map_err(e)?;
+    Ok(())
+}
+
+// ── 以 CAFECA 登入（technical-design §17）────────────────
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CreateOrgArgs {
+pub struct OnboardArgs {
+    /// create / join / recover
+    kind: String,
+    #[serde(default)]
     org_name: String,
+    #[serde(default)]
     my_name: String,
     device_name: String,
-    mailbox_code: String,
+    /// create：mailbox 連線碼；join / recover：組織連線碼
+    code: String,
+    #[serde(default)]
     timezone: String,
+    #[serde(default)]
     locale: String,
+    #[serde(default)]
     team_name: String,
 }
 
+/// 登入連結（QR 與「在這台電腦開啟」）與確認碼。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignInInfo {
+    code: String,
+    expires_at: u64,
+    qr_svg: String,
+}
+
+/// 開始以 CAFECA 登入。
 #[tauri::command]
-pub async fn create_org(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    args: CreateOrgArgs,
-) -> CmdResult<()> {
-    let (node, _ok) = Node::create_org(
-        &state.dir,
-        state.secrets.clone(),
-        CreateOrg {
+pub async fn onboard_begin(state: State<'_, AppState>, args: OnboardArgs) -> CmdResult<SignInInfo> {
+    let device_name = args.device_name.trim().chars().take(60).collect::<String>();
+    let kind = match args.kind.as_str() {
+        "create" => OnboardKind::Create(CreateOrg {
             org_name: args.org_name.trim().to_owned(),
             my_name: args.my_name.trim().to_owned(),
-            device_name: args.device_name.trim().to_owned(),
-            mailbox_code: args.mailbox_code,
+            device_name,
+            mailbox_code: args.code,
             timezone: args.timezone,
             locale: args.locale,
             team_name: args.team_name,
+        }),
+        "join" => OnboardKind::Join {
+            org_code: args.code,
+            my_name: args.my_name.trim().to_owned(),
+            device_name,
         },
-        opts(),
-    )
-    .await
-    .map_err(e)?;
-    install(&app, &state, node).await;
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn join_org(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    invite_code: String,
-    my_name: String,
-    device_name: String,
-) -> CmdResult<()> {
-    let node = Node::join(
-        &state.dir,
-        state.secrets.clone(),
-        &invite_code,
-        my_name.trim(),
-        device_name.trim(),
-        opts(),
-    )
-    .await
-    .map_err(e)?;
-    install(&app, &state, node).await;
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn recover(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    words: String,
-    org_code: String,
-    device_name: String,
-) -> CmdResult<()> {
-    let node = Node::recover(
-        &state.dir,
-        state.secrets.clone(),
-        &words,
-        &org_code,
-        device_name.trim(),
-        opts(),
-    )
-    .await
-    .map_err(e)?;
-    install(&app, &state, node).await;
-    Ok(())
-}
-
-fn lang(l: &str) -> PhraseLanguage {
-    if l.starts_with("en") {
-        PhraseLanguage::English
-    } else {
-        PhraseLanguage::TraditionalChinese
+        "recover" => OnboardKind::Recover {
+            org_code: args.code,
+            device_name,
+        },
+        _ => return Err("未知的登入目的".into()),
+    };
+    if let Some((old, _)) = state.onboarding.lock().await.take() {
+        old.cancel().await;
     }
+    let (ob, view) = Onboarding::begin(&state.dir, state.secrets.clone(), kind, opts())
+        .await
+        .map_err(e)?;
+    let qr = qrcode::QrCode::new(view.link.as_bytes()).map_err(e)?;
+    let qr_svg = qr
+        .render::<qrcode::render::svg::Color>()
+        .min_dimensions(220, 220)
+        .quiet_zone(true)
+        .build();
+    *state.onboarding.lock().await = Some((ob, view.link));
+    Ok(SignInInfo {
+        code: view.code,
+        expires_at: view.expires_at,
+        qr_svg,
+    })
 }
 
-/// 以介面語言回傳復原詞（D38）。只在復原詞畫面呼叫，前端不保存。
+/// 以系統瀏覽器開啟目前的登入連結（「在這台電腦開啟」）。
 #[tauri::command]
-pub async fn recovery_words(state: State<'_, AppState>, locale: String) -> CmdResult<Vec<String>> {
-    with_node!(state, n => Ok(n.recovery_words(lang(&locale))))
+pub async fn onboard_open_link(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let link = state
+        .onboarding
+        .lock()
+        .await
+        .as_ref()
+        .map(|(_, l)| l.clone())
+        .ok_or("沒有進行中的登入")?;
+    app.opener().open_url(link, None::<&str>).map_err(e)
 }
 
-/// 匯出組織根金鑰備份到「下載」資料夾，回傳檔案路徑。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardStatus {
+    /// signin / device / approval / created / linked / denied / expired
+    step: &'static str,
+    handle: Option<String>,
+}
+
+/// 查詢登入進度。完成時節點已啟動。
+#[tauri::command]
+pub async fn onboard_poll(app: AppHandle, state: State<'_, AppState>) -> CmdResult<OnboardStatus> {
+    let mut guard = state.onboarding.lock().await;
+    let Some((ob, _)) = guard.as_mut() else {
+        return Err("沒有進行中的登入".into());
+    };
+    let step = match ob.poll().await {
+        Ok(s) => s,
+        Err(err) => {
+            let code = match err.downcast_ref::<hills_cafeca::CafecaError>() {
+                Some(hills_cafeca::CafecaError::Denied) => Some("denied"),
+                Some(hills_cafeca::CafecaError::Expired) => Some("expired"),
+                _ => None,
+            };
+            return match code {
+                Some(step) => {
+                    if let Some((ob, _)) = guard.take() {
+                        ob.cancel().await;
+                    }
+                    Ok(OnboardStatus { step, handle: None })
+                }
+                None => Err(e(err)),
+            };
+        }
+    };
+    let (status, node) = match step {
+        OnboardStep::WaitingSignIn => (("signin", None), None),
+        OnboardStep::WaitingDevice { handle } => (("device", handle), None),
+        OnboardStep::WaitingApproval(n) => (("approval", None), Some(n)),
+        OnboardStep::Created(n, _ok) => (("created", None), Some(n)),
+        OnboardStep::Linked(n) => (("linked", None), Some(n)),
+    };
+    if let Some(n) = node {
+        guard.take();
+        drop(guard);
+        install(&app, &state, n).await;
+    }
+    Ok(OnboardStatus {
+        step: status.0,
+        handle: status.1,
+    })
+}
+
+#[tauri::command]
+pub async fn onboard_cancel(state: State<'_, AppState>) -> CmdResult<()> {
+    if let Some((ob, _)) = state.onboarding.lock().await.take() {
+        ob.cancel().await;
+    }
+    Ok(())
+}
+
+/// 匯出組織根金鑰備份到「下載」資料夾，回傳檔案路徑。/// 匯出組織根金鑰備份到「下載」資料夾，回傳檔案路徑。
 #[tauri::command]
 pub async fn export_org_root_backup(
     app: AppHandle,
@@ -380,95 +484,6 @@ pub async fn export_org_root_backup(
     }
     std::fs::write(&path, bytes).map_err(e)?;
     Ok(path.display().to_string())
-}
-
-// ── 新裝置綁定 ──────────────────────────────────────────
-
-/// 新裝置：開始等待舊裝置，回傳綁定碼與 QR（SVG）。SAS 以事件 `hills://link-sas` 送出，
-/// 完成或失敗以 `hills://link-done`（payload：錯誤訊息或 null）送出。
-#[tauri::command]
-pub async fn link_start(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    org_code: String,
-    device_name: String,
-) -> CmdResult<Code> {
-    let listener = LinkListener::start(
-        &state.dir,
-        state.secrets.clone(),
-        &org_code,
-        device_name.trim(),
-        opts(),
-    )
-    .await
-    .map_err(e)?;
-    let code = Code::new(listener.code.clone())?;
-    let (cancel_tx, cancel_rx) = oneshot::channel();
-    if let Some(old) = state.link_cancel.lock().await.replace(cancel_tx) {
-        let _ = old.send(());
-    }
-    let app2 = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let mut sas = listener.sas.clone();
-        let app3 = app2.clone();
-        let sas_task = tauri::async_runtime::spawn(async move {
-            if sas.wait_for(|s| s.is_some()).await.is_ok() {
-                let v = sas.borrow().clone();
-                let _ = app3.emit(events::LINK_SAS, v);
-            }
-        });
-        let result = tokio::select! {
-            r = listener.finish() => r.map(Some),
-            _ = cancel_rx => Ok(None),
-        };
-        sas_task.abort();
-        let state = app2.state::<AppState>();
-        match result {
-            Ok(Some(node)) => {
-                install(&app2, &state, node).await;
-                let _ = app2.emit(events::LINK_DONE, Option::<String>::None);
-            }
-            Ok(None) => {}
-            Err(err) => {
-                let _ = app2.emit(events::LINK_DONE, Some(err.to_string()));
-            }
-        }
-    });
-    Ok(code)
-}
-
-#[tauri::command]
-pub async fn link_cancel(state: State<'_, AppState>) -> CmdResult<()> {
-    if let Some(tx) = state.link_cancel.lock().await.take() {
-        let _ = tx.send(());
-    }
-    if let Some(s) = state.link_session.lock().await.take() {
-        s.cancel().await;
-    }
-    Ok(())
-}
-
-/// 舊裝置：貼上新裝置的綁定碼，回傳 SAS 供比對。
-#[tauri::command]
-pub async fn link_device(state: State<'_, AppState>, code: String) -> CmdResult<String> {
-    let session = with_node!(state, n => n.link_device(&code).await.map_err(e)?);
-    let sas = session.sas.clone();
-    if let Some(old) = state.link_session.lock().await.replace(session) {
-        old.cancel().await;
-    }
-    Ok(sas)
-}
-
-/// 舊裝置：使用者確認兩邊數字一致。
-#[tauri::command]
-pub async fn link_confirm(state: State<'_, AppState>, device_name: String) -> CmdResult<()> {
-    let session = state
-        .link_session
-        .lock()
-        .await
-        .take()
-        .ok_or("沒有進行中的綁定")?;
-    session.confirm(device_name.trim()).await.map_err(e)
 }
 
 // ── 團隊與上線狀態 ──────────────────────────────────────
@@ -853,42 +868,73 @@ pub async fn org_code(state: State<'_, AppState>) -> CmdResult<Code> {
     with_node!(state, n => Code::new(n.org_ticket().map_err(e)?))
 }
 
-#[tauri::command]
-pub async fn create_invite(state: State<'_, AppState>, admin: bool) -> CmdResult<Code> {
-    let role = if admin { Role::Admin } else { Role::Member };
-    with_node!(state, n => Code::new(n.create_invite(role, vec![]).await.map_err(e)?))
-}
-
+/// 本人的 CAFECA 帳戶（設定 → 個人）。
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct InviteView {
-    id: String,
-    admin: bool,
-    expires_at: i64,
-    mine: bool,
+pub struct AccountView {
+    address: String,
+    short: String,
+    handle: Option<String>,
 }
 
-/// 尚未使用、未撤銷、未過期的邀請。
 #[tauri::command]
-pub async fn invites(state: State<'_, AppState>) -> CmdResult<Vec<InviteView>> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0);
-    with_node!(state, n => {
-        let me = n.member_id();
-        Ok(n.org()
-            .invites
-            .into_iter()
-            .filter(|(_, i)| i.used_by.is_none() && !i.revoked && i.expires_at > now)
-            .map(|(id, i)| InviteView {
-                id,
-                admin: i.role == Role::Admin,
-                expires_at: i.expires_at,
-                mine: i.created_by == me,
-            })
-            .collect())
-    })
+pub async fn cafeca_account(state: State<'_, AppState>) -> CmdResult<Option<AccountView>> {
+    with_node!(state, n => Ok(n.cafeca().map(|a| AccountView {
+        address: a.address_hex(),
+        short: a.short(),
+        handle: n.org().members.get(&n.member_id()).and_then(|m| m.handle.clone()),
+    })))
+}
+
+/// 待核准的加入與還原申請（管理者，ui-spec「設定」D41 補充）。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JoinRequestView {
+    device: String,
+    kind: &'static str,
+    member_id: String,
+    name: String,
+    device_name: String,
+    handle: Option<String>,
+    account: String,
+    account_short: String,
+    received_at: i64,
+}
+
+#[tauri::command]
+pub async fn pending_joins(state: State<'_, AppState>) -> CmdResult<Vec<JoinRequestView>> {
+    with_node!(state, n => Ok(n
+        .pending_joins()
+        .into_iter()
+        .map(|j| JoinRequestView {
+            device: j.device.to_string(),
+            kind: j.kind,
+            member_id: j.member.to_string(),
+            name: j.name,
+            device_name: j.device_name,
+            handle: j.handle,
+            account: j.account,
+            account_short: j.account_short,
+            received_at: j.received_at,
+        })
+        .collect()))
+}
+
+#[tauri::command]
+pub async fn approve_join(
+    state: State<'_, AppState>,
+    device: String,
+    admin: bool,
+    teams: Vec<String>,
+) -> CmdResult<()> {
+    let device = parse_pub(&device)?;
+    with_node!(state, n => n.approve_join(device, admin, teams).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn reject_join(state: State<'_, AppState>, device: String) -> CmdResult<()> {
+    let device = parse_pub(&device)?;
+    with_node!(state, n => n.reject_join(device).await.map_err(e))
 }
 
 #[tauri::command]
@@ -1150,13 +1196,7 @@ mod tests {
 
     #[test]
     fn qr_is_svg() {
-        let c = Code::new("hills1-test".into()).unwrap();
+        let c = Code::new("hills-org1-test".into()).unwrap();
         assert!(c.qr_svg.contains("<svg"));
-    }
-
-    #[test]
-    fn phrase_language_follows_locale() {
-        assert_eq!(lang("en"), PhraseLanguage::English);
-        assert_eq!(lang("zh-TW"), PhraseLanguage::TraditionalChinese);
     }
 }

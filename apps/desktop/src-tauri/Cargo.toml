@@ -24,6 +24,7 @@ unicode-normalization = "0.1"
 data-encoding.workspace = true
 getrandom.workspace = true
 anyhow.workspace = true
+hills-cafeca.workspace = true
 hills-node.workspace = true
 keyring.workspace = true
 qrcode.workspace = true

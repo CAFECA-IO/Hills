@@ -9,13 +9,17 @@ use std::time::{Duration, Instant};
 
 use automerge::{AutoCommit, ROOT, transaction::Transactable};
 use hills_crypto::{KeyRing, open_bundle, rotate, seal_bundle};
-use hills_identity::cert::{DeviceKey, MemberPublic, OrgRootKey};
+use hills_identity::MemberKeys;
+use hills_identity::cert::{DeviceKey, OrgRootKey};
 use hills_identity::trust::TrustStore;
-use hills_identity::{MemberKeys, RecoveryPhrase};
 use hills_mailbox::{MAILBOX_ALPN, Mailbox, serve};
 use hills_net::NetError;
 use hills_net::mailbox::MailboxClient;
-use hills_proto::mailbox::Hello;
+use hills_proto::cafeca::{
+    APP_DOMAIN, Application, CafecaAccount, CafecaProof, DeviceApplication, JoinApplication,
+    SignInBinding, SignInKind, SignInMessage,
+};
+use hills_proto::mailbox::{Hello, JoinState};
 use hills_proto::{FORMAT_VERSION, KeyFamily, MemberId, Pub32, RevocationTarget, Role, Roster};
 use hills_sync::{Directory, Validator, sign_change};
 use iroh::{Endpoint, EndpointAddr, RelayMode, SecretKey, endpoint::presets, protocol::Router};
@@ -34,9 +38,14 @@ struct Org {
 }
 
 fn person(trust: &mut TrustStore, issuer: &MemberKeys, roles: Vec<Role>) -> Person {
-    let keys = RecoveryPhrase::generate().unwrap().derive_keys();
+    let keys = hills_identity::testing::keys();
     let cert = issuer
-        .issue_member_cert(trust.org_id(), MemberPublic::from(&keys), roles, 1)
+        .issue_member_cert(
+            trust.org_id(),
+            hills_identity::testing::public(&keys),
+            roles,
+            1,
+        )
         .unwrap();
     trust.add_member_cert(cert).unwrap();
     Person {
@@ -48,9 +57,12 @@ fn person(trust: &mut TrustStore, issuer: &MemberKeys, roles: Vec<Role>) -> Pers
 fn org() -> Org {
     let ok = OrgRootKey::generate().unwrap();
     let mut trust = TrustStore::new(ok.public());
-    let akeys = RecoveryPhrase::generate().unwrap().derive_keys();
+    let akeys = hills_identity::testing::keys();
     trust
-        .add_member_cert(ok.issue_first_admin(&akeys, 1).unwrap())
+        .add_member_cert(
+            ok.issue_first_admin(hills_identity::testing::public(&akeys), 1)
+                .unwrap(),
+        )
         .unwrap();
     let admin = Person {
         keys: akeys,
@@ -119,6 +131,10 @@ struct Server {
 async fn server(o: &Org) -> (Server, Arc<Mailbox>) {
     let dir = tempfile::tempdir().unwrap();
     let mailbox = Mailbox::open(dir.path(), Some(o.ok.public())).unwrap();
+    mailbox.set_cafeca(
+        "https://wallet.example".into(),
+        Arc::new(hills_cafeca::Verifier::OfflineForTests),
+    );
     let ep = endpoint_for(&DeviceKey::generate().unwrap(), vec![MAILBOX_ALPN.to_vec()]).await;
     let addr = ep.addr();
     let router = serve(ep, mailbox.clone());
@@ -357,20 +373,72 @@ fn now() -> i64 {
         .as_millis() as i64
 }
 
-fn join_request(p: &Person) -> hills_proto::JoinRequest {
-    let mut r = hills_proto::JoinRequest {
+fn now_secs() -> u64 {
+    (now() / 1000) as u64
+}
+
+/// 測試用登入證明：綁定內容與 nonce 正確，簽章不經鏈上驗證（OfflineForTests）。
+fn proof(
+    org_id: hills_proto::OrgId,
+    kind: SignInKind,
+    account: CafecaAccount,
+    device: Pub32,
+    ik: Option<Pub32>,
+    key: Pub32,
+) -> CafecaProof {
+    let binding = SignInBinding {
         v: FORMAT_VERSION,
-        ik_pub: Pub32(p.keys.identity_public().to_bytes()),
+        org_id,
+        kind,
+        device_pub: device,
+        ik_pub: ik,
+        key_pub: key,
+        issued_at: now_secs(),
+    };
+    CafecaProof {
+        v: FORMAT_VERSION,
+        account,
+        message: SignInMessage {
+            domain: APP_DOMAIN.into(),
+            uri: APP_DOMAIN.into(),
+            nonce: hills_cafeca::nonce_for(&binding),
+            issued_at: binding.issued_at,
+            expires_at: binding.issued_at + 600,
+            statement: "加入".into(),
+            claims: "handle".into(),
+            channel: String::new(),
+        },
+        binding,
+        signature: vec![7; 64],
+        handle: Some("newbie".into()),
+    }
+}
+
+fn join_app(o: &Org, p: &Person, kind: SignInKind) -> Application {
+    let account = hills_identity::testing::account_of(&p.keys);
+    let ik = Pub32(p.keys.identity_public().to_bytes());
+    let a = JoinApplication {
+        v: FORMAT_VERSION,
+        proof: proof(
+            o.trust.org_id(),
+            kind,
+            account,
+            p.device.public(),
+            Some(ik),
+            ek(p),
+        ),
+        ik_pub: ik,
         ek_pub: ek(p),
         device_cert: p
             .keys
             .issue_device_cert(&p.device.public(), "new-laptop", 2)
             .unwrap(),
         name: "新成員".into(),
-        mac: [0; 32],
     };
-    r.mac = hills_crypto::exchange::join_mac(&[9; 16], &[1; 8], &r.mac_input().unwrap());
-    r
+    match kind {
+        SignInKind::Recover => Application::Recover(a),
+        _ => Application::Join(a),
+    }
 }
 
 async fn bootstrap(o: &Org) -> (Server, MailboxClient, Endpoint) {
@@ -449,42 +517,25 @@ async fn devices_revocations_and_roster_distribution() {
 }
 
 #[tokio::test]
-async fn invite_and_join_flow() {
+async fn join_device_and_recover_flow() {
     let o = org();
     let (srv, admin, _aep) = bootstrap(&o).await;
     let (alice, _alep) = connect(&srv, &o, &o.alice).await.unwrap();
+    let org_id = o.trust.org_id();
     let newbie = Person {
-        keys: RecoveryPhrase::generate().unwrap().derive_keys(),
+        keys: hills_identity::testing::keys(),
         device: DeviceKey::generate().unwrap(),
     };
     let nep = endpoint_for(&newbie.device, vec![]).await;
-    let org_id = o.trust.org_id();
 
-    // 未登記的邀請 → 拒絕
-    assert!(
-        MailboxClient::join(
-            &nep,
-            srv.addr.clone(),
-            org_id,
-            [1; 8],
-            join_request(&newbie)
-        )
-        .await
-        .is_err()
+    // Config 不需 Hello
+    assert_eq!(
+        MailboxClient::config(&nep, srv.addr.clone())
+            .await
+            .unwrap()
+            .cafeca_wallet,
+        "https://wallet.example"
     );
-    // 一般成員不能登記邀請
-    assert!(alice.register_invite([1; 8], now() + 60_000).await.is_err());
-    admin.register_invite([1; 8], now() + 60_000).await.unwrap();
-    MailboxClient::join(
-        &nep,
-        srv.addr.clone(),
-        org_id,
-        [1; 8],
-        join_request(&newbie),
-    )
-    .await
-    .unwrap();
-
     // 申請中的裝置必須是連線的 NodeId
     let other = endpoint_for(&DeviceKey::generate().unwrap(), vec![]).await;
     assert!(
@@ -492,56 +543,185 @@ async fn invite_and_join_flow() {
             &other,
             srv.addr.clone(),
             org_id,
-            [1; 8],
-            join_request(&newbie)
+            join_app(&o, &newbie, SignInKind::Join)
         )
         .await
         .is_err()
     );
-
-    // 只有管理者能讀取申請
-    assert!(alice.fetch_joins().await.is_err());
-    let joins = admin.fetch_joins().await.unwrap();
-    assert_eq!(joins.len(), 1);
-    assert_eq!(joins[0].request.name, "新成員");
-
-    // 每個邀請最多 5 筆待處理
-    for _ in 0..4 {
-        let p = Person {
-            keys: RecoveryPhrase::generate().unwrap().derive_keys(),
-            device: DeviceKey::generate().unwrap(),
-        };
-        let ep = endpoint_for(&p.device, vec![]).await;
-        MailboxClient::join(&ep, srv.addr.clone(), org_id, [1; 8], join_request(&p))
-            .await
-            .unwrap();
+    // 綁定內容與申請不符（換掉 EK）→ 拒絕
+    let mut bad = join_app(&o, &newbie, SignInKind::Join);
+    if let Application::Join(a) = &mut bad {
+        a.ek_pub = Pub32([9; 32]);
     }
-    let p = Person {
-        keys: RecoveryPhrase::generate().unwrap().derive_keys(),
-        device: DeviceKey::generate().unwrap(),
-    };
-    let ep = endpoint_for(&p.device, vec![]).await;
-    assert!(matches!(
-        MailboxClient::join(&ep, srv.addr.clone(), org_id, [1; 8], join_request(&p)).await,
-        Err(NetError::Remote(m)) if m.contains("TooLarge")
-    ));
-
-    // 關閉邀請後無法再申請，待處理清單也清空
-    admin.close_invite([1; 8]).await.unwrap();
-    assert!(admin.fetch_joins().await.unwrap().is_empty());
+    assert!(
+        MailboxClient::join(&nep, srv.addr.clone(), org_id, bad)
+            .await
+            .is_err()
+    );
+    // 不是成員不能「還原」
     assert!(
         MailboxClient::join(
             &nep,
             srv.addr.clone(),
             org_id,
-            [1; 8],
-            join_request(&newbie)
+            join_app(&o, &newbie, SignInKind::Recover)
         )
         .await
         .is_err()
     );
-    // 過期的邀請無法登記
-    assert!(admin.register_invite([2; 8], now() - 1).await.is_err());
+
+    assert_eq!(
+        MailboxClient::join(
+            &nep,
+            srv.addr.clone(),
+            org_id,
+            join_app(&o, &newbie, SignInKind::Join),
+        )
+        .await
+        .unwrap(),
+        JoinState::Pending
+    );
+    assert_eq!(
+        MailboxClient::join_status(&nep, srv.addr.clone(), org_id, newbie.device.public())
+            .await
+            .unwrap(),
+        JoinState::Pending
+    );
+    // 只有管理者能讀取申請
+    assert!(alice.fetch_joins().await.is_err());
+    let joins = admin.fetch_joins().await.unwrap();
+    assert_eq!(joins.len(), 1);
+    assert_eq!(joins[0].application.name(), "新成員");
+    assert_eq!(joins[0].handle.as_deref(), Some("newbie"));
+    // 拒絕 → 申請者看到 Rejected，管理者清單清空
+    admin
+        .resolve_join(newbie.device.public(), false)
+        .await
+        .unwrap();
+    assert!(admin.fetch_joins().await.unwrap().is_empty());
+    assert_eq!(
+        MailboxClient::join_status(&nep, srv.addr.clone(), org_id, newbie.device.public())
+            .await
+            .unwrap(),
+        JoinState::Rejected
+    );
+
+    // 新裝置：alice 的帳戶申請；只有 alice 的裝置看得到並能封裝
+    let d2 = DeviceKey::generate().unwrap();
+    let eph = Pub32([5; 32]);
+    let dev_app = Application::Device(DeviceApplication {
+        v: FORMAT_VERSION,
+        proof: proof(
+            org_id,
+            SignInKind::Join,
+            hills_identity::testing::account_of(&o.alice.keys),
+            d2.public(),
+            None,
+            eph,
+        ),
+        device_pub: d2.public(),
+        eph_pub: eph,
+        name: "第二台".into(),
+    });
+    let d2ep = endpoint_for(&d2, vec![]).await;
+    assert_eq!(
+        MailboxClient::join(&d2ep, srv.addr.clone(), org_id, dev_app)
+            .await
+            .unwrap(),
+        JoinState::AwaitingDevice
+    );
+    assert_eq!(
+        MailboxClient::join_status(&d2ep, srv.addr.clone(), org_id, d2.public())
+            .await
+            .unwrap(),
+        JoinState::AwaitingDevice
+    );
+    assert!(admin.fetch_device_requests().await.unwrap().is_empty());
+    let reqs = alice.fetch_device_requests().await.unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert!(
+        admin
+            .put_device_grant(d2.public(), vec![1, 2, 3])
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        MailboxClient::fetch_device_grant(&d2ep, srv.addr.clone(), org_id, d2.public())
+            .await
+            .unwrap(),
+        None
+    );
+    alice
+        .put_device_grant(d2.public(), vec![1, 2, 3])
+        .await
+        .unwrap();
+    assert_eq!(
+        MailboxClient::fetch_device_grant(&d2ep, srv.addr.clone(), org_id, d2.public())
+            .await
+            .unwrap(),
+        Some(vec![1, 2, 3])
+    );
+    // 別的裝置不能取走封裝
+    assert!(
+        MailboxClient::fetch_device_grant(&nep, srv.addr.clone(), org_id, d2.public())
+            .await
+            .is_err()
+    );
+    // 已是成員的帳戶以「加入」申請 → 自動轉為新裝置申請
+    let alice_dev = Person {
+        keys: hills_identity::MemberKeys::from_secret_bytes(
+            o.alice.keys.member_id(),
+            &o.alice.keys.identity_secret_bytes(),
+            &hills_identity::testing::keys().exchange_secret_bytes(),
+        ),
+        device: DeviceKey::generate().unwrap(),
+    };
+    let adep = endpoint_for(&alice_dev.device, vec![]).await;
+    assert_eq!(
+        MailboxClient::join(
+            &adep,
+            srv.addr.clone(),
+            org_id,
+            join_app(&o, &alice_dev, SignInKind::Join),
+        )
+        .await
+        .unwrap(),
+        JoinState::AwaitingDevice
+    );
+    assert_eq!(alice.fetch_device_requests().await.unwrap().len(), 1);
+
+    // 還原：alice 的帳戶以新金鑰申請，管理者可見
+    let alice2 = Person {
+        keys: hills_identity::MemberKeys::from_secret_bytes(
+            o.alice.keys.member_id(),
+            &hills_identity::testing::keys().identity_secret_bytes(),
+            &hills_identity::testing::keys().exchange_secret_bytes(),
+        ),
+        device: DeviceKey::generate().unwrap(),
+    };
+    let mut rec = join_app(&o, &alice2, SignInKind::Recover);
+    if let Application::Recover(a) = &mut rec {
+        // 帳戶沿用 alice 的（測試帳戶由舊 IK 推導）
+        let account = hills_identity::testing::account_of(&o.alice.keys);
+        a.proof = proof(
+            org_id,
+            SignInKind::Recover,
+            account,
+            alice2.device.public(),
+            Some(a.ik_pub),
+            a.ek_pub,
+        );
+    }
+    let a2ep = endpoint_for(&alice2.device, vec![]).await;
+    assert_eq!(
+        MailboxClient::join(&a2ep, srv.addr.clone(), org_id, rec)
+            .await
+            .unwrap(),
+        JoinState::Pending
+    );
+    let joins = admin.fetch_joins().await.unwrap();
+    assert_eq!(joins.len(), 1);
+    assert!(matches!(joins[0].application, Application::Recover(_)));
     srv.router.shutdown().await.unwrap();
 }
 

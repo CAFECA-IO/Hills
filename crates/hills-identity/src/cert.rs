@@ -3,6 +3,7 @@
 use std::fmt;
 
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use hills_proto::cafeca::CafecaAccount;
 use hills_proto::{
     DeviceCert, FORMAT_VERSION, MemberCert, OrgId, Pub32, Revocation, RevocationTarget, Role,
     Sig64, Signable, Signed, Timestamp,
@@ -116,12 +117,12 @@ impl OrgRootKey {
     /// 簽發第一張管理者憑證。
     pub fn issue_first_admin(
         &self,
-        admin: &MemberKeys,
+        admin: MemberPublic,
         now: Timestamp,
     ) -> Result<Signed<MemberCert>, IdentityError> {
         sign_with(
             &self.sk,
-            member_cert_body(self.org_id(), admin, vec![Role::Admin, Role::Member], now),
+            member_cert_body(self.org_id(), admin, vec![Role::Admin, Role::Member], now)?,
         )
     }
 }
@@ -159,41 +160,47 @@ pub fn org_id_for(org_root: &Pub32) -> OrgId {
     Pub32(*blake3::hash(&org_root.0).as_bytes())
 }
 
-/// 受簽者的公開資訊（簽發 MemberCert 時使用，不需要受簽者的私鑰）。
+/// 受簽者的公開資訊（簽發 MemberCert 時使用，不需要受簽者的私鑰）。成員 ID 由 CAFECA 帳戶推導。
 #[derive(Debug, Clone, Copy)]
 pub struct MemberPublic {
+    pub cafeca: CafecaAccount,
     pub ik_pub: Pub32,
     pub ek_pub: Pub32,
 }
 
-impl From<&MemberKeys> for MemberPublic {
-    fn from(k: &MemberKeys) -> Self {
+impl MemberPublic {
+    pub fn of(keys: &MemberKeys, cafeca: CafecaAccount) -> Self {
         Self {
-            ik_pub: Pub32(k.identity_public().to_bytes()),
-            ek_pub: Pub32(k.exchange_public().to_bytes()),
+            cafeca,
+            ik_pub: Pub32(keys.identity_public().to_bytes()),
+            ek_pub: Pub32(keys.exchange_public().to_bytes()),
         }
+    }
+
+    pub fn member_id(&self) -> hills_proto::MemberId {
+        crate::member_id_for(&self.cafeca)
     }
 }
 
 fn member_cert_body(
     org_id: OrgId,
-    subject: impl Into<MemberPublic>,
+    p: MemberPublic,
     roles: Vec<Role>,
     now: Timestamp,
-) -> MemberCert {
-    let p: MemberPublic = subject.into();
-    let member_id = VerifyingKey::from_bytes(&p.ik_pub.0)
-        .map(|vk| crate::member_id_for(&vk))
-        .unwrap_or(hills_proto::MemberId([0; 16]));
-    MemberCert {
+) -> Result<MemberCert, IdentityError> {
+    if VerifyingKey::from_bytes(&p.ik_pub.0).is_err() {
+        return Err(IdentityError::InconsistentCert);
+    }
+    Ok(MemberCert {
         v: FORMAT_VERSION,
         org_id,
-        member_id,
+        member_id: p.member_id(),
         ik_pub: p.ik_pub,
         ek_pub: p.ek_pub,
         roles,
+        cafeca: p.cafeca,
         issued_at: now,
-    }
+    })
 }
 
 impl MemberKeys {
@@ -222,10 +229,7 @@ impl MemberKeys {
         roles: Vec<Role>,
         now: Timestamp,
     ) -> Result<Signed<MemberCert>, IdentityError> {
-        if VerifyingKey::from_bytes(&subject.ik_pub.0).is_err() {
-            return Err(IdentityError::InconsistentCert);
-        }
-        self.sign_body(member_cert_body(org_id, subject, roles, now))
+        self.sign_body(member_cert_body(org_id, subject, roles, now)?)
     }
 
     /// 簽發撤銷（成員由管理者撤銷；裝置可由本人或管理者撤銷）。

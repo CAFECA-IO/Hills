@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use automerge::{AutoCommit, ObjType, ROOT, ReadDoc, transaction::Transactable};
-use hills_identity::cert::{DeviceKey, MemberPublic, OrgRootKey};
-use hills_identity::{MemberKeys, RecoveryPhrase};
+use hills_identity::MemberKeys;
+use hills_identity::cert::{DeviceKey, OrgRootKey};
 use hills_proto::{RevocationTarget, Role};
 use proptest::prelude::*;
 
@@ -37,9 +37,14 @@ fn person(
     issuer: &MemberKeys,
     roles: Vec<Role>,
 ) -> (MemberKeys, DeviceKey) {
-    let k = RecoveryPhrase::generate().unwrap().derive_keys();
+    let k = hills_identity::testing::keys();
     let cert = issuer
-        .issue_member_cert(trust.org_id(), MemberPublic::from(&k), roles, 1)
+        .issue_member_cert(
+            trust.org_id(),
+            hills_identity::testing::public(&k),
+            roles,
+            1,
+        )
         .unwrap();
     trust.add_member_cert(cert).unwrap();
     let d = DeviceKey::generate().unwrap();
@@ -52,9 +57,12 @@ fn person(
 fn world() -> World {
     let ok = OrgRootKey::generate().unwrap();
     let mut trust = TrustStore::new(ok.public());
-    let ak = RecoveryPhrase::generate().unwrap().derive_keys();
+    let ak = hills_identity::testing::keys();
     trust
-        .add_member_cert(ok.issue_first_admin(&ak, 1).unwrap())
+        .add_member_cert(
+            ok.issue_first_admin(hills_identity::testing::public(&ak), 1)
+                .unwrap(),
+        )
         .unwrap();
     let ad = DeviceKey::generate().unwrap();
     trust

@@ -3,19 +3,17 @@
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use anyhow::{Result, anyhow};
-use hills_crypto::exchange::{join_mac, mac_eq};
+use anyhow::Result;
 use hills_crypto::rotate;
-use hills_identity::cert::MemberPublic;
 use hills_net::mailbox::MailboxClient;
 use hills_net::{to_endpoint_addr, to_peer_addr};
 use hills_proto::gossip::GossipMsg;
-use hills_proto::mailbox::{Hello, PendingJoin};
-use hills_proto::{KeyFamily, PeerAddr, Role, Signed, WrappedKey};
+use hills_proto::mailbox::{Hello, JoinState};
+use hills_proto::{KeyFamily, PeerAddr};
 
 use crate::config::MemberStatus;
-use crate::node::{Event, Inner, SyncStatus, lock, now_ms};
-use crate::{gossip, org};
+use crate::node::{Event, Inner, SyncStatus, lock};
+use crate::{approval, gossip};
 
 async fn connect(inner: &Inner) -> Result<MailboxClient> {
     let (hello, org_id, addr) = {
@@ -105,6 +103,7 @@ async fn upload(inner: &Inner, mb: &MailboxClient) -> Result<()> {
 async fn refresh(inner: &Arc<Inner>, mb: &MailboxClient) -> Result<()> {
     // roster
     let roster = mb.get_roster().await?;
+    let my_devices_before = lock(&inner.st).trust.devices_of(&inner.me()).len();
     let roster_changed = {
         let mut st = lock(&inner.st);
         let c = st.trust.merge_roster(&roster)?;
@@ -115,6 +114,30 @@ async fn refresh(inner: &Arc<Inner>, mb: &MailboxClient) -> Result<()> {
     };
     if roster_changed {
         inner.emit(Event::RosterChanged);
+        // 本人的新裝置由其他裝置授權時也通知（§17.6 步驟 5）
+        let added: Vec<_> = {
+            let st = lock(&inner.st);
+            let me = inner.me();
+            let this = inner.secrets.device.public();
+            let devs = st.trust.devices_of(&me);
+            if devs.len() > my_devices_before && my_devices_before > 0 {
+                devs.into_iter()
+                    .filter(|d| d.device_pub != this)
+                    .max_by_key(|d| d.issued_at)
+                    .map(|d| (d.device_pub, d.device_name.clone()))
+                    .into_iter()
+                    .collect()
+            } else {
+                vec![]
+            }
+        };
+        for (device, name) in added {
+            inner.emit(Event::DeviceAdded { device, name });
+        }
+    }
+    // 成員還原後重新封裝我建立的對話金鑰（§17.7）
+    if let Err(e) = approval::rewrap_for_recovered(inner) {
+        tracing::warn!(error = %e, "無法重新封裝對話金鑰");
     }
     // 我建立的對話中被停用的成員：移出並輪替（§14.1）
     if let Err(e) = inner.prune_revoked_conv_members() {
@@ -168,18 +191,19 @@ async fn refresh(inner: &Arc<Inner>, mb: &MailboxClient) -> Result<()> {
         }
     }
     gossip::join_peers(inner, neighbors).await;
-    // 管理者：處理自己建立的邀請
+    // 本人的新裝置申請（§17.6）
+    if let Err(e) = approval::serve_device_requests(inner, mb).await {
+        tracing::debug!(error = %e, "無法處理新裝置申請");
+    }
+    // 管理者：待核准的加入與還原申請
     let admin = lock(&inner.st)
         .trust
         .verify_device(&me)
         .is_ok_and(|v| v.is_admin());
     if admin {
         inner.push_roster_to_storage().await;
-        let joins = mb.fetch_joins().await?;
-        for j in joins {
-            if let Err(e) = approve_join(inner, mb, &j).await {
-                tracing::debug!(error = %e, "略過加入申請");
-            }
+        if let Err(e) = approval::refresh_joins(inner, mb).await {
+            tracing::debug!(error = %e, "無法讀取加入申請");
         }
     }
     Ok(())
@@ -215,113 +239,6 @@ pub(crate) async fn apply_mailbox_addr(inner: &Inner, addr: PeerAddr) -> Result<
     Ok(())
 }
 
-/// 驗證加入申請並核准（technical-design §16.2 步驟 3）。
-async fn approve_join(inner: &Arc<Inner>, mb: &MailboxClient, j: &PendingJoin) -> Result<()> {
-    let invite_hex = data_encoding::HEXLOWER.encode(&j.invite_id);
-    let me = inner.me();
-    let (cert, team_ids, req) = {
-        let mut st = lock(&inner.st);
-        let snap = inner.org_snapshot(&mut st);
-        let invite = snap
-            .invites
-            .get(&invite_hex)
-            .ok_or_else(|| anyhow!("找不到邀請"))?;
-        if invite.created_by != me
-            || invite.used_by.is_some()
-            || invite.revoked
-            || invite.expires_at < now_ms()
-        {
-            return Err(anyhow!("不是我建立的有效邀請"));
-        }
-        let secrets_id = format!("member/{me}/secrets");
-        let secret_hex = {
-            let local = inner.load_doc(&mut st.docs, &secrets_id)?;
-            org::invite_secret(&local.doc, &invite_hex)
-                .ok_or_else(|| anyhow!("找不到邀請 secret"))?
-        };
-        let secret: [u8; 16] = data_encoding::HEXLOWER
-            .decode(secret_hex.as_bytes())?
-            .try_into()
-            .map_err(|_| anyhow!("secret 格式錯誤"))?;
-        let req = j.request.clone();
-        if !mac_eq(
-            &req.mac,
-            &join_mac(&secret, &j.invite_id, &req.mac_input()?),
-        ) {
-            return Err(anyhow!("MAC 不符"));
-        }
-        let subject = MemberPublic {
-            ik_pub: req.ik_pub,
-            ek_pub: req.ek_pub,
-        };
-        let roles = if invite.role == Role::Admin {
-            vec![Role::Admin, Role::Member]
-        } else {
-            vec![Role::Member]
-        };
-        let cert =
-            inner
-                .secrets
-                .keys
-                .issue_member_cert(st.trust.org_id(), subject, roles, now_ms())?;
-        if cert.body.member_id != req.device_cert.body.member_id {
-            return Err(anyhow!("裝置憑證與成員不符"));
-        }
-        st.trust.add_member_cert(cert.clone())?;
-        st.trust.add_device_cert(req.device_cert.clone())?;
-        inner.persist(&st)?;
-        (cert, invite.team_ids.clone(), req)
-    };
-    let new_id = cert.body.member_id;
-
-    // roster → mailbox
-    let roster = {
-        let st = lock(&inner.st);
-        inner
-            .secrets
-            .device
-            .sign_body(st.trust.to_roster(now_ms()))?
-    };
-    mb.put_roster(roster).await?;
-
-    // 金鑰：GK 全部 epoch、所屬小組 TK 全部 epoch
-    let wrapped: Vec<Signed<WrappedKey>> = {
-        let st = lock(&inner.st);
-        let mut out = Vec::new();
-        let mut families = vec![KeyFamily::Org];
-        families.extend(team_ids.iter().map(|t| KeyFamily::Team(t.clone())));
-        for f in &families {
-            for (id, key) in st.ring.epochs(f) {
-                let w = hills_crypto::wrap_key(id, key, new_id, &req.ek_pub)?;
-                out.push(inner.secrets.device.sign_body(w)?);
-            }
-        }
-        out
-    };
-    mb.put_keys(wrapped).await?;
-
-    // org 文件：加入成員與小組、標記邀請已使用
-    {
-        let mut st = lock(&inner.st);
-        inner.change_locked(&mut st, "org", |doc| {
-            org::add_member(doc, &new_id, &req.name, now_ms())?;
-            for t in &team_ids {
-                org::add_to_team(doc, t, &new_id)?;
-            }
-            org::mark_invite_used(doc, &invite_hex, &new_id)?;
-            Ok(())
-        })?;
-    }
-    mb.close_invite(j.invite_id).await?;
-    upload(inner, mb).await?;
-    inner.emit(Event::OrgChanged);
-    inner.emit(Event::RosterChanged);
-    gossip::broadcast(inner, GossipMsg::RosterChanged).await;
-    gossip::broadcast(inner, GossipMsg::KeysChanged).await;
-    tracing::info!(member = %new_id, "已核准加入申請");
-    Ok(())
-}
-
 /// 執行一次同步；必要時先連線。
 pub(crate) async fn sync_once(inner: &Arc<Inner>) -> Result<()> {
     let mut guard = inner.mailbox.lock().await;
@@ -343,6 +260,9 @@ pub(crate) async fn sync_once(inner: &Arc<Inner>) -> Result<()> {
                 } else {
                     SyncStatus::Offline
                 });
+                if pending {
+                    check_rejected(inner).await;
+                }
                 return Err(e);
             }
         }
@@ -361,6 +281,28 @@ pub(crate) async fn sync_once(inner: &Arc<Inner>) -> Result<()> {
             inner.set_status(SyncStatus::Offline);
             Err(e)
         }
+    }
+}
+
+/// 等待核准時查詢申請是否被拒絕（§17.6 步驟 5）。
+async fn check_rejected(inner: &Inner) {
+    if inner.rejected.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let (org_id, addr) = {
+        let st = lock(&inner.st);
+        let cfg = lock(&inner.cfg);
+        (st.trust.org_id(), to_endpoint_addr(&cfg.mailbox))
+    };
+    let Ok(addr) = addr else { return };
+    let device = inner.secrets.device.public();
+    if let Ok(JoinState::Rejected) =
+        MailboxClient::join_status(&inner.endpoint, addr, org_id, device).await
+    {
+        inner
+            .rejected
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        inner.emit(Event::Rejected);
     }
 }
 

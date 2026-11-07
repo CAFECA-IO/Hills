@@ -28,6 +28,7 @@ hills-sync = { path = "crates/hills-sync" }
 hills-net = { path = "crates/hills-net" }
 hills-domain = { path = "crates/hills-domain" }
 hills-node = { path = "crates/hills-node" }
+hills-cafeca = { path = "crates/hills-cafeca" }
 
 # 通用
 anyhow = "1"
@@ -47,13 +48,19 @@ x25519-dalek = { version = "3", features = ["static_secrets"] }
 hkdf = "0.13"
 sha2 = "0.11"
 blake3 = "1"
-bip39 = { version = "3", features = ["zeroize", "chinese-traditional"] }
 zeroize = { version = "1", features = ["derive"] }
 data-encoding = "2"
 argon2 = "0.6"
 hpke = { version = "0.15", default-features = false, features = ["alloc", "getrandom", "x25519", "chacha"] }
 chacha20poly1305 = "0.11"
 getrandom = "0.4"
+# CAFECA 登入（technical-design §2、§17）：EIP-712、中繼回應解密、鏈上查詢
+alloy-sol-types = { version = "1.7", default-features = false, features = ["std"] }
+alloy-primitives = { version = "1.7", default-features = false, features = ["std"] }
+p256 = { version = "0.14", default-features = false, features = ["ecdh", "std"] }
+aes-gcm = { version = "0.11", default-features = false, features = ["aes", "alloc"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 
 # 網路與同步
 iroh = "1"

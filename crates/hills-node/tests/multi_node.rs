@@ -6,29 +6,43 @@
 mod common;
 use common::*;
 
-/// 1. 管理者離線時送出加入申請，上線後自動核准；成員取得憑證、金鑰與 org 文件。
+/// 1. 管理者離線時送出加入申請；管理者上線後在「待核准」看到並核准，成員取得憑證、金鑰與 org 文件。
 #[tokio::test]
 async fn join_while_admin_offline() {
     let mb = mailbox().await;
     let d_admin = tempfile::tempdir().unwrap();
     let ss_admin = store();
     let admin = create(d_admin.path(), ss_admin.clone(), &mb.code).await;
-    let code = admin.create_invite(Role::Member, vec![]).await.unwrap();
+    let org_code = admin.org_ticket().unwrap();
     admin.shutdown().await;
     drop(admin);
 
     let d_alice = tempfile::tempdir().unwrap();
-    let alice = Node::join(d_alice.path(), store(), &code, "Alice", "alice-pc", opts())
-        .await
-        .unwrap();
+    let alice_account = account();
+    let (_, step) = sign_in(
+        d_alice.path(),
+        store(),
+        OnboardKind::Join {
+            org_code,
+            my_name: "Alice".into(),
+            device_name: "alice-pc".into(),
+        },
+        alice_account,
+        "alice",
+    )
+    .await;
+    let OnboardStep::WaitingApproval(alice) = step else {
+        panic!("應等待核准");
+    };
     assert_eq!(alice.status(), SyncStatus::Pending);
     assert!(alice.sync_now().await.is_err(), "核准前不能連 mailbox");
+    assert_eq!(alice.cafeca(), Some(alice_account));
 
     let admin = Node::open(d_admin.path(), ss_admin, opts())
         .await
         .unwrap()
         .unwrap();
-    admin.sync_now().await.unwrap();
+    approve_pending(&admin, &alice).await;
     assert!(
         eventually(Duration::from_secs(10), || async {
             let _ = alice.sync_now().await;
@@ -38,8 +52,62 @@ async fn join_while_admin_offline() {
     );
     assert_eq!(org_name(&alice), "測試組織");
     assert!(!alice.is_admin());
-    assert!(admin.org().invites.values().all(|i| i.used_by.is_some()));
+    let rec = admin.org().members[&alice.member_id()].clone();
+    assert_eq!(rec.handle.as_deref(), Some("alice"));
+    assert_eq!(rec.cafeca, Some(alice_account.caip10()));
+    assert!(admin.pending_joins().is_empty());
     alice.shutdown().await;
+    admin.shutdown().await;
+    mb.router.shutdown().await.unwrap();
+}
+
+/// 1b. 管理者拒絕申請：申請者收到 Rejected 事件，無法連線。
+#[tokio::test]
+async fn rejected_join() {
+    let mb = mailbox().await;
+    let d_admin = tempfile::tempdir().unwrap();
+    let admin = create(d_admin.path(), store(), &mb.code).await;
+    let d_x = tempfile::tempdir().unwrap();
+    let (_, step) = sign_in(
+        d_x.path(),
+        store(),
+        OnboardKind::Join {
+            org_code: admin.org_ticket().unwrap(),
+            my_name: "X".into(),
+            device_name: "x-pc".into(),
+        },
+        account(),
+        "x",
+    )
+    .await;
+    let OnboardStep::WaitingApproval(x) = step else {
+        panic!("應等待核准");
+    };
+    let mut events = x.events();
+    assert!(
+        eventually(Duration::from_secs(10), || async {
+            let _ = admin.sync_now().await;
+            !admin.pending_joins().is_empty()
+        })
+        .await
+    );
+    admin.reject_join(x.device()).await.unwrap();
+    assert!(admin.pending_joins().is_empty());
+    let got = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let _ = x.sync_now().await;
+            while let Ok(e) = events.try_recv() {
+                if e == hills_node::Event::Rejected {
+                    return true;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    })
+    .await
+    .unwrap_or(false);
+    assert!(got, "申請者應收到被拒絕的通知");
+    x.shutdown().await;
     admin.shutdown().await;
     mb.router.shutdown().await.unwrap();
 }
@@ -132,33 +200,46 @@ async fn presence_propagates_and_expires() {
     mb.router.shutdown().await.unwrap();
 }
 
-/// 4. 新裝置綁定：雙方 SAS 一致，確認後新裝置取得身分並能同步。
+/// 4. 新裝置：同一 CAFECA 帳戶在新電腦登入 → 本人其他裝置自動封裝成員金鑰 → 新裝置能同步。
 #[tokio::test]
-async fn link_new_device() {
+async fn add_device_with_cafeca() {
     let mb = mailbox().await;
     let d_admin = tempfile::tempdir().unwrap();
     let admin = create(d_admin.path(), store(), &mb.code).await;
     let d_alice = tempfile::tempdir().unwrap();
-    let alice = invite_and_join(&admin, d_alice.path(), store(), "alice").await;
+    let acct = account();
+    let alice = join_as(&admin, d_alice.path(), store(), "alice", acct).await;
+    let mut alice_events = alice.events();
 
     let d2 = tempfile::tempdir().unwrap();
-    let mut listener = LinkListener::start(
+    let (mut ob, step) = sign_in(
         d2.path(),
         store(),
-        &alice.org_ticket().unwrap(),
-        "alice-laptop",
-        opts(),
+        OnboardKind::Join {
+            org_code: alice.org_ticket().unwrap(),
+            my_name: String::new(),
+            device_name: "alice-laptop".into(),
+        },
+        acct,
+        "alice",
     )
-    .await
-    .unwrap();
-    let session = alice.link_device(&listener.code).await.unwrap();
-    listener.sas.wait_for(|s| s.is_some()).await.unwrap();
-    let new_sas = listener.sas.borrow().clone().unwrap();
-    assert_eq!(new_sas, session.sas);
-    assert_eq!(new_sas.len(), 6);
-    session.confirm("alice-laptop").await.unwrap();
-    let laptop = listener.finish().await.unwrap();
-
+    .await;
+    assert!(
+        matches!(step, OnboardStep::WaitingDevice { .. }),
+        "已是成員應等待本人裝置"
+    );
+    // alice 的裝置同步時自動授權
+    let mut laptop = None;
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(15) {
+        let _ = alice.sync_now().await;
+        if let OnboardStep::Linked(n) = ob.poll().await.unwrap() {
+            laptop = Some(n);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let laptop = laptop.expect("新裝置應完成綁定");
     assert_eq!(laptop.member_id(), alice.member_id());
     assert!(
         eventually(Duration::from_secs(10), || async {
@@ -168,10 +249,18 @@ async fn link_new_device() {
         .await
     );
     assert_eq!(alice.devices().len(), 2);
+    let mut notified = false;
+    while let Ok(e) = alice_events.try_recv() {
+        if matches!(e, hills_node::Event::DeviceAdded { ref name, .. } if name == "alice-laptop") {
+            notified = true;
+        }
+    }
+    assert!(notified, "原裝置應收到新裝置通知");
     // 新裝置也收得到之後的變更
     admin.rename_org("綁定後").await.unwrap();
     assert!(
         eventually(Duration::from_secs(5), || async {
+            let _ = laptop.sync_now().await;
             org_name(&laptop) == "綁定後"
         })
         .await
@@ -224,31 +313,43 @@ async fn revoke_member_rotates_keys() {
     mb.router.shutdown().await.unwrap();
 }
 
-/// 6. 刪除本機全部資料後，以復原詞 + 組織連線碼還原並讀回原有資料。
+/// 6. 遺失全部裝置：以同一 CAFECA 帳戶申請還原 → 管理者核准 → 換發金鑰，讀回組織資料；
+/// 舊裝置失效。
 #[tokio::test]
-async fn recover_from_phrase() {
+async fn recover_with_cafeca() {
     let mb = mailbox().await;
     let d_admin = tempfile::tempdir().unwrap();
     let admin = create(d_admin.path(), store(), &mb.code).await;
     let d_alice = tempfile::tempdir().unwrap();
-    let alice = invite_and_join(&admin, d_alice.path(), store(), "alice").await;
+    let acct = account();
+    let alice = join_as(&admin, d_alice.path(), store(), "alice", acct).await;
     admin.rename_org("還原前").await.unwrap();
     admin.sync_now().await.unwrap();
 
-    let words = alice
-        .recovery_words(hills_node::PhraseLanguage::TraditionalChinese)
-        .join(" ");
     let org_code = alice.org_ticket().unwrap();
     let id = alice.member_id();
+    let old_device = alice.device();
     alice.shutdown().await;
     drop(alice);
     drop(d_alice); // 刪除本機資料
 
     let d_new = tempfile::tempdir().unwrap();
-    let restored = Node::recover(d_new.path(), store(), &words, &org_code, "new-pc", opts())
-        .await
-        .unwrap();
+    let (_, step) = sign_in(
+        d_new.path(),
+        store(),
+        OnboardKind::Recover {
+            org_code,
+            device_name: "new-pc".into(),
+        },
+        acct,
+        "alice",
+    )
+    .await;
+    let OnboardStep::WaitingApproval(restored) = step else {
+        panic!("還原應等待核准");
+    };
     assert_eq!(restored.member_id(), id);
+    approve_pending(&admin, &restored).await;
     assert!(
         eventually(Duration::from_secs(10), || async {
             let _ = restored.sync_now().await;
@@ -256,6 +357,9 @@ async fn recover_from_phrase() {
         })
         .await
     );
+    // 舊裝置已失效、角色沿用
+    assert!(!restored.devices().iter().any(|d| d.device == old_device));
+    assert!(!restored.is_admin());
     restored.shutdown().await;
     admin.shutdown().await;
     mb.router.shutdown().await.unwrap();

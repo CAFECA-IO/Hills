@@ -24,7 +24,7 @@ use hpke::{
 };
 use zeroize::Zeroizing;
 
-type Kem = X25519HkdfSha256;
+pub(crate) type Kem = X25519HkdfSha256;
 const WRAP_INFO: &[u8] = b"hills/v1/wrap";
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -256,6 +256,7 @@ pub fn wrap_key(
         v: FORMAT_VERSION,
         key_id: key_id.clone(),
         recipient,
+        recipient_ek: *recipient_ek,
         enc: enc.to_bytes().to_vec(),
         ciphertext,
     })
@@ -264,7 +265,9 @@ pub fn wrap_key(
 /// 以本人的 EK 解封裝。
 pub fn unwrap_key(wrapped: &WrappedKey, me: &MemberKeys) -> Result<SymmetricKey, CryptoError> {
     hills_proto::check_version(wrapped.v)?;
-    if wrapped.recipient != me.member_id() {
+    if wrapped.recipient != me.member_id()
+        || wrapped.recipient_ek.0 != me.exchange_public().to_bytes()
+    {
         return Err(CryptoError::WrongRecipient);
     }
     let sk_bytes = me.exchange_secret_bytes();
@@ -370,11 +373,12 @@ pub mod exchange;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hills_identity::RecoveryPhrase;
     use hills_proto::{Sig64, Signed, SignedChangeBody};
 
     fn member() -> MemberKeys {
-        RecoveryPhrase::generate().unwrap().derive_keys()
+        let mut id = [0u8; 16];
+        getrandom::fill(&mut id).unwrap();
+        MemberKeys::generate().unwrap().with_member(MemberId(id))
     }
 
     fn ek(m: &MemberKeys) -> Pub32 {
@@ -427,7 +431,16 @@ mod tests {
         // 把 recipient 改成 bob 也打不開（EK 不同、AAD 不同）
         let mut forged = w.clone();
         forged.recipient = bob.member_id();
+        forged.recipient_ek = ek(&bob);
         assert_eq!(unwrap_key(&forged, &bob).unwrap_err(), CryptoError::Open);
+        // 封裝給舊 EK（還原前）的項目直接略過
+        let renewed = MemberKeys::generate()
+            .unwrap()
+            .with_member(alice.member_id());
+        assert_eq!(
+            unwrap_key(&w, &renewed).unwrap_err(),
+            CryptoError::WrongRecipient
+        );
         // keyId 被竄改 → info 不同
         let mut moved = w;
         moved.key_id.epoch = 2;

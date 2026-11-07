@@ -5,9 +5,10 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::cafeca::Application;
 use crate::{
-    DeviceCert, EncryptedBundle, JoinRequest, MemberCert, MemberId, OrgId, PeerAddr, Pub32,
-    Revocation, Roster, Signed, Timestamp, WrappedKey,
+    DeviceCert, EncryptedBundle, MemberCert, MemberId, OrgId, PeerAddr, Pub32, Revocation, Roster,
+    Signed, Timestamp, WrappedKey,
 };
 
 pub const ALPN: &[u8] = b"hills/mailbox/1";
@@ -31,20 +32,38 @@ pub enum Request {
     PutRoster(Box<Signed<Roster>>),
     PutDevice(Box<Signed<DeviceCert>>),
     PutRevocation(Box<Signed<Revocation>>),
-    RegisterInvite {
-        invite_id: [u8; 8],
-        expires_at: Timestamp,
-    },
-    CloseInvite {
-        invite_id: [u8; 8],
-    },
-    /// 不需 Hello（technical-design §16.2）
+    /// 不需 Hello：部署設定（technical-design §17.1）
+    Config,
+    /// 不需 Hello：加入 / 新裝置 / 還原申請，mailbox 驗證 CAFECA 登入證明（§17.8）
     Join {
         org_id: OrgId,
-        invite_id: [u8; 8],
-        request: Box<JoinRequest>,
+        application: Box<Application>,
     },
+    /// 不需 Hello：申請狀態
+    JoinStatus {
+        org_id: OrgId,
+        device: Pub32,
+    },
+    /// 管理者：待核准的加入與還原申請
     FetchJoins,
+    /// 管理者：核准（已 PutRoster 後）或拒絕
+    ResolveJoin {
+        device: Pub32,
+        approved: bool,
+    },
+    /// 本人裝置：本人的新裝置申請
+    FetchDeviceRequests,
+    /// 本人裝置：封裝給新裝置的成員金鑰
+    PutDeviceGrant {
+        device: Pub32,
+        #[serde(with = "serde_bytes")]
+        sealed: Vec<u8>,
+    },
+    /// 不需 Hello：新裝置取回封裝（內容已加密）
+    FetchDeviceGrant {
+        org_id: OrgId,
+        device: Pub32,
+    },
     PutKeys(Vec<Signed<WrappedKey>>),
     FetchKeys {
         since: u64,
@@ -86,11 +105,30 @@ pub struct ListItem {
     pub bundle: EncryptedBundle,
 }
 
+/// mailbox 暫存的申請（§17.8）。`handle` 由 mailbox 向 CAFECA 查詢，只供顯示。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PendingJoin {
-    pub invite_id: [u8; 8],
-    pub request: JoinRequest,
+pub struct PendingApplication {
+    pub application: Application,
     pub received_at: Timestamp,
+    pub handle: Option<String>,
+}
+
+/// 申請狀態（`JoinStatus` 回應）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum JoinState {
+    /// 等待管理者核准（加入、還原）
+    Pending,
+    /// 已是成員：等待本人其他裝置封裝成員金鑰（新裝置，§17.6）
+    AwaitingDevice,
+    Rejected,
+    Unknown,
+}
+
+/// 部署設定（`Config` 回應）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerConfig {
+    /// CAFECA 錢包網址（`HILLS_CAFECA_WALLET`）；未設定時為空字串
+    pub cafeca_wallet: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -107,8 +145,8 @@ pub struct PeerInfo {
     pub last_seen: Timestamp,
 }
 
-/// 每個邀請最多保留的待處理申請數。
-pub const MAX_PENDING_JOINS: usize = 5;
+/// 每個組織最多保留的待處理申請數（§17.8）。
+pub const MAX_PENDING_JOINS: usize = 50;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Response {
@@ -124,7 +162,10 @@ pub enum Response {
     },
     Bundle(Box<EncryptedBundle>),
     Roster(Box<Roster>),
-    Joins(Vec<PendingJoin>),
+    Joins(Vec<PendingApplication>),
+    JoinStatus(JoinState),
+    DeviceGrant(Option<Vec<u8>>),
+    Config(ServerConfig),
     Keys {
         items: Vec<KeyItem>,
         next: u64,

@@ -3,9 +3,9 @@
 
 use std::sync::Arc;
 
-use hills_identity::cert::{DeviceKey, MemberPublic, OrgRootKey};
+use hills_identity::MemberKeys;
+use hills_identity::cert::{DeviceKey, OrgRootKey};
 use hills_identity::trust::TrustStore;
-use hills_identity::{MemberKeys, RecoveryPhrase};
 use hills_net::NetError;
 use hills_net::storage::StorageClient;
 use hills_proto::mailbox::Hello;
@@ -27,11 +27,11 @@ struct Org {
 }
 
 fn person(trust: &mut TrustStore, issuer: &MemberKeys) -> Person {
-    let keys = RecoveryPhrase::generate().unwrap().derive_keys();
+    let keys = hills_identity::testing::keys();
     let cert = issuer
         .issue_member_cert(
             trust.org_id(),
-            MemberPublic::from(&keys),
+            hills_identity::testing::public(&keys),
             vec![Role::Member],
             1,
         )
@@ -46,9 +46,12 @@ fn person(trust: &mut TrustStore, issuer: &MemberKeys) -> Person {
 fn org() -> Org {
     let ok = OrgRootKey::generate().unwrap();
     let mut trust = TrustStore::new(ok.public());
-    let akeys = RecoveryPhrase::generate().unwrap().derive_keys();
+    let akeys = hills_identity::testing::keys();
     trust
-        .add_member_cert(ok.issue_first_admin(&akeys, 1).unwrap())
+        .add_member_cert(
+            ok.issue_first_admin(hills_identity::testing::public(&akeys), 1)
+                .unwrap(),
+        )
         .unwrap();
     let admin = Person {
         keys: akeys,

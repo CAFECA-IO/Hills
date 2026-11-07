@@ -4,21 +4,27 @@
 //!   `Hello{DeviceCert, MemberCert}`（`Join` 例外），之後同一連線的請求不需逐一簽章。
 //! - 信任來源：設定檔中的 OK.pub；管理者推送的成員憑證與撤銷、成員上傳的裝置憑證，每筆各自驗證。
 //!   mailbox 是 roster 的分發點（`GetRoster`），但無法偽造任何一筆憑證。
-//! - 只保存密文：bundle、封裝金鑰、加入申請；mailbox 無法解密任何內容。
+//! - 只保存密文：bundle、封裝金鑰；加入申請只含公鑰、CAFECA 登入證明與裝置名稱（technical-design §17.8）。
+//!   mailbox 無法解密任何組織資料。
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use hills_cafeca::Verifier;
+use hills_proto::cafeca::Application;
 
 use hills_identity::trust::Verified;
 use hills_net::gate::{GateError, TrustGate, TrustPersist};
 use hills_net::{recv_message, remote_node, send_message};
 use hills_proto::mailbox::{
-    ALPN, ErrorCode, Hello, KeyItem, ListItem, MAX_FRAME, MAX_LIST, MAX_PENDING_JOINS, PeerInfo,
-    PendingJoin, Request, Response,
+    ALPN, ErrorCode, Hello, JoinState, KeyItem, ListItem, MAX_FRAME, MAX_LIST, MAX_PENDING_JOINS,
+    PeerInfo, PendingApplication, Request, Response, ServerConfig,
 };
 use hills_proto::{
-    DeviceCert, EncryptedBundle, FORMAT_VERSION, JoinRequest, KeyFamily, OrgId, PeerAddr, Pub32,
-    Revocation, Roster, Signed, WrappedKey,
+    DeviceCert, EncryptedBundle, FORMAT_VERSION, KeyFamily, OrgId, PeerAddr, Pub32, Revocation,
+    Roster, Signed, WrappedKey,
 };
 use iroh::endpoint::Connection;
 use iroh::{Endpoint, protocol::Router};
@@ -26,8 +32,23 @@ use rusqlite::{Connection as Db, OptionalExtension, params};
 
 pub use hills_proto::mailbox::ALPN as MAILBOX_ALPN;
 
-/// (invite_id, request, received_at)
-type JoinRow = (Vec<u8>, Vec<u8>, i64);
+/// (data, received_at, handle)
+type AppRow = (Vec<u8>, i64, Option<String>);
+
+/// 申請保留 7 天；新裝置封裝保留 1 天（technical-design §17.8）。
+const APPLICATION_TTL_MS: i64 = 7 * 24 * 3600 * 1000;
+const GRANT_TTL_MS: i64 = 24 * 3600 * 1000;
+/// 每個來源 NodeId 每分鐘最多送出的申請數。
+const JOIN_RATE: usize = 5;
+
+/// 申請在資料庫中的種類：1 加入、2 新裝置、3 還原。
+fn app_code(a: &Application) -> i64 {
+    match a {
+        Application::Join(_) => 1,
+        Application::Device(_) => 2,
+        Application::Recover(_) => 3,
+    }
+}
 /// (device, member, addr, last_seen)
 type PeerRow = (Vec<u8>, Vec<u8>, Vec<u8>, i64);
 
@@ -46,6 +67,10 @@ pub struct Mailbox {
     self_addr: Mutex<Option<PeerAddr>>,
     /// 儲存節點連線碼所在資料夾（`Services`，§15.6 v0.12）
     storage_codes: Mutex<Option<PathBuf>>,
+    /// CAFECA 錢包網址與驗證器（§17.1、§17.8）
+    cafeca: Mutex<Option<(String, Arc<Verifier>)>>,
+    /// 申請限流：來源 NodeId → 最近送出時間
+    join_rate: Mutex<HashMap<Pub32, Vec<Instant>>>,
 }
 
 /// 信任狀態存在 mailbox 的 SQLite（`trust`、`meta` 表）。
@@ -107,26 +132,29 @@ CREATE TABLE IF NOT EXISTS bundles (
 CREATE INDEX IF NOT EXISTS bundles_doc ON bundles(org_id, doc_id, cursor);
 CREATE TABLE IF NOT EXISTS trust (id INTEGER PRIMARY KEY CHECK (id = 1), roster BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value BLOB NOT NULL);
-CREATE TABLE IF NOT EXISTS invites (
-    invite_id BLOB PRIMARY KEY,
-    created_by BLOB NOT NULL,
-    expires_at INTEGER NOT NULL,
-    closed INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS joins (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    invite_id BLOB NOT NULL,
-    device BLOB NOT NULL,
-    request BLOB NOT NULL,
+CREATE TABLE IF NOT EXISTS applications (
+    device BLOB PRIMARY KEY,
+    kind INTEGER NOT NULL,
+    account BLOB NOT NULL,
+    member BLOB NOT NULL,
+    data BLOB NOT NULL,
     received_at INTEGER NOT NULL,
-    UNIQUE (invite_id, device)
+    handle TEXT,
+    rejected INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS applications_member ON applications(member, kind);
+CREATE TABLE IF NOT EXISTS grants (
+    device BLOB PRIMARY KEY,
+    sealed BLOB NOT NULL,
+    created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS wrapped_keys (
     cursor INTEGER PRIMARY KEY AUTOINCREMENT,
     recipient BLOB NOT NULL,
+    recipient_ek BLOB NOT NULL,
     key_id TEXT NOT NULL,
     data BLOB NOT NULL,
-    UNIQUE (recipient, key_id)
+    UNIQUE (recipient, recipient_ek, key_id)
 );
 CREATE INDEX IF NOT EXISTS wrapped_keys_recipient ON wrapped_keys(recipient, cursor);
 CREATE TABLE IF NOT EXISTS peers (
@@ -178,6 +206,8 @@ impl Mailbox {
             blobs: data_dir.join("blobs"),
             self_addr: Mutex::new(None),
             storage_codes: Mutex::new(None),
+            cafeca: Mutex::new(None),
+            join_rate: Mutex::new(HashMap::new()),
         }))
     }
 
@@ -198,6 +228,25 @@ impl Mailbox {
             Ok(Some(a)) => Response::Info(a),
             _ => err(ErrorCode::NotFound, "位址尚未就緒"),
         }
+    }
+
+    /// 設定 CAFECA 錢包網址與驗證器（`HILLS_CAFECA_WALLET`，technical-design §17.1）。
+    pub fn set_cafeca(&self, wallet: String, verifier: Arc<Verifier>) {
+        if let Ok(mut c) = self.cafeca.lock() {
+            *c = Some((wallet, verifier));
+        }
+    }
+
+    fn config(&self) -> Response {
+        let wallet = self
+            .cafeca
+            .lock()
+            .ok()
+            .and_then(|c| c.as_ref().map(|(w, _)| w.clone()))
+            .unwrap_or_default();
+        Response::Config(ServerConfig {
+            cafeca_wallet: wallet,
+        })
     }
 
     /// 設定儲存節點連線碼所在的資料夾（`HILLS_STORAGE_CODES_DIR`）。
@@ -265,130 +314,293 @@ impl Mailbox {
         to_resp(self.gate.put_revocation(rev).map_err(gate_err))
     }
 
-    fn register_invite(&self, who: &Verified, invite_id: [u8; 8], expires_at: i64) -> Response {
-        if !who.is_admin() {
-            return err(ErrorCode::Forbidden, "只有管理者可建立邀請");
-        }
-        if expires_at <= now_ms() {
-            return err(ErrorCode::BadRequest, "邀請已過期");
-        }
-        let Ok(db) = self.db.lock() else {
-            return err(ErrorCode::Internal, "lock");
+    fn rate_limited(&self, node: &Pub32) -> bool {
+        let Ok(mut rate) = self.join_rate.lock() else {
+            return true;
         };
-        match db.execute(
-            "INSERT INTO invites (invite_id, created_by, expires_at) VALUES (?1, ?2, ?3)",
-            params![&invite_id[..], &who.member_id.0[..], expires_at],
-        ) {
-            Ok(_) => Response::Ok,
-            Err(_) => err(ErrorCode::BadRequest, "邀請已存在"),
+        let now = Instant::now();
+        rate.retain(|_, v| {
+            v.retain(|t| now.duration_since(*t) < Duration::from_secs(60));
+            !v.is_empty()
+        });
+        let v = rate.entry(*node).or_default();
+        if v.len() >= JOIN_RATE {
+            return true;
         }
+        v.push(now);
+        false
     }
 
-    fn close_invite(&self, who: &Verified, invite_id: [u8; 8]) -> Response {
-        if !who.is_admin() {
-            return err(ErrorCode::Forbidden, "只有管理者可關閉邀請");
-        }
-        let Ok(db) = self.db.lock() else {
-            return err(ErrorCode::Internal, "lock");
-        };
-        let ok = db
-            .execute(
-                "UPDATE invites SET closed = 1 WHERE invite_id = ?1",
-                params![&invite_id[..]],
-            )
-            .is_ok()
-            && db
-                .execute(
-                    "DELETE FROM joins WHERE invite_id = ?1",
-                    params![&invite_id[..]],
-                )
-                .is_ok();
-        if ok {
-            Response::Ok
-        } else {
-            err(ErrorCode::Internal, "無法關閉邀請")
-        }
+    fn sweep(db: &Db) {
+        let now = now_ms();
+        let _ = db.execute(
+            "DELETE FROM applications WHERE received_at < ?1",
+            params![now - APPLICATION_TTL_MS],
+        );
+        let _ = db.execute(
+            "DELETE FROM grants WHERE created_at < ?1",
+            params![now - GRANT_TTL_MS],
+        );
     }
 
-    /// 加入申請：不需 Hello，但邀請必須已登記、未過期、未關閉，且申請中的裝置就是連線的 NodeId。
-    fn join(&self, org_id: OrgId, invite_id: [u8; 8], req: &JoinRequest, node: &Pub32) -> Response {
-        if org_id != self.org_id() || req.v != FORMAT_VERSION || req.name.chars().count() > 100 {
+    /// 加入 / 新裝置 / 還原申請（§17.6–17.8）：不需 Hello，但申請中的裝置必須就是連線的 NodeId，
+    /// 且 CAFECA 登入證明通過鏈上驗證。
+    async fn join(&self, org_id: OrgId, app: Application, node: &Pub32) -> Response {
+        if org_id != self.org_id() || !self.is_claimed() {
+            return err(ErrorCode::BadRequest, "組織不符");
+        }
+        let v = match &app {
+            Application::Join(a) | Application::Recover(a) => a.v,
+            Application::Device(a) => a.v,
+        };
+        if v != FORMAT_VERSION || app.name().chars().count() > 100 {
             return err(ErrorCode::BadRequest, "申請格式錯誤");
         }
-        if req.device_cert.body.device_pub != *node
-            || req.device_cert.signer != req.ik_pub
-            || hills_identity::cert::verify_signature(&req.device_cert).is_err()
+        if app.device_pub() != *node || !app.binding_consistent(&org_id) {
+            return err(ErrorCode::BadRequest, "申請與登入內容不符");
+        }
+        let account = app.proof().account;
+        let member = hills_identity::member_id_for(&account);
+        if let Application::Join(a) | Application::Recover(a) = &app
+            && (a.device_cert.body.member_id != member
+                || hills_identity::cert::verify_signature(&a.device_cert).is_err())
         {
             return err(ErrorCode::BadRequest, "裝置憑證無效");
         }
-        let Ok(bytes) = hills_proto::encode(req) else {
+        if self.rate_limited(node) {
+            return err(ErrorCode::TooLarge, "申請太頻繁，請稍後再試");
+        }
+        let Some(verifier) = self
+            .cafeca
+            .lock()
+            .ok()
+            .and_then(|c| c.as_ref().map(|(_, v)| v.clone()))
+        else {
+            return err(
+                ErrorCode::Internal,
+                "此 mailbox 尚未設定 CAFECA（HILLS_CAFECA_WALLET）",
+            );
+        };
+        let received_at = now_ms();
+        let verified = match verifier
+            .verify(app.proof(), (received_at / 1000) as u64)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::info!(error = %e, "拒絕申請：登入證明無效");
+                return err(ErrorCode::BadRequest, &e.to_string());
+            }
+        };
+        // 是否已是成員：加入需「不是」有效成員；新裝置與還原需「是」
+        let is_member = match self.gate.lock() {
+            Ok(t) => t.is_active_member(&member),
+            Err(_) => return err(ErrorCode::Internal, "lock"),
+        };
+        // 已是成員的「加入」視為新增裝置（§17.6）；新裝置與還原需已是成員
+        let (app, state) = match (app, is_member) {
+            (a @ Application::Join(_), true) => (a.into_device(), JoinState::AwaitingDevice),
+            (a @ Application::Join(_), false) => (a, JoinState::Pending),
+            (a @ Application::Device(_), true) => (a, JoinState::AwaitingDevice),
+            (a @ Application::Recover(_), true) => (a, JoinState::Pending),
+            (_, false) => return err(ErrorCode::Forbidden, "此 CAFECA 帳戶不是成員"),
+        };
+        let Ok(bytes) = hills_proto::encode(&app) else {
             return err(ErrorCode::Internal, "encode");
         };
         let Ok(db) = self.db.lock() else {
             return err(ErrorCode::Internal, "lock");
         };
-        let invite: Option<(i64, i64)> = db
-            .query_row(
-                "SELECT expires_at, closed FROM invites WHERE invite_id = ?1",
-                params![&invite_id[..]],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()
-            .ok()
-            .flatten();
-        match invite {
-            Some((exp, 0)) if exp > now_ms() => {}
-            _ => return err(ErrorCode::Forbidden, "邀請無效或已過期"),
-        }
+        Self::sweep(&db);
         let pending: i64 = db
             .query_row(
-                "SELECT COUNT(*) FROM joins WHERE invite_id = ?1",
-                params![&invite_id[..]],
+                "SELECT COUNT(*) FROM applications WHERE rejected = 0",
+                [],
                 |r| r.get(0),
             )
             .unwrap_or(i64::MAX);
         if pending >= MAX_PENDING_JOINS as i64 {
-            return err(ErrorCode::TooLarge, "此邀請的待處理申請已達上限");
+            return err(ErrorCode::TooLarge, "待處理申請已達上限");
         }
-        match db.execute(
-            "INSERT OR REPLACE INTO joins (invite_id, device, request, received_at) VALUES (?1, ?2, ?3, ?4)",
-            params![&invite_id[..], &node.0[..], bytes, now_ms()],
-        ) {
-            Ok(_) => Response::Ok,
-            Err(_) => err(ErrorCode::Internal, "無法保存申請"),
+        // 同一帳戶、同一種類只保留最新一筆
+        let kind = app_code(&app);
+        let ok = db
+            .execute(
+                "DELETE FROM applications WHERE account = ?1 AND kind = ?2",
+                params![&account.address[..], kind],
+            )
+            .is_ok()
+            && db
+                .execute(
+                    "INSERT OR REPLACE INTO applications (device, kind, account, member, data, received_at, handle)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![&node.0[..], kind, &account.address[..], &member.0[..], bytes, received_at, verified.handle],
+                )
+                .is_ok();
+        if ok {
+            Response::JoinStatus(state)
+        } else {
+            err(ErrorCode::Internal, "無法保存申請")
         }
+    }
+
+    fn join_status(&self, org_id: OrgId, device: &Pub32, node: &Pub32) -> Response {
+        if org_id != self.org_id() || device != node {
+            return err(ErrorCode::BadRequest, "只能查詢自己的申請");
+        }
+        let Ok(db) = self.db.lock() else {
+            return err(ErrorCode::Internal, "lock");
+        };
+        let row: Option<i64> = db
+            .query_row(
+                "SELECT rejected FROM applications WHERE device = ?1",
+                params![&device.0[..]],
+                |r| r.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten();
+        let kind: Option<i64> = db
+            .query_row(
+                "SELECT kind FROM applications WHERE device = ?1",
+                params![&device.0[..]],
+                |r| r.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten();
+        Response::JoinStatus(match row {
+            Some(0) if kind == Some(2) => JoinState::AwaitingDevice,
+            Some(0) => JoinState::Pending,
+            Some(_) => JoinState::Rejected,
+            None => JoinState::Unknown,
+        })
+    }
+
+    fn query_apps(&self, sql: &str, p: &[&dyn rusqlite::ToSql]) -> Response {
+        let Ok(db) = self.db.lock() else {
+            return err(ErrorCode::Internal, "lock");
+        };
+        Self::sweep(&db);
+        let rows: rusqlite::Result<Vec<AppRow>> = (|| {
+            let mut st = db.prepare(sql)?;
+            let it = st.query_map(p, |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            it.collect()
+        })();
+        let Ok(rows) = rows else {
+            return err(ErrorCode::Internal, "查詢失敗");
+        };
+        Response::Joins(
+            rows.into_iter()
+                .filter_map(|(data, at, handle)| {
+                    Some(PendingApplication {
+                        application: hills_proto::decode_unversioned(&data).ok()?,
+                        received_at: at,
+                        handle,
+                    })
+                })
+                .collect(),
+        )
     }
 
     fn fetch_joins(&self, who: &Verified) -> Response {
         if !who.is_admin() {
             return err(ErrorCode::Forbidden, "只有管理者可讀取加入申請");
         }
+        self.query_apps(
+            "SELECT data, received_at, handle FROM applications
+             WHERE rejected = 0 AND kind IN (1, 3) ORDER BY received_at",
+            &[],
+        )
+    }
+
+    fn resolve_join(&self, who: &Verified, device: &Pub32, approved: bool) -> Response {
+        if !who.is_admin() {
+            return err(ErrorCode::Forbidden, "只有管理者可處理加入申請");
+        }
         let Ok(db) = self.db.lock() else {
             return err(ErrorCode::Internal, "lock");
         };
-        let rows: rusqlite::Result<Vec<JoinRow>> = (|| {
-            let mut st = db.prepare(
-                "SELECT j.invite_id, j.request, j.received_at FROM joins j
-                 JOIN invites i ON i.invite_id = j.invite_id
-                 WHERE i.closed = 0 AND i.expires_at > ?1 ORDER BY j.id",
-            )?;
-            let it = st.query_map(params![now_ms()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
-            it.collect()
-        })();
-        let Ok(rows) = rows else {
-            return err(ErrorCode::Internal, "查詢失敗");
+        let r = if approved {
+            db.execute(
+                "DELETE FROM applications WHERE device = ?1 AND kind IN (1, 3)",
+                params![&device.0[..]],
+            )
+        } else {
+            db.execute(
+                "UPDATE applications SET rejected = 1 WHERE device = ?1 AND kind IN (1, 3)",
+                params![&device.0[..]],
+            )
         };
-        let joins = rows
-            .into_iter()
-            .filter_map(|(id, req, at)| {
-                Some(PendingJoin {
-                    invite_id: id.try_into().ok()?,
-                    request: hills_proto::decode(&req).ok()?,
-                    received_at: at,
-                })
-            })
-            .collect();
-        Response::Joins(joins)
+        match r {
+            Ok(_) => Response::Ok,
+            Err(_) => err(ErrorCode::Internal, "無法更新申請"),
+        }
+    }
+
+    fn fetch_device_requests(&self, who: &Verified) -> Response {
+        self.query_apps(
+            "SELECT data, received_at, handle FROM applications
+             WHERE rejected = 0 AND kind = 2 AND member = ?1 ORDER BY received_at",
+            &[&&who.member_id.0[..]],
+        )
+    }
+
+    fn put_device_grant(&self, who: &Verified, device: &Pub32, sealed: &[u8]) -> Response {
+        if sealed.len() > 4096 {
+            return err(ErrorCode::TooLarge, "封裝過大");
+        }
+        let Ok(db) = self.db.lock() else {
+            return err(ErrorCode::Internal, "lock");
+        };
+        let member: Option<Vec<u8>> = db
+            .query_row(
+                "SELECT member FROM applications WHERE device = ?1 AND kind = 2",
+                params![&device.0[..]],
+                |r| r.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten();
+        if member.as_deref() != Some(&who.member_id.0[..]) {
+            return err(ErrorCode::Forbidden, "不是本人的新裝置申請");
+        }
+        let ok = db
+            .execute(
+                "INSERT OR REPLACE INTO grants (device, sealed, created_at) VALUES (?1, ?2, ?3)",
+                params![&device.0[..], sealed, now_ms()],
+            )
+            .is_ok()
+            && db
+                .execute(
+                    "DELETE FROM applications WHERE device = ?1",
+                    params![&device.0[..]],
+                )
+                .is_ok();
+        if ok {
+            Response::Ok
+        } else {
+            err(ErrorCode::Internal, "無法保存封裝")
+        }
+    }
+
+    fn fetch_device_grant(&self, org_id: OrgId, device: &Pub32, node: &Pub32) -> Response {
+        if org_id != self.org_id() || device != node {
+            return err(ErrorCode::BadRequest, "只能取回自己的封裝");
+        }
+        let Ok(db) = self.db.lock() else {
+            return err(ErrorCode::Internal, "lock");
+        };
+        let sealed: Option<Vec<u8>> = db
+            .query_row(
+                "SELECT sealed FROM grants WHERE device = ?1",
+                params![&device.0[..]],
+                |r| r.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten();
+        Response::DeviceGrant(sealed)
     }
 
     fn put_keys(&self, wrapped: Vec<Signed<WrappedKey>>) -> Response {
@@ -416,17 +628,22 @@ impl Mailbox {
             let Ok(bytes) = hills_proto::encode(&w) else {
                 return err(ErrorCode::Internal, "encode");
             };
-            rows.push((w.body.recipient, w.body.key_id.to_string(), bytes));
+            rows.push((
+                w.body.recipient,
+                w.body.recipient_ek,
+                w.body.key_id.to_string(),
+                bytes,
+            ));
         }
         let Ok(db) = self.db.lock() else {
             return err(ErrorCode::Internal, "lock");
         };
-        for (recipient, key_id, bytes) in rows {
-            // 同一收件者、同一 keyId 只保留第一份（金鑰不會改變）
+        for (recipient, ek, key_id, bytes) in rows {
+            // 同一收件者、同一 EK、同一 keyId 只保留第一份（金鑰不會改變；還原換 EK 後可再封裝）
             if db
                 .execute(
-                    "INSERT OR IGNORE INTO wrapped_keys (recipient, key_id, data) VALUES (?1, ?2, ?3)",
-                    params![&recipient.0[..], key_id, bytes],
+                    "INSERT OR IGNORE INTO wrapped_keys (recipient, recipient_ek, key_id, data) VALUES (?1, ?2, ?3, ?4)",
+                    params![&recipient.0[..], &ek.0[..], key_id, bytes],
                 )
                 .is_err()
             {
@@ -666,12 +883,16 @@ impl Mailbox {
             Request::PutRoster(r) => self.put_roster(who, &r),
             Request::PutDevice(c) => self.put_device(who, &c),
             Request::PutRevocation(r) => self.put_revocation(&r),
-            Request::RegisterInvite {
-                invite_id,
-                expires_at,
-            } => self.register_invite(who, invite_id, expires_at),
-            Request::CloseInvite { invite_id } => self.close_invite(who, invite_id),
+            Request::Config => self.config(),
+            Request::JoinStatus { .. } | Request::FetchDeviceGrant { .. } => {
+                err(ErrorCode::BadRequest, "已登入的連線不需此請求")
+            }
             Request::FetchJoins => self.fetch_joins(who),
+            Request::ResolveJoin { device, approved } => self.resolve_join(who, &device, approved),
+            Request::FetchDeviceRequests => self.fetch_device_requests(who),
+            Request::PutDeviceGrant { device, sealed } => {
+                self.put_device_grant(who, &device, &sealed)
+            }
             Request::PutKeys(w) => self.put_keys(w),
             Request::FetchKeys { since } => self.fetch_keys(who, since),
             Request::Announce(addr) => self.announce(who, &addr),
@@ -692,7 +913,7 @@ impl Mailbox {
         }
     }
 
-    /// 處理一條連線：第一個請求必須是 Hello（Join 例外）。
+    /// 處理一條連線：第一個請求必須是 Hello（Config 與申請相關請求例外）。
     pub async fn handle(self: Arc<Self>, conn: Connection) {
         let node = remote_node(&conn);
         let mut who: Option<Verified> = None;
@@ -701,9 +922,15 @@ impl Mailbox {
                 Err(_) => err(ErrorCode::BadRequest, "無法解析請求"),
                 Ok(Request::Join {
                     org_id,
-                    invite_id,
-                    request,
-                }) if who.is_none() => self.join(org_id, invite_id, &request, &node),
+                    application,
+                }) if who.is_none() => self.join(org_id, *application, &node).await,
+                Ok(Request::Config) => self.config(),
+                Ok(Request::JoinStatus { org_id, device }) if who.is_none() => {
+                    self.join_status(org_id, &device, &node)
+                }
+                Ok(Request::FetchDeviceGrant { org_id, device }) if who.is_none() => {
+                    self.fetch_device_grant(org_id, &device, &node)
+                }
                 Ok(Request::Hello(h)) if who.is_none() => match self.hello(&h, &node) {
                     Ok(v) => {
                         who = Some(v);

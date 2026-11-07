@@ -42,12 +42,25 @@ pub(crate) fn now_ms() -> Timestamp {
 }
 
 /// 可調整的時間參數（測試時縮短）。
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct NodeOptions {
     pub presence_interval: Duration,
     pub presence_timeout: Duration,
     pub poll_interval: Duration,
-    pub invite_ttl: Duration,
+    /// CAFECA 登入證明驗證器；None 時依 mailbox 的 `Config` 建立 [`hills_cafeca::RpcVerifier`]（§17.4）。
+    /// 測試以 `hills_cafeca::Verifier::OfflineForTests` 取代。
+    pub verifier: Option<Arc<hills_cafeca::Verifier>>,
+}
+
+impl std::fmt::Debug for NodeOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NodeOptions")
+            .field("presence_interval", &self.presence_interval)
+            .field("presence_timeout", &self.presence_timeout)
+            .field("poll_interval", &self.poll_interval)
+            .field("verifier", &self.verifier.is_some())
+            .finish()
+    }
 }
 
 impl Default for NodeOptions {
@@ -56,7 +69,7 @@ impl Default for NodeOptions {
             presence_interval: Duration::from_secs(30),
             presence_timeout: Duration::from_secs(90),
             poll_interval: Duration::from_secs(15),
-            invite_ttl: Duration::from_secs(72 * 3600),
+            verifier: None,
         }
     }
 }
@@ -81,6 +94,15 @@ pub enum Event {
     DocChanged(String),
     /// 對話清單或成員變更
     ConvsChanged,
+    /// 待核准的加入 / 還原申請變更（管理者，§17.6）
+    JoinsChanged,
+    /// 本人的新裝置已加入（§17.6 步驟 5）
+    DeviceAdded {
+        device: Pub32,
+        name: String,
+    },
+    /// 加入或還原申請被拒絕
+    Rejected,
     /// 收到別人的新訊息（§14.2 通知）
     Message {
         conv: String,
@@ -149,6 +171,14 @@ pub(crate) struct Inner {
     pub status: Mutex<SyncStatus>,
     pub tasks: Mutex<Vec<JoinHandle<()>>>,
     pub storage: crate::storage::StoragePool,
+    /// CAFECA 驗證器（延遲建立，§17.4）
+    pub cafeca: tokio::sync::Mutex<Option<Arc<hills_cafeca::Verifier>>>,
+    /// 驗證通過、待管理者核准的申請
+    pub joins: Mutex<Vec<crate::approval::PendingJoin>>,
+    /// 已知各成員的 EK（偵測還原以重新封裝對話金鑰，§17.7）
+    pub known_eks: Mutex<HashMap<MemberId, Pub32>>,
+    /// 已通報被拒絕
+    pub rejected: std::sync::atomic::AtomicBool,
 }
 
 /// Hills 節點：一台裝置上的一個成員身分。
@@ -647,8 +677,8 @@ impl Node {
         let Some(cfg) = NodeConfig::load(dir)? else {
             return Ok(None);
         };
-        let Some(secrets) = Secrets::load(&secret_store)? else {
-            bail!("找不到本機金鑰（安全儲存區可能被清除），請以復原詞還原");
+        let Some(secrets) = Secrets::load(&secret_store, cfg.member_id)? else {
+            bail!("找不到本機金鑰（安全儲存區可能被清除），請清除資料後以 CAFECA 登入還原");
         };
         Ok(Some(
             Self::start(dir, secret_store, cfg, secrets, None, opts).await?,
@@ -733,6 +763,13 @@ impl Node {
             .flatten()
             .and_then(|raw| postcard::from_bytes(&raw).ok())
             .unwrap_or_default();
+        let opts_verifier = opts.verifier.clone();
+        let known_eks: HashMap<MemberId, Pub32> = store
+            .read_secret_file(crate::approval::EKS_FILE)
+            .ok()
+            .flatten()
+            .and_then(|raw| postcard::from_bytes(&raw).ok())
+            .unwrap_or_default();
         let inner = Arc::new(Inner {
             dir: dir.to_owned(),
             opts,
@@ -762,6 +799,10 @@ impl Node {
             status: Mutex::new(status),
             tasks: Mutex::new(Vec::new()),
             storage: Default::default(),
+            cafeca: tokio::sync::Mutex::new(opts_verifier),
+            joins: Mutex::new(Vec::new()),
+            known_eks: Mutex::new(known_eks),
+            rejected: std::sync::atomic::AtomicBool::new(false),
         });
         {
             let mut st = lock(&inner.st);
@@ -788,22 +829,6 @@ impl Node {
         tasks.push(tokio::spawn(crate::gossip::run(weak.clone())));
         tasks.push(tokio::spawn(crate::gossip::presence_loop(weak)));
     }
-}
-
-/// 綁定新裝置時寫入最小的初始狀態（其餘由 mailbox 補齊）。
-pub(crate) fn write_initial_state(
-    store: &DocStore,
-    trust: TrustStore,
-    cert: Signed<DeviceCert>,
-) -> Result<()> {
-    let p = Persisted {
-        roster: Some(trust.to_roster(now_ms())),
-        ring: KeyRing::default().export()?.to_vec(),
-        my_device_cert: Some(cert),
-        ..Default::default()
-    };
-    store.write_secret_file("state", &postcard::to_allocvec(&p)?)?;
-    Ok(())
 }
 
 fn read_held(store: &DocStore) -> Vec<(String, SignedChange)> {

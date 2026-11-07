@@ -1,19 +1,10 @@
-//! 文字碼：邀請碼、組織連線碼、mailbox 連線碼、裝置綁定碼（technical-design §16.2–16.4、§16.9）。
+//! 文字碼：組織連線碼、mailbox 連線碼、儲存節點連線碼（technical-design §15.6、§16.9、§17.1）。
 //!
 //! 格式：`<prefix>` + 小寫 base32（無補齊）of postcard。
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{FORMAT_VERSION, PeerAddr, ProtoError, Pub32, Versioned, check_version};
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct InviteTicket {
-    pub v: u8,
-    pub org_root: Pub32,
-    pub invite_id: [u8; 8],
-    pub secret: [u8; 16],
-    pub mailbox: PeerAddr,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OrgTicket {
@@ -36,18 +27,6 @@ pub struct StorageTicket {
     pub node: PeerAddr,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LinkTicket {
-    pub v: u8,
-    pub device: PeerAddr,
-    pub eph_pub: Pub32,
-}
-
-impl Versioned for InviteTicket {
-    fn version(&self) -> u8 {
-        self.v
-    }
-}
 impl Versioned for OrgTicket {
     fn version(&self) -> u8 {
         self.v
@@ -59,11 +38,6 @@ impl Versioned for MailboxTicket {
     }
 }
 impl Versioned for StorageTicket {
-    fn version(&self) -> u8 {
-        self.v
-    }
-}
-impl Versioned for LinkTicket {
     fn version(&self) -> u8 {
         self.v
     }
@@ -98,9 +72,6 @@ pub trait Ticket: Serialize + DeserializeOwned + Versioned {
     }
 }
 
-impl Ticket for InviteTicket {
-    const PREFIX: &'static str = "hills1-";
-}
 impl Ticket for OrgTicket {
     const PREFIX: &'static str = "hills-org1-";
 }
@@ -109,9 +80,6 @@ impl Ticket for MailboxTicket {
 }
 impl Ticket for StorageTicket {
     const PREFIX: &'static str = "hills-sto1-";
-}
-impl Ticket for LinkTicket {
-    const PREFIX: &'static str = "hills-link1-";
 }
 
 impl MailboxTicket {
@@ -154,18 +122,16 @@ mod tests {
     }
 
     #[test]
-    fn invite_roundtrip_and_whitespace() {
-        let t = InviteTicket {
+    fn org_ticket_roundtrip_and_whitespace() {
+        let t = OrgTicket {
             v: FORMAT_VERSION,
             org_root: Pub32([1; 32]),
-            invite_id: [2; 8],
-            secret: [3; 16],
             mailbox: addr(),
         };
         let code = t.to_code().unwrap();
-        assert!(code.starts_with("hills1-"));
+        assert!(code.starts_with("hills-org1-"));
         let wrapped = format!("  {}\n{}  ", &code[..20], &code[20..]);
-        assert_eq!(InviteTicket::from_code(&wrapped).unwrap(), t);
+        assert_eq!(OrgTicket::from_code(&wrapped).unwrap(), t);
     }
 
     #[test]
@@ -176,7 +142,7 @@ mod tests {
             mailbox: addr(),
         };
         let code = t.to_code().unwrap();
-        assert!(InviteTicket::from_code(&code).is_err());
+        assert!(MailboxTicket::from_code(&code).is_err());
         assert!(OrgTicket::from_code("hills-org1-!!!").is_err());
         assert!(OrgTicket::from_code("hills-org1-aaaa").is_err());
     }

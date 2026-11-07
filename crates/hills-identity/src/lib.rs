@@ -1,13 +1,10 @@
-//! 成員身分與金鑰（technical-design §2、§3.1）。
+//! 成員身分與金鑰（technical-design §2、§3.1、§17）。
 //!
 //! ```text
-//! 復原詞（BIP39 24 字）── 熵 32 bytes ─HKDF-SHA256─► IK（Ed25519，簽章）
-//!                                            └────► EK（X25519，接收封裝金鑰）
-//! 成員 ID = blake3(IK.pub) 前 16 bytes，以小寫 base32（無補齊）顯示
+//! CAFECA 帳戶（chainId + 身分合約地址）
+//! 成員 ID = blake3("hills/v1/member" ‖ chainId(u64 BE) ‖ address) 前 16 bytes
+//! IK（Ed25519，簽章）、EK（X25519，接收封裝金鑰）：成員第一台裝置隨機產生
 //! ```
-//!
-//! 金鑰由 BIP39 **熵** 推導，而不是由 BIP39 seed（PBKDF2）推導，因此同一組復原詞以英文或
-//! 繁體中文字表顯示都對應同一個身分。
 //!
 //! 憑證、裝置金鑰、組織根金鑰與信任鏈見 [`cert`]、[`trust`]；私密資料存放介面見 [`secret_store`]。
 //!
@@ -17,33 +14,22 @@
 use std::fmt;
 
 pub use hills_proto::MemberId;
+use hills_proto::cafeca::CafecaAccount;
 
-use bip39::{Language, Mnemonic};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
-use hkdf::Hkdf;
-use sha2::Sha256;
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret};
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 pub mod cert;
 pub mod secret_store;
 pub mod trust;
 
-/// 推導用的 HKDF salt。變更此值等同變更所有成員身分，屬於協定變更。
-const HKDF_SALT: &[u8] = b"hills/v1/identity";
-const INFO_IK: &[u8] = b"hills/v1/ik";
-const INFO_EK: &[u8] = b"hills/v1/ek";
+/// 成員 ID 推導的 domain separation 前綴。變更等同變更所有成員 ID，屬於協定變更。
+const MEMBER_ID_DOMAIN: &[u8] = b"hills/v1/member";
 
-/// 復原詞字數（256-bit 熵）。
-pub const WORD_COUNT: usize = 24;
-
-/// 身分模組的錯誤。錯誤訊息不包含復原詞或金鑰內容。
+/// 身分模組的錯誤。錯誤訊息不包含金鑰內容。
 #[derive(Debug, thiserror::Error)]
 pub enum IdentityError {
-    #[error("復原詞無效（字數、拼字或檢查碼錯誤）")]
-    InvalidPhrase,
-    #[error("復原詞必須是 {WORD_COUNT} 個字")]
-    WrongWordCount,
     #[error("無法取得系統亂數")]
     Randomness,
     #[error("簽章驗證失敗")]
@@ -64,120 +50,56 @@ pub enum IdentityError {
     Proto(#[from] hills_proto::ProtoError),
 }
 
-/// 復原詞顯示語言。兩種語言對應同一個熵，因此對應同一個身分。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PhraseLanguage {
-    English,
-    TraditionalChinese,
-}
-
-impl From<PhraseLanguage> for Language {
-    fn from(l: PhraseLanguage) -> Self {
-        match l {
-            PhraseLanguage::English => Language::English,
-            PhraseLanguage::TraditionalChinese => Language::TraditionalChinese,
-        }
-    }
-}
-
-/// 24 字復原詞。只保存熵，drop 時清除。
-pub struct RecoveryPhrase {
-    entropy: Zeroizing<[u8; 32]>,
-}
-
-impl RecoveryPhrase {
-    /// 以系統亂數產生新的復原詞。
-    pub fn generate() -> Result<Self, IdentityError> {
-        let mut entropy = Zeroizing::new([0u8; 32]);
-        getrandom::fill(entropy.as_mut()).map_err(|_| IdentityError::Randomness)?;
-        Ok(Self { entropy })
-    }
-
-    /// 由使用者輸入的復原詞還原；自動辨識英文或繁體中文字表，容許多餘空白。
-    pub fn parse(input: &str) -> Result<Self, IdentityError> {
-        let normalized = input.split_whitespace().collect::<Vec<_>>().join(" ");
-        if normalized.split(' ').count() != WORD_COUNT {
-            return Err(IdentityError::WrongWordCount);
-        }
-        let mnemonic = [Language::English, Language::TraditionalChinese]
-            .into_iter()
-            .find_map(|lang| Mnemonic::parse_in_normalized(lang, &normalized).ok())
-            .ok_or(IdentityError::InvalidPhrase)?;
-        let mut entropy = Zeroizing::new([0u8; 32]);
-        let raw = Zeroizing::new(mnemonic.to_entropy());
-        if raw.len() != 32 {
-            return Err(IdentityError::WrongWordCount);
-        }
-        entropy.copy_from_slice(&raw);
-        Ok(Self { entropy })
-    }
-
-    /// 以指定語言輸出 24 個字。呼叫端顯示後應盡快丟棄。
-    pub fn words(&self, lang: PhraseLanguage) -> Zeroizing<Vec<String>> {
-        // 熵固定 32 bytes，from_entropy_in 只會在長度錯誤時失敗。
-        let words = Mnemonic::from_entropy_in(lang.into(), self.entropy.as_ref())
-            .map(|m| m.words().map(str::to_owned).collect())
-            .unwrap_or_default();
-        Zeroizing::new(words)
-    }
-
-    /// 由熵還原（裝置綁定時由舊裝置傳來，technical-design §16.3）。
-    pub fn from_entropy(entropy: &[u8; 32]) -> Self {
-        Self {
-            entropy: Zeroizing::new(*entropy),
-        }
-    }
-
-    /// 熵（寫入安全儲存區或傳給新裝置時使用）。
-    pub fn entropy(&self) -> Zeroizing<[u8; 32]> {
-        self.entropy.clone()
-    }
-
-    /// 推導成員金鑰。
-    pub fn derive_keys(&self) -> MemberKeys {
-        MemberKeys::derive(&self.entropy)
-    }
-}
-
-impl fmt::Debug for RecoveryPhrase {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("RecoveryPhrase(<redacted>)")
-    }
-}
-
-/// 由 IK 公鑰計算成員 ID：blake3(IK.pub) 前 16 bytes（technical-design §3.1）。
-pub fn member_id_for(ik: &VerifyingKey) -> MemberId {
-    let hash = blake3::hash(ik.as_bytes());
+/// 由 CAFECA 帳戶計算成員 ID（technical-design §3.1）。
+pub fn member_id_for(account: &CafecaAccount) -> MemberId {
+    let mut h = blake3::Hasher::new();
+    h.update(MEMBER_ID_DOMAIN);
+    h.update(&account.chain_id.to_be_bytes());
+    h.update(&account.address);
     let mut id = [0u8; 16];
-    id.copy_from_slice(&hash.as_bytes()[..16]);
+    id.copy_from_slice(&h.finalize().as_bytes()[..16]);
     MemberId(id)
 }
 
-/// 成員的身分金鑰 IK 與協商金鑰 EK。私鑰在 drop 時清除。
+/// 成員的身分金鑰 IK 與協商金鑰 EK，以及所屬成員 ID。私鑰在 drop 時清除。
 pub struct MemberKeys {
     ik: SigningKey,
     ek: StaticSecret,
+    member_id: MemberId,
 }
 
 impl MemberKeys {
-    fn derive(entropy: &[u8; 32]) -> Self {
-        let hk = Hkdf::<Sha256>::new(Some(HKDF_SALT), entropy);
-        let mut ik_bytes = Zeroizing::new([0u8; 32]);
-        let mut ek_bytes = Zeroizing::new([0u8; 32]);
-        // 輸出 32 bytes 遠小於 HKDF-SHA256 上限（255 × 32），expand 不會失敗。
-        let _ = hk.expand(INFO_IK, ik_bytes.as_mut());
-        let _ = hk.expand(INFO_EK, ek_bytes.as_mut());
-        let keys = Self {
-            ik: SigningKey::from_bytes(&ik_bytes),
-            ek: StaticSecret::from(*ek_bytes),
-        };
-        ik_bytes.zeroize();
-        ek_bytes.zeroize();
-        keys
+    /// 以系統亂數產生新的 IK / EK（成員 ID 尚未決定，登入 CAFECA 後以 [`Self::with_member`] 設定）。
+    pub fn generate() -> Result<Self, IdentityError> {
+        let mut ik = Zeroizing::new([0u8; 32]);
+        let mut ek = Zeroizing::new([0u8; 32]);
+        getrandom::fill(ik.as_mut()).map_err(|_| IdentityError::Randomness)?;
+        getrandom::fill(ek.as_mut()).map_err(|_| IdentityError::Randomness)?;
+        Ok(Self::from_secret_bytes(MemberId([0; 16]), &ik, &ek))
+    }
+
+    /// 由私鑰位元組還原（安全儲存區、新裝置封裝）。
+    pub fn from_secret_bytes(member_id: MemberId, ik: &[u8; 32], ek: &[u8; 32]) -> Self {
+        Self {
+            ik: SigningKey::from_bytes(ik),
+            ek: StaticSecret::from(*ek),
+            member_id,
+        }
+    }
+
+    /// 設定所屬成員 ID（由 CAFECA 帳戶推導）。
+    pub fn with_member(mut self, member_id: MemberId) -> Self {
+        self.member_id = member_id;
+        self
+    }
+
+    /// IK 私鑰位元組（寫入安全儲存區或封裝給本人新裝置時使用）。
+    pub fn identity_secret_bytes(&self) -> Zeroizing<[u8; 32]> {
+        Zeroizing::new(self.ik.to_bytes())
     }
 
     pub fn member_id(&self) -> MemberId {
-        member_id_for(&self.ik.verifying_key())
+        self.member_id
     }
 
     /// IK 公鑰。
@@ -237,102 +159,62 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
 
-    /// BIP39 官方測試向量的 256-bit 全零熵。
-    const VECTOR_EN: &str = "abandon abandon abandon abandon abandon abandon abandon abandon \
-        abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon \
-        abandon abandon abandon abandon abandon art";
+    fn account(b: u8) -> CafecaAccount {
+        CafecaAccount {
+            chain_id: 8018,
+            address: [b; 20],
+        }
+    }
 
+    /// 固定測試向量：推導方式改變等同所有成員 ID 改變。
     #[test]
-    fn bip39_vector_roundtrip() {
-        let p = RecoveryPhrase::parse(VECTOR_EN).unwrap();
-        assert_eq!(p.entropy.as_ref(), &[0u8; 32]);
+    fn member_id_is_stable() {
+        let id = member_id_for(&CafecaAccount {
+            chain_id: 8018,
+            address: [0x11; 20],
+        });
         assert_eq!(
-            p.words(PhraseLanguage::English).join(" "),
-            VECTOR_EN.split_whitespace().collect::<Vec<_>>().join(" ")
-        );
-    }
-
-    /// 固定測試向量：任何實作變更若改變推導結果，此測試會失敗（等同所有身分改變）。
-    #[test]
-    fn derivation_is_stable() {
-        let keys = RecoveryPhrase::parse(VECTOR_EN).unwrap().derive_keys();
-        let id = keys.member_id().to_string();
-        let ik = data_encoding::HEXLOWER.encode(keys.identity_public().as_bytes());
-        let ek = data_encoding::HEXLOWER.encode(keys.exchange_public().as_bytes());
-        insta_like(
-            "member_id",
-            &id,
-            include_str!("../tests/vectors/member_id.txt"),
-        );
-        insta_like("ik_pub", &ik, include_str!("../tests/vectors/ik_pub.txt"));
-        insta_like("ek_pub", &ek, include_str!("../tests/vectors/ek_pub.txt"));
-    }
-
-    fn insta_like(name: &str, got: &str, expected: &str) {
-        assert_eq!(
-            got,
-            expected.trim(),
-            "{name} 測試向量不符；若是刻意變更協定，請同步更新文件與向量"
+            id.to_string(),
+            include_str!("../tests/vectors/member_id.txt").trim(),
+            "成員 ID 測試向量不符；若是刻意變更協定，請同步更新文件與向量"
         );
     }
 
     #[test]
-    fn chinese_and_english_map_to_same_identity() {
-        let p = RecoveryPhrase::generate().unwrap();
-        let zh = p.words(PhraseLanguage::TraditionalChinese).join(" ");
-        let en = p.words(PhraseLanguage::English).join(" ");
-        let a = RecoveryPhrase::parse(&zh)
+    fn member_id_depends_on_chain_and_address() {
+        assert_ne!(member_id_for(&account(1)), member_id_for(&account(2)));
+        let mut other_chain = account(1);
+        other_chain.chain_id = 1;
+        assert_ne!(member_id_for(&account(1)), member_id_for(&other_chain));
+    }
+
+    #[test]
+    fn secret_bytes_roundtrip() {
+        let k = MemberKeys::generate()
             .unwrap()
-            .derive_keys()
-            .member_id();
-        let b = RecoveryPhrase::parse(&en)
-            .unwrap()
-            .derive_keys()
-            .member_id();
-        assert_eq!(a, b);
-        assert_eq!(a, p.derive_keys().member_id());
-    }
-
-    #[test]
-    fn rejects_bad_phrases() {
-        assert!(matches!(
-            RecoveryPhrase::parse("abandon abandon"),
-            Err(IdentityError::WrongWordCount)
-        ));
-        let bad_checksum = VECTOR_EN.replace(" art", " abandon");
-        assert!(matches!(
-            RecoveryPhrase::parse(&bad_checksum),
-            Err(IdentityError::InvalidPhrase)
-        ));
-        let twelve = "abandon ".repeat(11) + "about";
-        assert!(matches!(
-            RecoveryPhrase::parse(&twelve),
-            Err(IdentityError::WrongWordCount)
-        ));
-    }
-
-    #[test]
-    fn tolerates_extra_whitespace() {
-        let messy = format!("  {}\n", VECTOR_EN.replace(' ', "   "));
-        assert!(RecoveryPhrase::parse(&messy).is_ok());
+            .with_member(member_id_for(&account(3)));
+        let r = MemberKeys::from_secret_bytes(
+            k.member_id(),
+            &k.identity_secret_bytes(),
+            &k.exchange_secret_bytes(),
+        );
+        assert_eq!(r.identity_public(), k.identity_public());
+        assert_eq!(r.exchange_public(), k.exchange_public());
+        assert_eq!(r.member_id(), k.member_id());
     }
 
     #[test]
     fn debug_never_leaks_secrets() {
-        let p = RecoveryPhrase::parse(VECTOR_EN).unwrap();
-        assert!(!format!("{p:?}").contains("abandon"));
-        let k = p.derive_keys();
+        let k = MemberKeys::generate().unwrap();
         let dbg = format!("{k:?}");
         assert!(dbg.contains("member_id"));
-        assert!(!dbg.contains(&data_encoding::HEXLOWER.encode(&[0u8; 4])));
+        let secret = data_encoding::HEXLOWER.encode(&k.identity_secret_bytes()[..]);
+        assert!(!dbg.contains(&secret));
     }
 
     #[test]
     fn member_id_display_roundtrip() {
-        let id = RecoveryPhrase::generate()
-            .unwrap()
-            .derive_keys()
-            .member_id();
+        let id = member_id_for(&account(9));
         assert_eq!(MemberId::parse(&id.to_string()).unwrap(), id);
         assert_eq!(id.to_string().len(), 26);
         assert!(MemberId::parse("not-base32!").is_err());
@@ -340,8 +222,8 @@ mod tests {
 
     #[test]
     fn dh_agrees() {
-        let a = RecoveryPhrase::generate().unwrap().derive_keys();
-        let b = RecoveryPhrase::generate().unwrap().derive_keys();
+        let a = MemberKeys::generate().unwrap();
+        let b = MemberKeys::generate().unwrap();
         assert_eq!(
             *a.diffie_hellman(&b.exchange_public()),
             *b.diffie_hellman(&a.exchange_public())
@@ -351,18 +233,45 @@ mod tests {
     proptest! {
         #[test]
         fn sign_verify_roundtrip(msg in proptest::collection::vec(any::<u8>(), 0..256)) {
-            let k = RecoveryPhrase::generate().unwrap().derive_keys();
+            let k = MemberKeys::generate().unwrap();
             let sig = k.sign(&msg);
             prop_assert!(verify(&k.identity_public(), &msg, &sig).is_ok());
             let mut tampered = msg.clone();
             tampered.push(1);
             prop_assert!(verify(&k.identity_public(), &tampered, &sig).is_err());
         }
+    }
+}
 
-        #[test]
-        fn distinct_entropy_distinct_ids(a in any::<[u8; 32]>(), b in any::<[u8; 32]>()) {
-            prop_assume!(a != b);
-            prop_assert_ne!(MemberKeys::derive(&a).member_id(), MemberKeys::derive(&b).member_id());
+/// 測試輔助（`testing` feature）：以 IK 公鑰前 20 bytes 當作 CAFECA 帳戶地址，讓測試不需另存帳戶。
+#[cfg(any(test, feature = "testing"))]
+#[allow(clippy::expect_used)] // 測試輔助：亂數失敗即 panic
+pub mod testing {
+    use super::*;
+    use crate::cert::MemberPublic;
+
+    /// 測試用的鏈 ID。
+    pub const CHAIN_ID: u64 = 8018;
+
+    /// 由 IK 推導的測試帳戶。
+    pub fn account_of(keys: &MemberKeys) -> CafecaAccount {
+        let mut address = [0u8; 20];
+        address.copy_from_slice(&keys.identity_public().as_bytes()[..20]);
+        CafecaAccount {
+            chain_id: CHAIN_ID,
+            address,
         }
+    }
+
+    /// 新成員金鑰（成員 ID 由測試帳戶推導）。
+    pub fn keys() -> MemberKeys {
+        let k = MemberKeys::generate().expect("亂數");
+        let id = member_id_for(&account_of(&k));
+        k.with_member(id)
+    }
+
+    /// 簽發 MemberCert 用的公開資訊。
+    pub fn public(keys: &MemberKeys) -> MemberPublic {
+        MemberPublic::of(keys, account_of(keys))
     }
 }

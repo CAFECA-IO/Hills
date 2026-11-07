@@ -10,15 +10,16 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
+pub mod cafeca;
 pub mod gossip;
-pub mod link;
 pub mod mailbox;
 pub mod storage;
 pub mod sync;
 pub mod ticket;
 
 /// 目前的協定 / 資料格式版本。
-pub const FORMAT_VERSION: u8 = 1;
+/// v2（technical-design §17.9）：以 CAFECA 登入，MemberCert、WrappedKey、mailbox 請求格式改變。
+pub const FORMAT_VERSION: u8 = 2;
 /// 簽章輸入的前綴。
 pub const SIGN_PREFIX: &[u8] = b"hills/v1/";
 
@@ -197,7 +198,8 @@ impl Signable for DeviceCert {
     const SIGN_TYPE: &'static str = "device-cert";
 }
 
-/// `MemberCert = Sign_admin(memberId, IK.pub, EK.pub, roles, issuedAt)`
+/// `MemberCert = Sign_admin(memberId, IK.pub, EK.pub, roles, cafeca, issuedAt)`（technical-design §3.1、§17）。
+/// `member_id` 必須由 `cafeca` 推導；同一成員以 `issued_at` 最新者為準（還原換發）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemberCert {
     pub v: u8,
@@ -206,6 +208,7 @@ pub struct MemberCert {
     pub ik_pub: Pub32,
     pub ek_pub: Pub32,
     pub roles: Vec<Role>,
+    pub cafeca: cafeca::CafecaAccount,
     pub issued_at: Timestamp,
 }
 
@@ -343,6 +346,8 @@ pub struct WrappedKey {
     pub v: u8,
     pub key_id: KeyId,
     pub recipient: MemberId,
+    /// 封裝對象的 EK（還原換發後舊 EK 的封裝不再適用，technical-design §17.7）
+    pub recipient_ek: Pub32,
     #[serde(with = "serde_bytes")]
     pub enc: Vec<u8>,
     #[serde(with = "serde_bytes")]
@@ -374,30 +379,6 @@ pub struct PeerAddr {
     pub direct: Vec<String>,
 }
 
-/// 加入申請（technical-design §16.2）。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct JoinRequest {
-    pub v: u8,
-    pub ik_pub: Pub32,
-    pub ek_pub: Pub32,
-    pub device_cert: Signed<DeviceCert>,
-    pub name: String,
-    pub mac: [u8; 32],
-}
-
-impl JoinRequest {
-    /// MAC 的輸入：mac 以外的全部欄位。
-    pub fn mac_input(&self) -> Result<Vec<u8>, ProtoError> {
-        encode(&(
-            self.v,
-            &self.ik_pub,
-            &self.ek_pub,
-            &self.device_cert,
-            &self.name,
-        ))
-    }
-}
-
 versioned!(
     DeviceCert,
     MemberCert,
@@ -405,8 +386,7 @@ versioned!(
     Roster,
     SignedChangeBody,
     WrappedKey,
-    EncryptedBundle,
-    JoinRequest
+    EncryptedBundle
 );
 
 #[cfg(test)]
@@ -447,7 +427,7 @@ mod tests {
     #[test]
     fn roundtrip_and_version_check() {
         let b = EncryptedBundle {
-            v: 1,
+            v: FORMAT_VERSION,
             doc_id: "team/t1".into(),
             key_id: KeyId {
                 family: KeyFamily::Team("t1".into()),
@@ -460,10 +440,10 @@ mod tests {
         let enc = encode(&b).unwrap();
         assert_eq!(decode::<EncryptedBundle>(&enc).unwrap(), b);
         let mut future = b.clone();
-        future.v = 2;
+        future.v = FORMAT_VERSION + 1;
         assert_eq!(
             decode::<EncryptedBundle>(&encode(&future).unwrap()),
-            Err(ProtoError::UnsupportedVersion(2))
+            Err(ProtoError::UnsupportedVersion(FORMAT_VERSION + 1))
         );
         assert_eq!(
             decode::<EncryptedBundle>(&[0xff, 0xff]),

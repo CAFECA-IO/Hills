@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use automerge::{
     AutoCommit, ObjId, ObjType, ROOT, ReadDoc, ScalarValue, Value, transaction::Transactable,
 };
-use hills_proto::{MemberId, Role, Timestamp};
+use hills_proto::{MemberId, Timestamp};
 use hills_sync::Directory;
 use serde::Serialize;
 
@@ -14,6 +14,10 @@ pub struct MemberRec {
     pub name: String,
     pub joined_at: Timestamp,
     pub removed_at: Option<Timestamp>,
+    /// CAFECA 帳戶（CAIP-10：`eip155:<chainId>:<address>`，technical-design §16.8 v0.13）
+    pub cafeca: Option<String>,
+    /// CAFECA 代稱（加入時查詢，只供顯示）
+    pub handle: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -21,17 +25,6 @@ pub struct TeamRec {
     pub name: String,
     pub leads: Vec<MemberId>,
     pub members: Vec<MemberId>,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct InviteRec {
-    pub secret_hash: String,
-    pub role: Role,
-    pub team_ids: Vec<String>,
-    pub expires_at: Timestamp,
-    pub created_by: MemberId,
-    pub used_by: Option<MemberId>,
-    pub revoked: bool,
 }
 
 /// 辦公室（technical-design §16.8 v0.11；M1 不比對 Wi-Fi）。
@@ -55,7 +48,6 @@ pub struct OrgSnapshot {
     pub locale: String,
     pub members: BTreeMap<MemberId, MemberRec>,
     pub teams: BTreeMap<String, TeamRec>,
-    pub invites: BTreeMap<String, InviteRec>,
     pub offices: BTreeMap<String, OfficeRec>,
     pub lunch_break: Option<LunchBreak>,
     /// 對話現任成員（由本人可解密的 meta 投影，§14.1；不屬於 org 文件）
@@ -127,10 +119,6 @@ pub(crate) fn get_int(doc: &AutoCommit, obj: &ObjId, key: &str) -> Option<i64> {
     }
 }
 
-fn get_bool(doc: &AutoCommit, obj: &ObjId, key: &str) -> bool {
-    matches!(doc.get(obj, key).ok().flatten().map(|v| v.0), Some(Value::Scalar(s)) if matches!(s.as_ref(), ScalarValue::Boolean(true)))
-}
-
 fn get_ids(doc: &AutoCommit, obj: &ObjId, key: &str) -> Vec<MemberId> {
     get_strs(doc, obj, key)
         .iter()
@@ -153,21 +141,6 @@ fn get_strs(doc: &AutoCommit, obj: &ObjId, key: &str) -> Vec<String> {
         .collect()
 }
 
-fn role_of(s: &str) -> Role {
-    if s == "admin" {
-        Role::Admin
-    } else {
-        Role::Member
-    }
-}
-
-fn role_str(r: Role) -> &'static str {
-    match r {
-        Role::Admin => "admin",
-        Role::Member => "member",
-    }
-}
-
 pub fn read(doc: &AutoCommit) -> OrgSnapshot {
     let mut s = OrgSnapshot {
         name: get_str(doc, &ROOT, "name").unwrap_or_default(),
@@ -186,6 +159,8 @@ pub fn read(doc: &AutoCommit) -> OrgSnapshot {
                     name: get_str(doc, &m, "name").unwrap_or_default(),
                     joined_at: get_int(doc, &m, "joinedAt").unwrap_or(0),
                     removed_at: get_int(doc, &m, "removedAt"),
+                    cafeca: get_str(doc, &m, "cafeca"),
+                    handle: get_str(doc, &m, "handle"),
                 },
             );
         }
@@ -201,30 +176,6 @@ pub fn read(doc: &AutoCommit) -> OrgSnapshot {
                     name: get_str(doc, &t, "name").unwrap_or_default(),
                     leads: get_ids(doc, &t, "leadIds"),
                     members: get_ids(doc, &t, "memberIds"),
-                },
-            );
-        }
-    }
-    if let Some(invites) = get_obj(doc, &ROOT, "invites") {
-        for k in doc.keys(&invites) {
-            let Some(i) = get_obj(doc, &invites, &k) else {
-                continue;
-            };
-            let Some(created_by) =
-                get_str(doc, &i, "createdBy").and_then(|c| MemberId::parse(&c).ok())
-            else {
-                continue;
-            };
-            s.invites.insert(
-                k.clone(),
-                InviteRec {
-                    secret_hash: get_str(doc, &i, "secretHash").unwrap_or_default(),
-                    role: role_of(&get_str(doc, &i, "role").unwrap_or_default()),
-                    team_ids: get_strs(doc, &i, "teamIds"),
-                    expires_at: get_int(doc, &i, "expiresAt").unwrap_or(0),
-                    created_by,
-                    used_by: get_str(doc, &i, "usedBy").and_then(|u| MemberId::parse(&u).ok()),
-                    revoked: get_bool(doc, &i, "revoked"),
                 },
             );
         }
@@ -275,6 +226,8 @@ pub struct NewOrg<'a> {
     pub locale: &'a str,
     pub creator: MemberId,
     pub creator_name: &'a str,
+    pub creator_cafeca: &'a str,
+    pub creator_handle: Option<&'a str>,
     pub team_id: &'a str,
     pub team_name: &'a str,
     pub now: Timestamp,
@@ -284,13 +237,22 @@ pub fn init(doc: &mut AutoCommit, o: &NewOrg<'_>) -> R<()> {
     doc.put(ROOT, "name", o.name)?;
     doc.put(ROOT, "timezone", o.timezone)?;
     doc.put(ROOT, "locale", o.locale)?;
-    ensure_map(doc, &ROOT, "invites")?;
     let teams = ensure_map(doc, &ROOT, "teams")?;
     let t = doc.put_object(&teams, o.team_id, ObjType::Map)?;
     doc.put(&t, "name", o.team_name)?;
     put_list(doc, &t, "leadIds", &[o.creator.to_string()])?;
     put_list(doc, &t, "memberIds", &[o.creator.to_string()])?;
-    add_member(doc, &o.creator, o.creator_name, o.now)
+    add_member(
+        doc,
+        &NewMember {
+            id: o.creator,
+            name: o.creator_name,
+            cafeca: o.creator_cafeca,
+            handle: o.creator_handle,
+            approved_by: None,
+            now: o.now,
+        },
+    )
 }
 
 pub fn rename(doc: &mut AutoCommit, name: &str) -> R<()> {
@@ -298,11 +260,28 @@ pub fn rename(doc: &mut AutoCommit, name: &str) -> R<()> {
     Ok(())
 }
 
-pub fn add_member(doc: &mut AutoCommit, id: &MemberId, name: &str, now: Timestamp) -> R<()> {
+/// 新成員（technical-design §16.8 v0.13）。
+pub struct NewMember<'a> {
+    pub id: MemberId,
+    pub name: &'a str,
+    pub cafeca: &'a str,
+    pub handle: Option<&'a str>,
+    pub approved_by: Option<MemberId>,
+    pub now: Timestamp,
+}
+
+pub fn add_member(doc: &mut AutoCommit, n: &NewMember<'_>) -> R<()> {
     let members = ensure_map(doc, &ROOT, "members")?;
-    let m = doc.put_object(&members, id.to_string().as_str(), ObjType::Map)?;
-    doc.put(&m, "name", name)?;
-    doc.put(&m, "joinedAt", now)?;
+    let m = doc.put_object(&members, n.id.to_string().as_str(), ObjType::Map)?;
+    doc.put(&m, "name", n.name)?;
+    doc.put(&m, "joinedAt", n.now)?;
+    doc.put(&m, "cafeca", n.cafeca)?;
+    if let Some(h) = n.handle {
+        doc.put(&m, "handle", h)?;
+    }
+    if let Some(a) = n.approved_by {
+        doc.put(&m, "approvedBy", a.to_string().as_str())?;
+    }
     Ok(())
 }
 
@@ -337,34 +316,6 @@ pub fn remove_member(doc: &mut AutoCommit, id: &MemberId, now: Timestamp) -> R<(
                 put_list(doc, &t, field, &kept)?;
             }
         }
-    }
-    Ok(())
-}
-
-pub fn add_invite(doc: &mut AutoCommit, id: &str, rec: &InviteRec) -> R<()> {
-    let invites = ensure_map(doc, &ROOT, "invites")?;
-    let i = doc.put_object(&invites, id, ObjType::Map)?;
-    doc.put(&i, "secretHash", rec.secret_hash.as_str())?;
-    doc.put(&i, "role", role_str(rec.role))?;
-    put_list(doc, &i, "teamIds", &rec.team_ids)?;
-    doc.put(&i, "expiresAt", rec.expires_at)?;
-    doc.put(&i, "createdBy", rec.created_by.to_string().as_str())?;
-    doc.put(&i, "revoked", rec.revoked)?;
-    Ok(())
-}
-
-pub fn mark_invite_used(doc: &mut AutoCommit, id: &str, by: &MemberId) -> R<()> {
-    let invites = ensure_map(doc, &ROOT, "invites")?;
-    if let Some(i) = get_obj(doc, &invites, id) {
-        doc.put(&i, "usedBy", by.to_string().as_str())?;
-    }
-    Ok(())
-}
-
-pub fn revoke_invite(doc: &mut AutoCommit, id: &str) -> R<()> {
-    let invites = ensure_map(doc, &ROOT, "invites")?;
-    if let Some(i) = get_obj(doc, &invites, id) {
-        doc.put(&i, "revoked", true)?;
     }
     Ok(())
 }
@@ -420,19 +371,6 @@ pub fn valid_hhmm(s: &str) -> bool {
         && m.parse::<u8>().is_ok_and(|m| m < 60)
 }
 
-// ---------- member/<id>/secrets ----------
-
-pub fn put_invite_secret(doc: &mut AutoCommit, invite_id: &str, secret_hex: &str) -> R<()> {
-    let invites = ensure_map(doc, &ROOT, "invites")?;
-    doc.put(&invites, invite_id, secret_hex)?;
-    Ok(())
-}
-
-pub fn invite_secret(doc: &AutoCommit, invite_id: &str) -> Option<String> {
-    let invites = get_obj(doc, &ROOT, "invites")?;
-    get_str(doc, &invites, invite_id)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -450,36 +388,35 @@ mod tests {
                 locale: "zh-TW",
                 creator: a,
                 creator_name: "管理者",
+                creator_cafeca: "eip155:8018:0x01",
+                creator_handle: Some("admin"),
                 team_id: "general",
                 team_name: "全體",
                 now: 1,
             },
         )
         .unwrap();
-        add_member(&mut doc, &b, "小明", 2).unwrap();
-        add_to_team(&mut doc, "general", &b).unwrap();
-        add_to_team(&mut doc, "general", &b).unwrap();
-        add_invite(
+        add_member(
             &mut doc,
-            "abcd",
-            &InviteRec {
-                secret_hash: "h".into(),
-                role: Role::Member,
-                team_ids: vec!["general".into()],
-                expires_at: 9,
-                created_by: a,
-                used_by: None,
-                revoked: false,
+            &NewMember {
+                id: b,
+                name: "小明",
+                cafeca: "eip155:8018:0x02",
+                handle: None,
+                approved_by: Some(a),
+                now: 2,
             },
         )
         .unwrap();
-        mark_invite_used(&mut doc, "abcd", &b).unwrap();
+        add_to_team(&mut doc, "general", &b).unwrap();
+        add_to_team(&mut doc, "general", &b).unwrap();
         let s = read(&doc);
         assert_eq!(s.name, "CAFECA");
         assert_eq!(s.members.len(), 2);
         assert!(s.is_team_member("general", &b));
         assert_eq!(s.teams["general"].members.len(), 2);
-        assert_eq!(s.invites["abcd"].used_by, Some(b));
+        assert_eq!(s.members[&a].handle.as_deref(), Some("admin"));
+        assert_eq!(s.members[&b].cafeca.as_deref(), Some("eip155:8018:0x02"));
         remove_member(&mut doc, &b, 3).unwrap();
         let s = read(&doc);
         assert!(!s.is_team_member("general", &b));
@@ -511,13 +448,5 @@ mod tests {
         assert_eq!(s.offices.len(), 1);
         assert!(s.lunch_break.is_none());
         assert!(valid_hhmm("09:05") && !valid_hhmm("24:00") && !valid_hhmm("9:5"));
-    }
-
-    #[test]
-    fn secrets_doc() {
-        let mut doc = AutoCommit::new();
-        put_invite_secret(&mut doc, "abcd", "00ff").unwrap();
-        assert_eq!(invite_secret(&doc, "abcd").as_deref(), Some("00ff"));
-        assert_eq!(invite_secret(&doc, "nope"), None);
     }
 }

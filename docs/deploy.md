@@ -1,6 +1,6 @@
 # Hills 自架部署（M0）
 
-> 版本：v0.6 · 2026-11-08 · 對應 [technical-design.md](./technical-design.md) §10、§15.6–15.7、§16.9、§17
+> 版本：v0.7 · 2026-11-08 · 對應 [technical-design.md](./technical-design.md) §10、§15.6–15.7、§16.9、§17
 > 部署 **relay**（iroh-relay，NAT 穿透與中繼）、**mailbox**（離線信箱、roster 分發、加入申請、封裝金鑰、位址簿）與 M1 的 **storage-0…7**（檔案分片，D39）。tsa 隨假勤功能加入。
 
 伺服器只看得到加密後的資料與技術中繼資料（technical-design §5.2、§16.7），看不到訊息或文件內容。
@@ -36,10 +36,13 @@ curl -s http://127.0.0.1:18080/v1/health   # mailbox 健康檢查（埠為 HILLS
 
 | 變數 | 必填 | 說明 |
 |------|:---:|------|
-| `HILLS_CAFECA_WALLET` | ✓ | CAFECA 錢包網址（例如 `https://<錢包網域>`，不含結尾 `/`）。桌機 app 由 mailbox 取得，用來產生登入連結；mailbox 也用它讀取 `/.well-known/cafeca-configuration` 與查詢代稱 |
+| `HILLS_CAFECA_WALLET` | ✓（測試模式可省略） | CAFECA 錢包網址（例如 `https://<錢包網域>`，不含結尾 `/`）。桌機 app 由 mailbox 取得，用來產生登入連結；mailbox 也用它讀取 `/.well-known/cafeca-configuration` 與查詢代稱 |
 | `HILLS_CAFECA_RPC` |  | 改用自架的鏈上 RPC（預設使用錢包設定檔中的 `rpcUrl`） |
+| `HILLS_DEV_LOGIN` |  | `1` = 接受開發版 app 的測試帳號登入（只限測試伺服器） |
 
 mailbox 需能以 HTTPS 連出到錢包網域與 RPC；錢包需已支援原生 App 模式（`mode: "relay"`）。
+
+**開發測試模式**（D44，technical-design §17.10）：測試伺服器可在 `.env` 設定 `HILLS_DEV_LOGIN=1`，讓開發版 app（`tauri dev`、CI 測試安裝檔）以測試帳號名稱登入，此時 `HILLS_CAFECA_WALLET` 可不設。測試帳號沒有簽章保護，**正式伺服器不得設定**；mailbox 啟動時會在日誌顯示警告。
 
 relay 的設定檔由容器啟動時依 `.env` 產生（LetsEncrypt、TCP 80 / 443、UDP 7842），compose 不掛載任何主機檔案，因此在開發容器、遠端 Docker context 等「docker 指令與 Docker daemon 不在同一個檔案系統」的環境也能使用。需要進階設定時，可另以 named volume 提供 `/config/relay.toml`，存在時優先使用（格式見 `relay.toml.example`）。
 

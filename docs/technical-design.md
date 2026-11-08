@@ -910,3 +910,15 @@ kind = `recover`，流程與加入相同（產生**新的** IK / EK / DK、`Appl
 ### 17.9 版本與既有資料
 
 - `FORMAT_VERSION` 由 1 升為 2（MemberCert、WrappedKey、mailbox 請求格式改變）。客戶端啟動時偵測到 v1 的本機資料，提示後清除重新開始；mailbox 與 storage 依 deploy.md 重置（M1 試用前，D41）。
+
+### 17.10 開發測試模式（D44）
+
+開發期間不需 CAFECA 錢包即可測試建立、加入、新增裝置與還原。
+
+- **測試帳號**：使用者輸入名稱（小寫英數與 `_`，2–32 字元）。`account = { chainId: 0, address: blake3("hills/v1/dev-account" ‖ name)[0..20] }`；鏈 ID 0 不是任何真實鏈，因此不會與 CAFECA 帳戶重複，同一名稱永遠對應同一成員。
+- **測試登入證明**：客戶端在本機組出 `CafecaProof`，binding、nonce、message 與正式流程相同（domain 仍為 `app://io.cafeca.hills`），`signature` 固定為 `"hills/v1/dev-login/no-signature"`，`handle` 為測試帳號名稱；不經 CAFECA 中繼。
+- **驗證**（`hills_cafeca::Verifier::Dev`）：鏈 ID 0 的證明只檢查 §17.4 步驟 1–2、固定簽章、`account == 由 handle 推導的帳戶`；其他鏈 ID 仍交給 RPC 驗證（有設定 `HILLS_CAFECA_WALLET` 時）。
+- **啟用條件**：
+  - mailbox：環境變數 `HILLS_DEV_LOGIN=1` 才使用 `Verifier::Dev`，啟動時記錄警告；`Config` 回應帶 `dev_login: true`。未設定時鏈 ID 0 的證明一律因鏈 ID 不符而被拒。
+  - 桌機：只有 debug 建置（`cfg(debug_assertions)`：`tauri dev`、CI 的 `tauri build --debug`）會顯示測試帳號欄位，並在 mailbox 回報 `dev_login` 時接受測試證明（包含管理者核准與本人裝置自動授權）；release 建置不接受。
+- **風險**：測試帳號沒有任何簽章保護，知道名稱就能以該帳號申請加入、替該帳號加入新裝置（本人其他裝置會自動授權）。只能用於測試資料，正式伺服器不得設定 `HILLS_DEV_LOGIN`。

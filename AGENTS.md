@@ -5,7 +5,7 @@
 
 ## 1. 專案一句話
 
-Hills（山丘上的卡菲卡）是 CAFECA 的 P2P 工作協作工具：出勤與假勤、年→日五層計劃、每日 Scrum、自動報表、即時通訊、檔案、會議，以及個人與群組 AI 助理。技術：Tauri 2（Rust 核心 + React/TS）、iroh、Automerge；檔案依 SwarmStorage 原理（前端逐條帶加密 + Reed-Solomon 8/5 分片）存於自架儲存節點；自架服務以 Docker Compose 部署。M1 目標：Mac 與 Windows 筆電可安裝、互相對話與分享檔案。
+Hills（山丘上的卡菲卡）是 CAFECA 的 P2P 工作協作工具：出勤與假勤、年→週目標與其下的任務、每日 Scrum、自動報表、即時通訊、檔案、會議，以及個人與群組 AI 助理。技術：Tauri 2（Rust 核心 + React/TS）、iroh、Automerge；檔案依 SwarmStorage 原理（前端逐條帶加密 + Reed-Solomon 8/5 分片）存於自架儲存節點；自架服務以 Docker Compose 部署。M1 目標：Mac 與 Windows 筆電可安裝、互相對話與分享檔案。
 
 ## 2. 文件是唯一事實來源
 

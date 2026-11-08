@@ -43,7 +43,7 @@
 | 山景 | `--hills-sky-top/-bottom`、`--hills-mountain`、`--hills-hill-near/-mid/-far` | 首頁焦點山、山丘 | 只用於插畫 |
 | 知識庫星空 | `--hills-night-top/-bottom`、`--hills-night-text`、`--hills-star`、`--hills-star-dim` | 星空背景、星星、星空上的文字 | 深淺色模式相同 |
 | 知識關聯 | `--hills-rel-ref/-topic/-task/-conv` | 星座連線、關聯膠囊邊框 | 一律搭配線型（實線 / 虛線 / 點線）與圖例 |
-| 目標層級 | `--hills-level-year/-quarter/-month/-week/-day`（`bg-level-*`、`text-level-*`） | 層級標記、進度環、進度條 | 一律搭配層級文字 |
+| 目標層級 | `--hills-level-year/-quarter/-month/-week/-day`（`bg-level-*`、`text-level-*`） | 層級標記、進度環、進度條；`-day` 用於任務欄（D46 取消日目標） | 一律搭配層級文字 |
 | 狀態 | `--hills-st-<狀態>`（徽章色）、`--hills-st-<狀態>-text`（文字色，對 surface ≥ 4.5 : 1） | Presence 徽章、狀態文字、成功 / 進行中標示 | 搭配徽章形狀與文字（ui-spec 狀態表） |
 | 角色 | `--hills-ink*`、`--hills-cloud`、`--hills-sun*`、`--hills-moon*`、`--hills-roof`、`--hills-laptop*`、`--hills-hair-0…7`、`--hills-shirt-0…7`、`--hills-skin-0…7` | 原創簡筆角色與天空裝飾 | 只用於 `figures.tsx` 等插畫；成員從色盤選擇（`team.rs` 的 `LOOK_PALETTE` = 8） |
 

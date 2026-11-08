@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.18 草案 · 2026-11-08 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.19 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -163,6 +163,7 @@ CAFECA 帳戶（chainId + 身分合約地址 account，由使用者的 Passkey /
 | `member/<id>/attendance/<yyyy-mm>` | 本人 | 本人、負責人、管理者 | `AK_member` | 打卡紀錄 |
 | `member/<id>/requests` | 本人 | 本人、核准者 | `AK_member` | 請假、加班、補打卡申請 |
 | `member/<id>/secrets` | 本人 | 本人 | `PK_member` | 本人的私密設定 |
+| `member/<id>/tasks` | 本人 | 本人 | `PK_member` | 私人任務（D46，§16.8） |
 | `approvals/<approverId>` | 核准者本人 | 申請者、管理者 | 申請者的 `AK_member` | 核准 / 退回決定 |
 | `member/<id>/reports/<teamId>/<yyyy>` | 本人 | 該小組成員 | `TK_team` | 日 / 週報（發佈到哪些小組就寫入哪些小組，§16.13） |
 | `kb/meta` | 全體成員 | 全員 | `GK` | 知識庫的分類與主題（§16.11） |
@@ -358,15 +359,15 @@ LeaveType   { id, name, paid: boolean, minUnitHours, annualLimitHours?, requireP
 HolidayCalendar { region, year, holidays: {date, name}[], workdays: Date[] }
 
 // team 文件
-Task        { id, teamId, title, assigneeId?, status: todo|doing|review|done,
-              estimateHours?, dueAt?, steps?: TaskStep[], planItemId?, blockedReason?,
+Task        { id, teamId | private, title, assigneeId?, status: todo|doing|review|done,
+              estimateHours?, dueAt?, steps?: TaskStep[], planItemId?（週目標，D46）, blockedReason?,
               createdAt, updatedAt }
 TaskStep    { id, title, assigneeId?, done: boolean, doneAt? }
 TeamGoal    { id, teamId, period, title, keyResults: KeyResult[] }
 
 // member 文件
-PlanItem    { id, level: year|quarter|month|week|day, period: '2026' | '2026-Q4' |
-              '2026-11' | '2026-W45' | '2026-11-05', parentId?, alignedTeamGoalId?,
+PlanItem    { id, level: year|quarter|month|week, period: '2026' | '2026-Q4' |
+              '2026-11' | '2026-W45', parentId?, alignedTeamGoalId?,
               title, keyResults?: KeyResult[], done?: boolean, progress, progressOverride? }
 KeyResult   { id, title, start: number, target: number, current: number, unit }
 ScrumReport { date, done: Ref[], today: Ref[], blockers: Blocker[], submittedAt }   // 詳見 §16.12
@@ -496,7 +497,7 @@ Attachment =
 - 任何現任成員都可以送出 `kind = 'task'` 的訊息，把對話連到一個任務或取消連結；沿用 log 的 append-only 規則，驗證層不需變更。其他 kind 的 `task` 欄位在投影時忽略。
 - 對話目前連結的任務 = 本人可讀的紀錄文件中最新（`createdAt`，相同時比 key）的一則 `kind = 'task'` 訊息。新成員看不到加入前的連結訊息，需由任一成員重新連結。
 - 連結訊息不計入未讀、不發通知、不作為對話清單的「最後訊息」；訊息流中顯示為系統列「〈作者〉把對話連到〈任務〉」。
-- 任務內容不複製進對話：讀取時從 `team/<teamId>` 取得。送出前檢查任務存在於本人可讀的小組；讀取方不是該小組成員或任務已刪除時，介面顯示「無法查看此任務」。`teamId`、`taskId` 只出現在 `CK` 加密的訊息中。
+- 只能連結小組任務（私人任務其他成員讀不到，v0.19）。任務內容不複製進對話：讀取時從 `team/<teamId>` 取得。送出前檢查任務存在於本人可讀的小組；讀取方不是該小組成員或任務已刪除時，介面顯示「無法查看此任務」。`teamId`、`taskId` 只出現在 `CK` 加密的訊息中。
 - **步驟完成的系統列由介面依 `TaskStep.doneAt` 推導**，插入訊息流顯示（只顯示落在已載入訊息時間範圍內的），不另外寫入對話，避免多台裝置重複寫入與離線衝突。
 
 ## 15. M1 檔案分享：SwarmStorage 原理（D35、D36）
@@ -782,6 +783,7 @@ org = {
 team/<teamId> = {                                         // v0.11（D40）
   "task:<taskId ULID>": { title, assignee?, status: todo|doing|review|done, dueAt?,
                           steps: [ { id, title, assignee?, done, doneAt? } ],
+                          planItemId?,                    // v0.19（D46）：所屬週目標
                           createdBy, createdAt, updatedAt },
   "profile:<memberId>": "{\"hair\":0,\"shirt\":3,\"skin\":1}",   // 角色外觀（JSON 字串，固定色盤的索引）
 }
@@ -791,19 +793,21 @@ team/<teamId> = {                                         // v0.11（D40）
 
 - `offices`、`lunchBreak` 只有管理者可寫（org 文件規則）。
 - `team/<id>` 為多人寫入（§4）：任務全組可編輯；`profile:<memberId>` 只有本人可寫，由驗證層檢查（根物件上 `profile:` 開頭的 key 必須是作者本人，且只能放入字串），他人的寫入整筆 change 拒絕。成員把外觀寫進自己所屬的每個小組文件，讀取時取任一份。
-- **焦點**（feature-plan §5.4）：候選為指派給我、或下一個未完成步驟指派給我的未完成任務；依「期限最近 → 卡住別人（下一步負責人不是我但我負責的步驟未完成）→ 指派給我 → 建立時間」排序。手動選擇的焦點只存在本機（secret 檔 `focus`），任務完成或刪除時回到自動。
+- **任務與週目標**（v0.19，D46）：`planItemId` 指向一個週目標（`level = week`）；寫入時檢查該目標存在於本人可讀的計劃中且為週層級。目標可能是私人或另一個小組的，看不到的讀者顯示「私人項目」。**任務進度** = 已完成步驟數 / 步驟數 × 100；沒有步驟時完成 = 100、未完成 = 0（§16.10 彙總）。
+- **私人任務**（v0.19，D46）：存在 `member/<id>/tasks`（`PK_member`，只有本人讀寫），結構與 `team/<id>` 的 `task:` 相同（不含 `profile:`）。介面與命令以 `teamId = "private"` 表示；負責人固定為本人、步驟沒有負責人；不出現在小組頁，不能連結到對話（§14.2）。
+- **焦點**（feature-plan §5.4）：候選（含私人任務）為指派給我、或下一個未完成步驟指派給我的未完成任務；依「期限最近 → 卡住別人（下一步負責人不是我但我負責的步驟未完成）→ 指派給我 → 建立時間」排序。手動選擇的焦點只存在本機（secret 檔 `focus`），任務完成或刪除時回到自動。
 
 `Directory`（§4.2）由 org 文件投影提供。M0 建立組織時自動建立一個預設小組。
 
-### 16.10 計劃文件（v0.15，D8、D43「階梯」）
+### 16.10 計劃文件（v0.15，D8、D43「階梯」；v0.19 依 D46 取消日層級）
 
 ```
 member/<id>/plans/{private | team/<teamId> | org} = {
   "item:<planItemId ULID>": {
-    level: year|quarter|month|week|day,
-    period: "2026" | "2026-Q4" | "2026-11" | "2026-W45" | "2026-11-08",
+    level: year|quarter|month|week,
+    period: "2026" | "2026-Q4" | "2026-11" | "2026-W45",
     title, parentId?, krRef?: "<上層 planItemId>/<krId>",
-    done: boolean,                 // 月 / 週 / 日
+    done: boolean,                 // 月 / 週
     progressOverride?: 0..100,
     keyResults: [ { id, title, start, target, current, unit, manual } ],   // 年 / 季，0–5 個
     createdAt, updatedAt
@@ -812,16 +816,17 @@ member/<id>/plans/{private | team/<teamId> | org} = {
 ```
 
 - 只有本人可寫（§4.1）；`keyResults` 整筆替換（與任務步驟相同），`done` 單獨修改。
+- **v0.19（D46）**：寫入時拒絕 `level = day`；既有的日目標（M1 試用前的測試資料）讀取時略過、不顯示。週目標之下為任務（§16.8）。
 - `period` 依**組織時區**（org `timezone`）計算，週為 ISO 週（週一開始，跨年週屬於含週四的那一年）；寫入時檢查格式與 `level` 相符。
 - 改變可見度：在新文件寫入同一 id，再從舊文件刪除；同一 id 同時出現在兩份文件時取 `updatedAt` 較新者。
 - `alignedTeamGoalId`（對齊小組目標）隨小組目標功能加入，M1 第一版不使用。
 
 **進度彙總**（0–100，由投影層計算，不存入文件）：
 
-- 待辦（月 / 週 / 日）：有子項目 → 子項目平均；否則完成 = 100、未完成 = 0。
+- 待辦（月 / 週）：子項目（月 → 週目標）與連結的任務（週目標，§16.8 任務進度）合併平均；都沒有時完成 = 100、未完成 = 0。
 - 關鍵結果：`manual` 為真 → `(current − start) / (target − start)`（限制在 0–100）；否則有以 `krRef` 連結的待辦 → 其平均；都沒有 → 以 `current` 計算。
 - 年 / 季目標：有關鍵結果 → 關鍵結果平均；否則子項目平均；都沒有 → 0。
-- `progressOverride` 優先於自動計算；讀者看不到的子項目不列入計算。
+- `progressOverride` 優先於自動計算；讀者看不到的子項目與任務不列入計算。
 
 ### 16.11 知識庫（v0.16，D42「星空」）
 
@@ -858,11 +863,13 @@ member/<id>/scrum/<teamId>/<yyyy-mm> = {
 ScrumReport JSON = { v: 1, date, done: Ref[], today: Ref[], blockers: Blocker[],
                      submittedAt, updatedAt }
 Ref     = { kind: "task", teamId, taskId, title } | { kind: "plan", planId, title } | { kind: "text", title }
+          // 私人任務送出時記為 kind: "text"（小組讀者看不到私人任務）
 Blocker = { text, notified: MemberId[] }
 ```
 
 - 成員可能屬於多個小組：送出時**把同一份 Scrum 寫入每個所屬小組的文件**（`TK_team` 加密、只有該小組成員能讀），每個小組都看得到；讀取時同一天出現多份取 `updatedAt` 較新者。只有本人可寫（§4.1）。
 - `Ref.title` 在填寫時複製進來，讀者看不到來源任務或計劃時仍能顯示。每區最多 30 項，每項 1–200 字。
+- **帶入**（v0.19，D46）：「從任務帶入」→ 昨天以來（週一從上週五起）完成的任務與步驟；「從今天的任務帶入」→ 焦點任務、今天到期與進行中的我的任務。日目標已取消。
 - 草稿只存在本機（不同步）；按「送出」才寫入文件。送出後可再修改，覆寫同一天並更新 `updatedAt`。
 - **阻礙通知**：送出時 `notified` = 各所屬小組的負責人（`leadIds`）；小組沒有負責人時為全體管理者。負責人的裝置收到 `notified` 含自己、且有阻礙的新 Scrum 時發桌機通知（本機判斷，伺服器不參與）。
 - **提醒**：組織預設時間存在 org 文件 `scrumReminder: "HH:MM"`（管理者可改，預設 `17:30`），個人可在本機覆寫（本機設定檔，不同步）。工作日依 §7.1；**M1 第一版在假日曆（backlog #6）與請假（#14）尚未實作前，只排除週六與週日**。當天已送出就不提醒，每天最多提醒一次。
@@ -882,9 +889,9 @@ Report JSON = { v: 1, kind, period,
 - 草稿只存在本機；按「發佈」才寫入文件，之後可修改再發佈（覆寫）。各欄最多 32 KB。
 - **產生規則**（前端依組織時區計算，產生後可自由編輯）：
   - 完成 / 進行中 / 阻礙：期間內我送出的 Scrum 的完成項與阻礙，加上期間內我完成的任務 / 步驟；進行中 = 指派給我、狀態為進行中或審核的任務。
-  - OKR 進度：我的年 / 季目標與關鍵結果目前的進度（§16.10 彙總）；週報另列本週完成的週 / 日目標。
+  - OKR 進度：我的年 / 季目標與關鍵結果目前的進度（§16.10 彙總）；週報另列本週完成的週目標。
   - 工時與出勤摘要：假勤上線前為固定說明文字（backlog #7、#9）。
-  - 下期計劃：日報 = 下一個工作日的日目標，加上當天 Scrum「今天計劃」中尚未完成者；週報 = 下週的週目標與下週到期的任務。
+  - 下期計劃：日報 = 下一個工作日到期的我的任務，加上當天 Scrum「今天計劃」中尚未完成者；週報 = 下週的週目標與下週到期的任務（v0.19 依 D46 移除日目標）。
 - **小組彙整**：把同一小組成員同期間已發佈的報表依欄位合併顯示，不另存。
 - 週五（組織時區）到 Scrum 提醒時間時，若本週週報尚未發佈，提醒一次；開啟報表頁時若沒有草稿也沒有已發佈的週報，自動產生草稿。
 - 月報、年報在 M5；AI 摘要在 M3；發佈到小組頻道在 M2（頻道上線後）。

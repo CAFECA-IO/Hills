@@ -253,3 +253,90 @@ export const Slider = forwardRef<
     />
   );
 });
+
+export interface ChoiceOption<T extends string> {
+  value: T;
+  title: ReactNode;
+  description?: ReactNode;
+  /** 卡片右側的標記（例如「Hills 建議」） */
+  badge?: ReactNode;
+  /** 虛線外框的「都不是」選項 */
+  dashed?: boolean;
+}
+
+/**
+ * 大面積的單選卡片（components.md v0.3「ChoiceCard」）：精靈中需要標題＋說明的選項。
+ * WAI-ARIA radiogroup：只有選取的卡（未選時第一張）可 Tab 聚焦，方向鍵移動並選取。
+ */
+export function ChoiceCard<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+  className = '',
+}: {
+  label: string;
+  options: ChoiceOption<T>[];
+  value: T | null;
+  onChange: (v: T) => void;
+  className?: string;
+}) {
+  const focusIndex = Math.max(
+    0,
+    options.findIndex((o) => o.value === value),
+  );
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const d = ['ArrowDown', 'ArrowRight'].includes(e.key)
+      ? 1
+      : ['ArrowUp', 'ArrowLeft'].includes(e.key)
+        ? -1
+        : 0;
+    if (!d || options.length === 0) return;
+    e.preventDefault();
+    const i = options.findIndex((o) => o.value === value);
+    const n = (i < 0 ? (d > 0 ? 0 : options.length - 1) : i + d + options.length) % options.length;
+    onChange(options[n].value);
+    e.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]')[n]?.focus();
+  };
+  return (
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className={`flex flex-col gap-2 ${className}`}
+      onKeyDown={onKeyDown}
+    >
+      {options.map((o, i) => {
+        const on = o.value === value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            tabIndex={i === focusIndex ? 0 : -1}
+            onClick={() => onChange(o.value)}
+            className={`flex w-full items-center gap-3.5 rounded-card px-4 py-3.5 text-left transition-colors duration-(--hills-motion) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+              on
+                ? 'border-2 border-primary bg-primary-soft'
+                : `border border-line hover:bg-bg ${o.dashed ? 'border-dashed bg-bg' : 'bg-surface'}`
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className={`size-5 shrink-0 rounded-full ${on ? 'border-6 border-primary' : 'border-2 border-muted'}`}
+            />
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span
+                className={`text-base ${o.dashed && !on ? 'font-semibold text-muted' : 'font-bold'}`}
+              >
+                {o.title}
+              </span>
+              {o.description && <span className="text-xs text-muted">{o.description}</span>}
+            </span>
+            {o.badge}
+          </button>
+        );
+      })}
+    </div>
+  );
+}

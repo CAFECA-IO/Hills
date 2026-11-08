@@ -15,6 +15,7 @@ import {
 } from './api';
 import { Chat } from './chat';
 import { Portrait, StatusBadge, stateLabel } from './figures';
+import { DirectionsCard } from './directions-settings';
 import { Goals } from './goals';
 import { Home } from './home';
 import { Knowledge } from './kb';
@@ -543,7 +544,8 @@ function TeamList({ overview }: { overview: Overview }) {
   }));
   const inTeam = new Set(teams.flatMap((tm) => tm.members));
   const loose = members.filter((m) => !inTeam.has(m.id));
-  if (loose.length) grouped.push({ id: '', name: t('team.noTeam'), members: [], list: loose });
+  if (loose.length)
+    grouped.push({ id: '', name: t('team.noTeam'), members: [], leads: [], list: loose });
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted">{t('team.summary', { online, total: members.length })}</p>
@@ -967,6 +969,7 @@ function OrgTab({
       </Card>
       {info.isAdmin && overview && <OfficesCard overview={overview} />}
       {info.isAdmin && <OrgScrumReminderCard />}
+      {info.isAdmin && <DirectionsCard />}
       {info.hasOrgRoot && (
         <Card className="flex flex-col gap-3">
           <h2 className="font-medium">{t('settings.backup')}</h2>

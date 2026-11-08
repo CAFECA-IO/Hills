@@ -15,8 +15,12 @@ import type {
   KbInput,
   KbItem,
   KbTopic,
+  Direction,
+  DirectionInput,
   PlanInput,
   PlanView,
+  TeamGoal,
+  TeamGoalInput,
   Report,
   ReportInput,
   ScrumInput,
@@ -176,6 +180,9 @@ const plan = (
   done: progress === 100 && !['year', 'quarter'].includes(level),
   progressOverride: null,
   keyResults: [],
+  alignedGoalId: null,
+  criteria: [],
+  helps: [],
   createdAt: now0,
   updatedAt: now0,
   progress,
@@ -202,6 +209,7 @@ const kr = (
 // 示範目標（虛構，與設計稿第七輪相同）
 let plans: PlanView[] = [
   plan('y1', 'year', 'Hills 上線並導入全公司', 58, null, {
+    alignedGoalId: 'tg-1',
     keyResults: [kr('k1', '導入人數', 0, 40, 23, '人'), kr('k2', '每週活躍率', 0, 80, 47, '%')],
     krProgress: { k1: 57.5, k2: 58.75 },
   }),
@@ -227,6 +235,65 @@ let plans: PlanView[] = [
   plan('w1', 'week', '檔案分享穩定', 80, 'm1'),
   plan('w2', 'week', '對話焦點營地', 40, 'm1'),
 ];
+// 示範公司方向與小組目標（虛構，與設計稿 D 方案相同，D47）
+const THIS_YEAR = P.year;
+const NEXT_YEAR = String(Number(P.year) + 1);
+const dirRec = (id: string, year: string, title: string): Omit<Direction, 'progress'> => ({
+  id,
+  year,
+  title,
+  keyResults: [],
+  createdAt: now0,
+  updatedAt: now0,
+});
+let directions: Omit<Direction, 'progress'>[] = [
+  dirRec('dir-1', THIS_YEAR, 'Hills 上線並導入全公司'),
+  dirRec('dir-2', THIS_YEAR, '客戶回覆時間縮短一半'),
+  dirRec('dir-3', NEXT_YEAR, 'Hills 成為全公司的日常工具'),
+  dirRec('dir-4', NEXT_YEAR, '客戶回覆時間縮短一半'),
+  dirRec('dir-5', NEXT_YEAR, '完成 ISO 27001 認證'),
+];
+let teamGoals: Omit<TeamGoal, 'progress'>[] = [
+  {
+    ...dirRec('tg-1', THIS_YEAR, 'M1、M2 準時上線'),
+    team: 'default',
+    directionId: 'dir-1',
+    criteria: [],
+  },
+  {
+    ...dirRec('tg-2', NEXT_YEAR, 'M2 手機版與全員導入'),
+    team: 'default',
+    directionId: 'dir-3',
+    criteria: [],
+  },
+  {
+    ...dirRec('tg-3', NEXT_YEAR, '技術債減半'),
+    team: 'default',
+    directionId: 'dir-3',
+    criteria: [],
+  },
+];
+const avgOf = (v: number[]) => (v.length ? v.reduce((a, b) => a + b, 0) / v.length : null);
+/** 進度規則同 node 的 direction_progress（technical-design §16.14）。 */
+function directionsView() {
+  const list = withTaskProgress(plans);
+  const aligned = (id: string) =>
+    list
+      .filter((p) => (p.level === 'year' || p.level === 'quarter') && p.alignedGoalId === id)
+      .map((p) => p.progress);
+  const goals = teamGoals.map((g) => ({ ...g, progress: avgOf(aligned(g.id)) ?? 0 }));
+  return {
+    directions: directions.map((d) => ({
+      ...d,
+      progress:
+        avgOf([
+          ...goals.filter((g) => g.directionId === d.id).map((g) => g.progress),
+          ...aligned(d.id),
+        ]) ?? 0,
+    })),
+    teamGoals: goals,
+  };
+}
 const taskProgress = (t: MockTask) =>
   t.steps.length === 0
     ? t.status === 'done'
@@ -560,7 +627,14 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
       },
       ...others,
     ],
-    teams: [{ id: 'default', name: '全體成員', members: [state.me, ...others.map((m) => m.id)] }],
+    teams: [
+      {
+        id: 'default',
+        name: '全體成員',
+        members: [state.me, ...others.map((m) => m.id)],
+        leads: [state.me],
+      },
+    ],
     offices,
     lunchBreak,
     timezone: 'Asia/Taipei',
@@ -731,6 +805,9 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
       id,
       owner: state.me,
       keyResults: input.keyResults.map((k, i) => ({ ...k, id: k.id || `${id}-k${i}` })),
+      alignedGoalId: input.alignedGoalId ?? null,
+      criteria: (input.criteria ?? []).map((c, i) => ({ ...c, id: c.id || `${id}-c${i}` })),
+      helps: input.helps ?? [],
       createdAt: old?.createdAt ?? Date.now(),
       updatedAt: Date.now(),
       progress: input.progressOverride ?? (input.done ? 100 : (old?.progress ?? 0)),
@@ -740,6 +817,48 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     plans = [...plans.filter((x) => x.id !== id), item];
     touch();
     return id;
+  },
+  directions: () => directionsView(),
+  save_direction: (a) => {
+    const input = a.input as DirectionInput;
+    const id = input.id || 'dir-' + Math.random().toString(16).slice(2, 8);
+    const old = directions.find((d) => d.id === id);
+    directions = [
+      ...directions.filter((d) => d.id !== id),
+      {
+        ...dirRec(id, input.year, input.title),
+        keyResults: input.keyResults,
+        createdAt: old?.createdAt ?? Date.now(),
+      },
+    ];
+    touch();
+    return id;
+  },
+  delete_direction: (a) => {
+    directions = directions.filter((d) => d.id !== a.id);
+    touch();
+  },
+  save_team_goal: (a) => {
+    const input = a.input as TeamGoalInput;
+    const id = input.id || 'tg-' + Math.random().toString(16).slice(2, 8);
+    const old = teamGoals.find((g) => g.id === id);
+    teamGoals = [
+      ...teamGoals.filter((g) => g.id !== id),
+      {
+        ...dirRec(id, input.year, input.title),
+        team: input.team,
+        directionId: input.directionId,
+        keyResults: input.keyResults,
+        criteria: input.criteria.map((c, i) => ({ ...c, id: c.id || `${id}-c${i}` })),
+        createdAt: old?.createdAt ?? Date.now(),
+      },
+    ];
+    touch();
+    return id;
+  },
+  delete_team_goal: (a) => {
+    teamGoals = teamGoals.filter((g) => g.id !== a.id);
+    touch();
   },
   set_plan_done: (a) => {
     plans = plans.map((x) =>

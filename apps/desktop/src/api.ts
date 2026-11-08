@@ -124,6 +124,8 @@ export interface TeamView {
   id: string;
   name: string;
   members: string[];
+  /** 負責人（D47：可設定小組目標） */
+  leads: string[];
 }
 
 export interface Overview {
@@ -152,6 +154,11 @@ export interface KeyResult {
   manual: boolean;
 }
 
+export interface Criterion {
+  id: string;
+  text: string;
+}
+
 export interface PlanView {
   id: string;
   owner: string;
@@ -164,6 +171,12 @@ export interface PlanView {
   done: boolean;
   progressOverride: number | null;
   keyResults: KeyResult[];
+  /** 對齊的公司方向或小組目標（年 / 季，D47） */
+  alignedGoalId: string | null;
+  /** 做到的標準（年 / 季，D47；純文字，不影響進度） */
+  criteria: Criterion[];
+  /** 季目標幫助達成上層的哪些標準（criterion id） */
+  helps: string[];
   createdAt: number;
   updatedAt: number;
   /** 彙總後的進度 0–100 */
@@ -314,7 +327,57 @@ export interface PlanInput {
   done: boolean;
   progressOverride: number | null;
   keyResults: KeyResult[];
+  alignedGoalId?: string | null;
+  criteria?: Criterion[];
+  helps?: string[];
   visibility: Visibility;
+}
+
+// ── 團隊方向（technical-design §16.14，D47）──
+
+export interface Direction {
+  id: string;
+  year: string;
+  title: string;
+  keyResults: KeyResult[];
+  createdAt: number;
+  updatedAt: number;
+  progress: number;
+}
+
+export interface TeamGoal {
+  id: string;
+  team: string;
+  year: string;
+  title: string;
+  directionId: string | null;
+  keyResults: KeyResult[];
+  criteria: Criterion[];
+  createdAt: number;
+  updatedAt: number;
+  progress: number;
+}
+
+export interface DirectionsView {
+  directions: Direction[];
+  teamGoals: TeamGoal[];
+}
+
+export interface DirectionInput {
+  id?: string | null;
+  year: string;
+  title: string;
+  keyResults: KeyResult[];
+}
+
+export interface TeamGoalInput {
+  id?: string | null;
+  team: string;
+  year: string;
+  title: string;
+  directionId: string | null;
+  keyResults: KeyResult[];
+  criteria: Criterion[];
 }
 
 export interface Code {
@@ -521,6 +584,11 @@ export const api = {
   savePlan: (input: PlanInput) => call<string>('save_plan', { input }),
   setPlanDone: (id: string, done: boolean) => call<void>('set_plan_done', { id, done }),
   deletePlan: (id: string) => call<void>('delete_plan', { id }),
+  directions: () => call<DirectionsView>('directions'),
+  saveDirection: (input: DirectionInput) => call<string>('save_direction', { input }),
+  deleteDirection: (id: string) => call<void>('delete_direction', { id }),
+  saveTeamGoal: (input: TeamGoalInput) => call<string>('save_team_goal', { input }),
+  deleteTeamGoal: (team: string, id: string) => call<void>('delete_team_goal', { team, id }),
   kb: () => call<KbSnapshot>('kb'),
   kbSave: (input: KbInput) => call<string>('kb_save', { input }),
   kbDelete: (key: string) => call<void>('kb_delete', { key }),

@@ -1,5 +1,8 @@
-/** 目標「階梯」（ui-spec「目標」，D43、D8、D46；technical-design §16.10）：四層目標 + 任務欄。 */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+/**
+ * 目標「階梯」（ui-spec「目標 → 進階檢視」，D43、D8、D46；technical-design §16.10）：四層目標 + 任務欄。
+ * D47 起為暫時的進階檢視，第 3 批改為路線圖。
+ */
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   api,
   isPrivateTask,
@@ -80,7 +83,7 @@ const LEVEL_VAR: Record<PlanLevel, string> = {
 
 const levelName = (l: PlanLevel) => t(`goals.level.${l}` as MessageKey);
 
-interface Props {
+export interface GoalsProps {
   members: MemberView[];
   teams: TeamView[];
   tasks: Task[];
@@ -91,7 +94,14 @@ interface Props {
 /** 任務對話框的狀態：編輯既有任務，或帶預填值新增。 */
 type TaskEditing = { task: Task | null; draft?: TaskDraft };
 
-export function Goals({ members, teams, tasks, focusId, timezone }: Props) {
+export function GoalsLadder({
+  members,
+  teams,
+  tasks,
+  focusId,
+  timezone,
+  headExtra,
+}: GoalsProps & { headExtra?: ReactNode }) {
   const [mineOnly, setMineOnly] = useState(true);
   const plans = useLoad(() => api.plans(mineOnly), ['doc', 'org', 'roster']);
   const reload = plans.reload;
@@ -158,6 +168,7 @@ export function Goals({ members, teams, tasks, focusId, timezone }: Props) {
         subtitle={t('goals.subtitle')}
         actions={
           <>
+            {headExtra}
             <Checkbox
               className="h-9 rounded-full bg-surface px-3 shadow-sm"
               label={t('goals.mineOnly')}
@@ -264,6 +275,9 @@ function toInput(i: PlanView): PlanInput {
     done: i.done,
     progressOverride: i.progressOverride,
     keyResults: i.keyResults,
+    alignedGoalId: i.alignedGoalId,
+    criteria: i.criteria,
+    helps: i.helps,
     visibility: i.visibility,
   };
 }

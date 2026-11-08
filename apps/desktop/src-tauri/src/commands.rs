@@ -595,6 +595,7 @@ pub struct TeamView {
     id: String,
     name: String,
     members: Vec<String>,
+    leads: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -642,6 +643,7 @@ pub async fn overview(state: State<'_, AppState>) -> CmdResult<Overview> {
                 id: id.clone(),
                 name: t.name.clone(),
                 members: t.members.iter().map(|m| m.to_string()).collect(),
+                leads: t.leads.iter().map(|m| m.to_string()).collect(),
             })
             .collect();
         let offices = org

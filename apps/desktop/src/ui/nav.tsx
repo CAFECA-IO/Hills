@@ -98,3 +98,47 @@ export function Tabs<T extends string>({
     </div>
   );
 }
+
+/** 精靈的步驟指示（components.md v0.3「Stepper」）：只做顯示，不可點。 */
+export function Stepper({
+  label,
+  steps,
+  current,
+  className = '',
+}: {
+  label: string;
+  steps: string[];
+  current: number;
+  className?: string;
+}) {
+  return (
+    <nav aria-label={label} className={`flex items-center gap-2.5 text-sm ${className}`}>
+      {steps.map((s, i) => {
+        const state = i < current ? 'done' : i === current ? 'on' : 'todo';
+        return (
+          <span key={s} className="flex items-center gap-2.5">
+            {i > 0 && <span aria-hidden="true" className="h-0.5 w-8 bg-line" />}
+            <span
+              aria-hidden="true"
+              className={`inline-flex size-6 items-center justify-center rounded-full text-xs font-bold ${
+                state === 'done'
+                  ? 'bg-st-online text-on-primary'
+                  : state === 'on'
+                    ? 'bg-primary text-on-primary'
+                    : 'border-2 border-line text-muted'
+              }`}
+            >
+              {state === 'done' ? '✓' : i + 1}
+            </span>
+            <span
+              aria-current={state === 'on' ? 'step' : undefined}
+              className={state === 'on' ? 'font-bold' : 'text-muted'}
+            >
+              {s}
+            </span>
+          </span>
+        );
+      })}
+    </nav>
+  );
+}

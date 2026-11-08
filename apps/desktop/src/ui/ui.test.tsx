@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Checkbox,
+  ChoiceCard,
   Chip,
   Dialog,
   EmptyState,
@@ -16,8 +17,10 @@ import {
   ProgressBar,
   Select,
   SegmentedControl,
+  Stepper,
   Tabs,
   TextInput,
+  Toast,
 } from '.';
 
 const html = (el: React.ReactElement) => renderToStaticMarkup(el);
@@ -64,6 +67,36 @@ describe('ui 元件（docs/components.md）', () => {
   it('Field 簡易寫法產生文字輸入', () => {
     const h = html(<Field label="名稱" value="x" onChange={noop} />);
     expect(h).toMatch(/<input[^>]*type="text"[^>]*value="x"/);
+  });
+
+  it('ChoiceCard 是 radiogroup，只有選取的卡可 Tab 聚焦；未選時第一張', () => {
+    const opts = [
+      { value: 'a', title: 'A', description: '說明' },
+      { value: 'b', title: 'B', dashed: true },
+    ];
+    const h = html(<ChoiceCard label="方向" options={opts} value="b" onChange={noop} />);
+    expect(h).toContain('role="radiogroup"');
+    expect(h).toContain('aria-label="方向"');
+    expect(h).toMatch(/role="radio" aria-checked="false" tabindex="-1"/);
+    expect(h).toMatch(/role="radio" aria-checked="true" tabindex="0"/);
+    const none = html(<ChoiceCard label="方向" options={opts} value={null} onChange={noop} />);
+    expect(none).toMatch(/aria-checked="false" tabindex="0"[^]*aria-checked="false" tabindex="-1"/);
+  });
+
+  it('Stepper 標示目前步驟', () => {
+    const h = html(<Stepper label="規劃步驟" steps={['一', '二', '三']} current={1} />);
+    expect(h).toContain('aria-label="規劃步驟"');
+    expect(h).toMatch(/aria-current="step"[^>]*>二/);
+    expect(h.match(/aria-current/g)).toHaveLength(1);
+    expect(h).toContain('✓');
+  });
+
+  it('Toast 是 role=status，附復原按鈕', () => {
+    const h = html(
+      <Toast message="已加入" action={{ label: '復原', onClick: noop }} onClose={noop} />,
+    );
+    expect(h).toContain('role="status"');
+    expect(h).toMatch(/<button type="button"[^>]*>復原<\/button>/);
   });
 
   it('Checkbox 有 label 時以 label 包住', () => {

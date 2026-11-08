@@ -1,5 +1,5 @@
 /** 每日 Scrum 的純函式（ui-spec「Scrum」、technical-design §16.12）。 */
-import type { MemberView, PlanView, ScrumRef, ScrumReport, Task } from './api';
+import { isPrivateTask, type MemberView, type ScrumRef, type ScrumReport, type Task } from './api';
 import { periodsAt } from './goals-utils';
 
 /** `yyyy-mm-dd` 的星期（0 = 週日 … 6 = 週六）。 */
@@ -59,16 +59,17 @@ export function mergeRefs(existing: ScrumRef[], add: ScrumRef[]): ScrumRef[] {
 
 const dayOf = (ms: number, tz: string) => periodsAt(ms, tz).day;
 
+/** 任務的 Scrum 參照；私人任務只帶標題（小組讀者看不到私人任務，technical-design §16.12 v0.19）。 */
+function taskRef(t: Task, title = t.title): ScrumRef {
+  return isPrivateTask(t)
+    ? { kind: 'text', title }
+    : { kind: 'task', teamId: t.team, taskId: t.id, title };
+}
+
 /**
- * 「昨天完成」：從上一個工作日起（到今天）我完成的任務步驟、任務與日目標。
+ * 「昨天完成」：從上一個工作日起（到今天）我完成的任務步驟與任務（D46 取消日目標）。
  */
-export function doneSince(
-  tasks: Task[],
-  plans: PlanView[],
-  me: string,
-  date: string,
-  tz: string,
-): ScrumRef[] {
+export function doneSince(tasks: Task[], me: string, date: string, tz: string): ScrumRef[] {
   const since = prevWorkday(date);
   const inRange = (ms: number | null) => {
     if (ms === null) return false;
@@ -77,44 +78,36 @@ export function doneSince(
   };
   const out: ScrumRef[] = [];
   for (const t of tasks) {
-    const mySteps = t.steps.filter((s) => s.done && s.assignee === me && inRange(s.doneAt));
+    const mySteps = t.steps.filter(
+      (s) =>
+        s.done &&
+        (s.assignee === me || (isPrivateTask(t) && t.assignee === me)) &&
+        inRange(s.doneAt),
+    );
     if (mySteps.length > 0) {
-      out.push({
-        kind: 'task',
-        teamId: t.team,
-        taskId: t.id,
-        title: `${t.title}：${mySteps.map((s) => s.title).join('、')}`,
-      });
+      out.push(taskRef(t, `${t.title}：${mySteps.map((s) => s.title).join('、')}`));
     } else if (t.status === 'done' && t.assignee === me && inRange(t.updatedAt)) {
-      out.push({ kind: 'task', teamId: t.team, taskId: t.id, title: t.title });
-    }
-  }
-  for (const p of plans) {
-    if (p.mine && p.level === 'day' && p.done && p.period >= since && p.period <= date) {
-      out.push({ kind: 'plan', planId: p.id, title: p.title });
+      out.push(taskRef(t));
     }
   }
   return out;
 }
 
-/** 「今天計劃」：今天的日目標（未完成）、焦點任務與今天到期的任務。 */
+/** 「今天計劃」：焦點任務，以及今天到期或進行中的我的任務（D46）。 */
 export function todayPlan(
   tasks: Task[],
-  plans: PlanView[],
+  me: string,
   focusId: string | null,
   date: string,
   tz: string,
 ): ScrumRef[] {
   const out: ScrumRef[] = [];
-  for (const p of plans) {
-    if (p.mine && p.level === 'day' && p.period === date && !p.done) {
-      out.push({ kind: 'plan', planId: p.id, title: p.title });
-    }
-  }
   for (const t of tasks) {
     if (t.status === 'done') continue;
-    if (t.id === focusId || (t.dueAt !== null && dayOf(t.dueAt, tz) === date)) {
-      out.push({ kind: 'task', teamId: t.team, taskId: t.id, title: t.title });
+    const mine = t.assignee === me || t.steps.some((s) => !s.done && s.assignee === me);
+    const dueToday = t.dueAt !== null && dayOf(t.dueAt, tz) === date;
+    if (t.id === focusId || (mine && (dueToday || t.status === 'doing'))) {
+      out.push(taskRef(t));
     }
   }
   return out;

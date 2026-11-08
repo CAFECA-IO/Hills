@@ -120,13 +120,7 @@ export function generate(i: GenerateInput): ReportSections {
   }
   if (kind === 'weekly') {
     const weekDone = i.plans
-      .filter(
-        (x) =>
-          x.mine &&
-          x.done &&
-          ((x.level === 'week' && x.period === period) ||
-            (x.level === 'day' && days.includes(x.period))),
-      )
+      .filter((x) => x.mine && x.done && x.level === 'week' && x.period === period)
       .map((x) => x.title);
     if (weekDone.length) okrLines.push('', `**${L.weekDone}**`, bullets(weekDone, L.none));
   }
@@ -135,11 +129,18 @@ export function generate(i: GenerateInput): ReportSections {
   // 下期計劃
   const next: string[] = [];
   if (kind === 'daily') {
+    // 下一個工作日到期的我的任務（D46 取消日目標，technical-design §16.13）
     const nd = nextWorkday(period);
     next.push(
-      ...i.plans
-        .filter((x) => x.mine && x.level === 'day' && x.period === nd && !x.done)
-        .map((x) => x.title),
+      ...i.tasks
+        .filter(
+          (t) =>
+            t.status !== 'done' &&
+            t.dueAt !== null &&
+            periodsAt(t.dueAt, tz).day === nd &&
+            (t.assignee === me || t.steps.some((s) => s.assignee === me && !s.done)),
+        )
+        .map((t) => t.title),
     );
     const doneSet = new Set(done.map((s) => s.trim()));
     next.push(

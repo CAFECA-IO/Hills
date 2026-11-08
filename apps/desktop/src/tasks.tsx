@@ -1,13 +1,21 @@
-/** 任務頁（ui-spec「任務」M1 第一批範圍，D40）：清單、新增 / 編輯對話框、勾選步驟。 */
-import { useState } from 'react';
+/**
+ * 任務頁（ui-spec「任務」，D40、D46）：依小組與「私人」分組的清單、勾選步驟，
+ * 以及目標頁共用的新增 / 編輯任務對話框（任務可連結一個週目標、可設為私人）。
+ */
+import { useMemo, useRef, useState } from 'react';
 import {
   api,
+  isPrivateTask,
+  PRIVATE_TEAM,
   type FocusView,
   type MemberView,
+  type PlanView,
   type StepInput,
   type Task,
   type TeamView,
 } from './api';
+import { periodsAt, weekGoalOptions } from './goals-utils';
+import { useLoad } from './hooks';
 import { formatClock, t } from './i18n';
 import {
   Badge,
@@ -15,6 +23,7 @@ import {
   Card,
   Checkbox,
   ConfirmButton,
+  Dialog,
   EmptyState,
   ErrorText,
   Field,
@@ -31,24 +40,40 @@ interface Props {
   teams: TeamView[];
   members: MemberView[];
   focus: FocusView | null;
+  timezone: string;
   error: string | null;
 }
 
-export function Tasks({ tasks, teams, members, focus, error }: Props) {
+/** 新增任務時的預填值（目標頁「拆成任務」、任務欄「+ 任務」）。 */
+export interface TaskDraft {
+  team?: string;
+  planItemId?: string | null;
+}
+
+export function Tasks({ tasks, teams, members, focus, timezone, error }: Props) {
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
+  const plans = useLoad(() => api.plans(false), ['doc', 'org', 'roster']);
   const me = members.find((m) => m.isMe);
   const myTeams = teams.filter((tm) => me && tm.members.includes(me.id));
   const nameOf = (id: string | null) =>
     id ? (members.find((m) => m.id === id)?.name ?? '?') : t('home.unassigned');
+  const goalOf = (id: string | null) =>
+    id ? (plans.data?.find((p) => p.id === id) ?? null) : null;
+  const groups: { key: string; name: string; list: Task[] }[] = [
+    ...myTeams.map((tm) => ({
+      key: tm.id,
+      name: tm.name,
+      list: tasks.filter((x) => x.team === tm.id),
+    })),
+    { key: PRIVATE_TEAM, name: t('tasks.private'), list: tasks.filter(isPrivateTask) },
+  ];
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted">
           {t('tasks.summary', { count: tasks.filter((x) => x.status !== 'done').length })}
         </p>
-        <Button disabled={myTeams.length === 0} onClick={() => setEditing('new')}>
-          {t('tasks.new')}
-        </Button>
+        <Button onClick={() => setEditing('new')}>{t('tasks.new')}</Button>
       </div>
       <ErrorText message={error} />
       {editing && (
@@ -56,25 +81,27 @@ export function Tasks({ tasks, teams, members, focus, error }: Props) {
           task={editing === 'new' ? null : editing}
           teams={myTeams}
           members={members}
+          timezone={timezone}
           onClose={() => setEditing(null)}
         />
       )}
-      {tasks.length === 0 && !editing && (
+      {tasks.length === 0 && (
         <Card className="flex flex-col items-start gap-2">
           <EmptyState>{t('tasks.empty')}</EmptyState>
         </Card>
       )}
-      {myTeams.map((tm) => {
-        const list = tasks.filter((x) => x.team === tm.id);
-        if (list.length === 0) return null;
+      {groups.map((g) => {
+        if (g.list.length === 0) return null;
         return (
-          <Card key={tm.id} className="flex flex-col gap-1">
-            <h2 className="mb-2 font-bold">{tm.name}</h2>
+          <Card key={g.key} className="flex flex-col gap-1">
+            <h2 className="mb-2 font-bold">{g.name}</h2>
             <ul className="flex flex-col divide-y divide-line">
-              {list.map((x) => (
+              {g.list.map((x) => (
                 <TaskRow
                   key={x.id}
                   task={x}
+                  goal={goalOf(x.planItemId)}
+                  linked={Boolean(x.planItemId)}
                   isFocus={focus?.task?.id === x.id}
                   nameOf={nameOf}
                   onEdit={() => setEditing(x)}
@@ -90,11 +117,15 @@ export function Tasks({ tasks, teams, members, focus, error }: Props) {
 
 function TaskRow({
   task,
+  goal,
+  linked,
   isFocus,
   nameOf,
   onEdit,
 }: {
   task: Task;
+  goal: PlanView | null;
+  linked: boolean;
   isFocus: boolean;
   nameOf: (id: string | null) => string;
   onEdit: () => void;
@@ -102,18 +133,30 @@ function TaskRow({
   const [open, setOpen] = useState(isFocus);
   const { error, attempt } = useAction();
   const done = task.steps.filter((s) => s.done).length;
+  const priv = isPrivateTask(task);
   return (
     <li className="flex flex-col gap-2 py-3">
       <div className="flex flex-wrap items-center gap-3">
         <Pressable
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
-          className={`min-w-0 flex-1 truncate rounded-sm font-semibold ${task.status === 'done' ? 'text-muted line-through' : ''}`}
+          className="flex min-w-0 flex-1 flex-col rounded-sm"
         >
-          {task.title}
+          <span
+            className={`truncate font-semibold ${task.status === 'done' ? 'text-muted line-through' : ''}`}
+          >
+            {task.title}
+          </span>
+          {linked && (
+            <span className="truncate text-xs text-muted">
+              {t('tasks.goalOf', {
+                goal: goal ? `${goal.period} · ${goal.title}` : t('goals.privateItem'),
+              })}
+            </span>
+          )}
         </Pressable>
         {isFocus && <Badge tone="primary">{t('tasks.focus')}</Badge>}
-        <span className="text-sm text-muted">{nameOf(task.assignee)}</span>
+        {!priv && <span className="text-sm text-muted">{nameOf(task.assignee)}</span>}
         <span className="text-sm text-muted">
           {task.dueAt ? formatClock(task.dueAt) : t('tasks.noDue')}
         </span>
@@ -145,7 +188,7 @@ function TaskRow({
                 label={
                   <>
                     <span className={s.done ? 'text-muted line-through' : ''}>{s.title}</span>
-                    <span className="text-muted"> · {nameOf(s.assignee)}</span>
+                    {!priv && <span className="text-muted"> · {nameOf(s.assignee)}</span>}
                   </>
                 }
               />
@@ -165,99 +208,150 @@ const toLocalInput = (ms: number | null) => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
-function TaskDialog({
+/** 新增 / 編輯任務（ui-spec「任務」v0.18：模態對話框，目標頁與任務頁共用）。 */
+export function TaskDialog({
   task,
+  draft,
   teams,
   members,
+  timezone,
   onClose,
+  onSaved,
 }: {
   task: Task | null;
+  draft?: TaskDraft;
   teams: TeamView[];
   members: MemberView[];
+  timezone: string;
   onClose: () => void;
+  onSaved?: (id: string) => void;
 }) {
-  const [team, setTeam] = useState(task?.team ?? teams[0]?.id ?? '');
-  const [title, setTitle] = useState(task?.title ?? '');
-  const [assignee, setAssignee] = useState(task?.assignee ?? members.find((m) => m.isMe)?.id ?? '');
-  const [due, setDue] = useState(toLocalInput(task?.dueAt ?? null));
-  const [steps, setSteps] = useState<StepInput[]>(
-    task?.steps.map((s) => ({ id: s.id, title: s.title, assignee: s.assignee, done: s.done })) ??
-      [],
+  const me = members.find((m) => m.isMe)?.id ?? '';
+  const plans = useLoad(() => api.plans(false), ['doc', 'org', 'roster']);
+  const [thisWeek] = useState(() => periodsAt(Date.now(), timezone).week);
+  const initial = useMemo(
+    () => ({
+      team: task?.team ?? draft?.team ?? teams[0]?.id ?? PRIVATE_TEAM,
+      title: task?.title ?? '',
+      assignee: task ? (task.assignee ?? '') : me,
+      due: toLocalInput(task?.dueAt ?? null),
+      planItemId: task?.planItemId ?? draft?.planItemId ?? '',
+      steps:
+        task?.steps.map((s): StepInput => ({
+          id: s.id,
+          title: s.title,
+          assignee: s.assignee,
+          done: s.done,
+        })) ?? [],
+    }),
+    // 只在開啟時取一次初始值
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   );
+  const [v, setV] = useState(initial);
+  const [titleError, setTitleError] = useState<string | null>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
   const { busy, error, attempt } = useAction();
+  const set = (patch: Partial<typeof v>) => setV((x) => ({ ...x, ...patch }));
+  const priv = v.team === PRIVATE_TEAM;
   const teamMembers = members.filter((m) =>
-    teams.find((x) => x.id === team)?.members.includes(m.id),
+    teams.find((x) => x.id === v.team)?.members.includes(m.id),
   );
+  const goalOwner = priv ? me : v.assignee || me;
+  const goals = weekGoalOptions(plans.data ?? [], goalOwner, thisWeek);
+  const linked = v.planItemId ? (plans.data ?? []).find((p) => p.id === v.planItemId) : null;
+  const dirty = JSON.stringify(v) !== JSON.stringify(initial);
   const setStep = (i: number, patch: Partial<StepInput>) =>
-    setSteps((list) => list.map((s, j) => (j === i ? { ...s, ...patch } : s)));
-  const move = (i: number, d: -1 | 1) =>
-    setSteps((list) => {
-      const j = i + d;
-      if (j < 0 || j >= list.length) return list;
-      const next = [...list];
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
-    });
+    set({ steps: v.steps.map((s, j) => (j === i ? { ...s, ...patch } : s)) });
+  const move = (i: number, d: -1 | 1) => {
+    const j = i + d;
+    if (j < 0 || j >= v.steps.length) return;
+    const next = [...v.steps];
+    [next[i], next[j]] = [next[j]!, next[i]!];
+    set({ steps: next });
+  };
   const save = async () => {
+    if (!v.title.trim()) {
+      setTitleError(t('field.required'));
+      titleRef.current?.focus();
+      return;
+    }
     const input = {
-      title,
-      assignee: assignee || null,
+      title: v.title,
+      assignee: priv ? me : v.assignee || null,
       status: task?.status ?? null,
-      dueAt: due ? new Date(due).getTime() : null,
-      steps: steps.filter((s) => s.title.trim()),
+      dueAt: v.due ? new Date(v.due).getTime() : null,
+      steps: v.steps
+        .filter((s) => s.title.trim())
+        .map((s) => (priv ? { ...s, assignee: null } : s)),
+      planItemId: v.planItemId || null,
     };
-    const ok = await attempt(() =>
-      task ? api.updateTask(task.team, task.id, input) : api.createTask(team, input),
-    );
-    if (ok) onClose();
+    let id = task?.id ?? '';
+    const ok = await attempt(async () => {
+      if (task) await api.updateTask(task.team, task.id, input);
+      else id = await api.createTask(v.team, input);
+    });
+    if (ok) {
+      onSaved?.(id);
+      onClose();
+    }
   };
   return (
-    <Card className="flex flex-col gap-4">
-      <h2 className="text-lg font-bold">{task ? t('tasks.edit.title') : t('tasks.new')}</h2>
-      {!task && teams.length > 1 && (
-        <Field label={t('tasks.team')}>
-          <Select value={team} onChange={(e) => setTeam(e.target.value)}>
-            {teams.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      )}
-      <Field label={t('tasks.field.title')} value={title} onChange={setTitle} autoFocus />
-      <div className="flex flex-wrap gap-4">
-        <Field label={t('tasks.field.assignee')}>
-          <Select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
-            <option value="">{t('home.unassigned')}</option>
-            {teamMembers.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label={t('tasks.field.due')}>
-          <TextInput type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} />
-        </Field>
-      </div>
-      <fieldset className="flex flex-col gap-2">
-        <legend className="mb-1 text-xs font-medium text-muted">{t('tasks.field.steps')}</legend>
-        {steps.length === 0 && <EmptyState>{t('tasks.steps.empty')}</EmptyState>}
-        {steps.map((s, i) => (
-          <div key={s.id ?? `new-${i}`} className="flex flex-wrap items-center gap-2">
-            <span className="w-6 text-right text-sm text-muted">{i + 1}</span>
-            <TextInput
-              aria-label={t('tasks.step.title', { n: i + 1 })}
-              className="min-w-48 flex-1"
-              value={s.title}
-              onChange={(e) => setStep(i, { title: e.target.value })}
-            />
-            <Select
-              aria-label={t('tasks.step.assignee', { n: i + 1 })}
-              value={s.assignee ?? ''}
-              onChange={(e) => setStep(i, { assignee: e.target.value || null })}
-            >
+    <Dialog
+      title={task ? t('tasks.edit.title') : t('tasks.new')}
+      onClose={onClose}
+      onSubmit={() => void save()}
+      dirty={dirty}
+      width="lg"
+    >
+      <Field
+        label={t('tasks.field.visibility')}
+        hint={priv ? t('tasks.vis.hint.private') : t('tasks.vis.hint.team')}
+      >
+        <Select
+          value={v.team}
+          disabled={Boolean(task)}
+          onChange={(e) => set({ team: e.target.value, assignee: me })}
+        >
+          {teams.map((x) => (
+            <option key={x.id} value={x.id}>
+              {t('goals.vis.teamNamed', { team: x.name })}
+            </option>
+          ))}
+          <option value={PRIVATE_TEAM}>{t('tasks.vis.private')}</option>
+        </Select>
+      </Field>
+      <Field label={t('tasks.field.title')} required error={titleError}>
+        <TextInput
+          ref={titleRef}
+          autoFocus
+          maxLength={200}
+          value={v.title}
+          onChange={(e) => {
+            set({ title: e.target.value });
+            if (e.target.value.trim()) setTitleError(null);
+          }}
+        />
+      </Field>
+      <Field label={t('tasks.field.goal')} hint={t('tasks.goal.hint')}>
+        <Select value={v.planItemId} onChange={(e) => set({ planItemId: e.target.value })}>
+          <option value="">{t('tasks.goal.none')}</option>
+          {v.planItemId && !goals.some((g) => g.id === v.planItemId) && (
+            <option value={v.planItemId}>
+              {linked ? `${linked.period} · ${linked.title}` : t('goals.privateItem')}
+            </option>
+          )}
+          {goals.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.period.split('-')[1]} · {g.title}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        {!priv && (
+          <Field label={t('tasks.field.assignee')}>
+            <Select value={v.assignee} onChange={(e) => set({ assignee: e.target.value })}>
               <option value="">{t('home.unassigned')}</option>
               {teamMembers.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -265,16 +359,56 @@ function TaskDialog({
                 </option>
               ))}
             </Select>
-            <IconButton variant="secondary" label={t('tasks.step.up')} onClick={() => move(i, -1)}>
+          </Field>
+        )}
+        <Field label={t('tasks.field.due')}>
+          <TextInput
+            type="datetime-local"
+            value={v.due}
+            onChange={(e) => set({ due: e.target.value })}
+          />
+        </Field>
+      </div>
+      <fieldset className="flex flex-col gap-2">
+        <legend className="mb-1 text-xs font-medium text-muted">{t('tasks.field.steps')}</legend>
+        {v.steps.length === 0 && <EmptyState>{t('tasks.steps.empty')}</EmptyState>}
+        {v.steps.map((s, i) => (
+          <div key={s.id ?? `new-${i}`} className="flex items-center gap-2">
+            <span className="w-5 shrink-0 text-right text-sm text-muted">{i + 1}</span>
+            <TextInput
+              size="sm"
+              aria-label={t('tasks.step.title', { n: i + 1 })}
+              className="min-w-0 flex-1"
+              value={s.title}
+              onChange={(e) => setStep(i, { title: e.target.value })}
+            />
+            {!priv && (
+              <Select
+                size="sm"
+                className="w-32 shrink-0"
+                aria-label={t('tasks.step.assignee', { n: i + 1 })}
+                value={s.assignee ?? ''}
+                onChange={(e) => setStep(i, { assignee: e.target.value || null })}
+              >
+                <option value="">{t('home.unassigned')}</option>
+                {teamMembers.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+            <IconButton size="sm" label={t('tasks.step.up')} onClick={() => move(i, -1)}>
               ↑
             </IconButton>
-            <IconButton variant="secondary" label={t('tasks.step.down')} onClick={() => move(i, 1)}>
+            <IconButton size="sm" label={t('tasks.step.down')} onClick={() => move(i, 1)}>
               ↓
             </IconButton>
             <IconButton
-              variant="secondary"
+              size="sm"
               label={t('tasks.step.remove')}
-              onClick={() => setSteps((list) => list.filter((_, j) => j !== i))}
+              className="hover:text-danger"
+              onClick={() => set({ steps: v.steps.filter((_, j) => j !== i) })}
             >
               ×
             </IconButton>
@@ -282,35 +416,36 @@ function TaskDialog({
         ))}
         <div>
           <Button
-            variant="soft"
+            variant="secondary"
+            size="sm"
             onClick={() =>
-              setSteps((list) => [...list, { id: null, title: '', assignee: null, done: false }])
+              set({ steps: [...v.steps, { id: null, title: '', assignee: null, done: false }] })
             }
           >
             {t('tasks.step.add')}
           </Button>
         </div>
       </fieldset>
-      <div className="flex flex-wrap gap-2">
-        <Button disabled={busy || !title.trim() || (!task && !team)} onClick={() => void save()}>
-          {t('common.save')}
-        </Button>
-        <Button variant="secondary" onClick={onClose}>
-          {t('common.cancel')}
-        </Button>
-        {task && (
-          <span className="ml-auto">
-            <ConfirmButton
-              label={t('tasks.delete')}
-              message={t('tasks.delete.confirm', { title: task.title })}
-              onConfirm={async () => {
-                if (await attempt(() => api.deleteTask(task.team, task.id))) onClose();
-              }}
-            />
-          </span>
-        )}
-      </div>
       <ErrorText message={error} />
-    </Card>
+      <div className="flex items-center gap-2">
+        {task && (
+          <ConfirmButton
+            label={t('tasks.delete')}
+            message={t('tasks.delete.confirm', { title: task.title })}
+            onConfirm={async () => {
+              if (await attempt(() => api.deleteTask(task.team, task.id))) onClose();
+            }}
+          />
+        )}
+        <span className="ml-auto flex gap-2">
+          <Button variant="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" busy={busy}>
+            {t('common.save')}
+          </Button>
+        </span>
+      </div>
+    </Dialog>
   );
 }

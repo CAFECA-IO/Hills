@@ -32,6 +32,7 @@ const at = (date: string, h = 12) => Date.parse(`${date}T${String(h - 8).padStar
 const task = (id: string, extra: Partial<Task> = {}): Task => ({
   id,
   team: 'g',
+  planItemId: null,
   title: id,
   assignee: 'me',
   status: 'todo',
@@ -110,6 +111,7 @@ describe('generate', () => {
     task('B', { status: 'doing' }),
     task('C', { dueAt: at('2026-11-17') }),
     task('D', { status: 'done', updatedAt: at('2026-11-02') }),
+    task('T', { dueAt: at('2026-11-11') }),
   ];
   const plans = [
     plan('Q', 'quarter', '2026-Q4', {
@@ -121,7 +123,6 @@ describe('generate', () => {
     }),
     plan('W', 'week', '2026-W46', { done: true }),
     plan('N', 'week', '2026-W47'),
-    plan('T', 'day', '2026-11-11'),
   ];
   it('builds the weekly sections', () => {
     const s = generate({
@@ -146,7 +147,7 @@ describe('generate', () => {
     expect(s.attendance).toBe('（待假勤）');
     expect(s.next).toBe('- N\n- C');
   });
-  it('builds the daily next plan from tomorrow and unfinished scrum items', () => {
+  it('builds the daily next plan from tasks due on the next workday and unfinished scrum items', () => {
     const s = generate({
       kind: 'daily',
       period: '2026-11-10',

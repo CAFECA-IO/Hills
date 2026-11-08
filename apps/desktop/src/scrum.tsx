@@ -126,7 +126,6 @@ function MyScrum({
   me: string;
 }) {
   const mine = useLoad(() => api.scrumMine(date), ['doc', 'org']);
-  const plans = useLoad(() => api.plans(true), ['doc']);
   const [form, setForm] = useState<ScrumInput | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState<'draft' | 'submitted' | null>(null);
@@ -165,7 +164,6 @@ function MyScrum({
     .map((id) => members.find((m) => m.id === id)?.name)
     .filter(Boolean)
     .join('、');
-  const myPlans = plans.data ?? [];
 
   if (!editable) {
     return (
@@ -197,9 +195,7 @@ function MyScrum({
           <Button
             variant="secondary"
             className="h-8 px-3 py-0 text-xs"
-            onClick={() =>
-              set({ done: mergeRefs(v.done, doneSince(tasks, myPlans, me, date, timezone)) })
-            }
+            onClick={() => set({ done: mergeRefs(v.done, doneSince(tasks, me, date, timezone)) })}
           >
             {t('scrum.fromTasks')}
           </Button>
@@ -214,7 +210,7 @@ function MyScrum({
             variant="secondary"
             className="h-8 px-3 py-0 text-xs"
             onClick={() =>
-              set({ today: mergeRefs(v.today, todayPlan(tasks, myPlans, focusId, date, timezone)) })
+              set({ today: mergeRefs(v.today, todayPlan(tasks, me, focusId, date, timezone)) })
             }
           >
             {t('scrum.fromPlan')}

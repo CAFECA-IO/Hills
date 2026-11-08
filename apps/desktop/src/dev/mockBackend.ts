@@ -98,6 +98,7 @@ interface MockTask {
   status: string;
   dueAt: number | null;
   steps: MockStep[];
+  planItemId: string | null;
   createdBy: string | null;
   createdAt: number;
   updatedAt: number;
@@ -123,6 +124,7 @@ let tasks: MockTask[] = [
       st('s3', '通知測試', 'mem-d'),
       st('s4', '簽核', 'mem-d'),
     ],
+    planItemId: 'w1',
     createdBy: 'mem-me',
     createdAt: now0 - 4 * 3600_000,
     updatedAt: now0,
@@ -135,8 +137,22 @@ let tasks: MockTask[] = [
     status: 'todo',
     dueAt: null,
     steps: [st('s5', '草稿', 'mem-me'), st('s6', '請小明校對', 'mem-a')],
+    planItemId: 'w1',
     createdBy: 'mem-me',
     createdAt: now0 - 86400_000,
+    updatedAt: now0,
+  },
+  {
+    id: 't3',
+    team: 'private',
+    title: '寫週報',
+    assignee: 'mem-me',
+    status: 'todo',
+    dueAt: null,
+    steps: [],
+    planItemId: 'w2',
+    createdBy: 'mem-me',
+    createdAt: now0 - 3600_000,
     updatedAt: now0,
   },
 ];
@@ -210,10 +226,22 @@ let plans: PlanView[] = [
   plan('m3', 'month', '設計定稿', 85, 'q1', { krRef: 'q1/k5' }),
   plan('w1', 'week', '檔案分享穩定', 80, 'm1'),
   plan('w2', 'week', '對話焦點營地', 40, 'm1'),
-  plan('d1', 'day', 'relay 更新', 50, 'w1'),
-  plan('d2', 'day', 'Windows 驗收', 0, 'w1'),
-  plan('d3', 'day', '寫週報', 0, null, { visibility: { kind: 'private' } }),
 ];
+const taskProgress = (t: MockTask) =>
+  t.steps.length === 0
+    ? t.status === 'done'
+      ? 100
+      : 0
+    : (t.steps.filter((x) => x.done).length * 100) / t.steps.length;
+/** 週目標有任務時，進度 = 任務進度平均（D46，與 node 的 rollup 相同）。 */
+const withTaskProgress = (list: PlanView[]): PlanView[] =>
+  list.map((p) => {
+    if (p.level !== 'week' || p.progressOverride !== null) return p;
+    const linked = tasks.filter((t) => t.planItemId === p.id);
+    if (linked.length === 0) return p;
+    const avg = linked.reduce((n, t) => n + taskProgress(t), 0) / linked.length;
+    return { ...p, progress: avg };
+  });
 // 示範知識庫（虛構，與設計稿第八輪相同的分類）
 const kbCats: KbCategory[] = [
   ['c-prod', '產品'],
@@ -693,7 +721,7 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   },
   report_remind: () => false,
   export_text: () => true,
-  plans: (a) => (a.mineOnly ? plans.filter((x) => x.mine) : plans),
+  plans: (a) => withTaskProgress(a.mineOnly ? plans.filter((x) => x.mine) : plans),
   save_plan: (a) => {
     const input = a.input as PlanInput;
     const id = input.id || 'p' + Math.random().toString(16).slice(2, 8);
@@ -743,6 +771,8 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
         id,
         team: String(a.team),
         status: 'todo',
+        assignee: a.team === 'private' ? state.me : input.assignee,
+        planItemId: input.planItemId ?? null,
         steps: input.steps.map((x, i) => ({ ...x, id: x.id ?? `${id}-${i}`, doneAt: null })),
         createdBy: state.me,
         createdAt: Date.now(),
@@ -760,6 +790,7 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
             ...x,
             ...input,
             status: x.status,
+            planItemId: input.planItemId ?? null,
             steps: input.steps.map((y, i) => ({ ...y, id: y.id ?? `${x.id}-n${i}`, doneAt: null })),
           }
         : x,

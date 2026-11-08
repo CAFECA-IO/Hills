@@ -1,7 +1,9 @@
-/** 目標「階梯」（ui-spec「目標」，D43、D8；technical-design §16.10）。 */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+/** 目標「階梯」（ui-spec「目標」，D43、D8、D46；technical-design §16.10）：四層目標 + 任務欄。 */
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   api,
+  isPrivateTask,
+  taskProgress,
   type KeyResult,
   type MemberView,
   type PlanInput,
@@ -22,7 +24,7 @@ import {
   periodsFromAny,
   select,
   splitPeriod,
-  todayTasks,
+  taskColumn,
   weekRange,
   weeksInYear,
   yearOptions,
@@ -32,8 +34,8 @@ import {
 import { useLoad } from './hooks';
 import { t, type MessageKey } from './i18n';
 import { PageHead } from './layout';
+import { TaskDialog, type TaskDraft } from './tasks';
 import {
-  Badge,
   Button,
   Checkbox,
   ConfirmButton,
@@ -41,6 +43,7 @@ import {
   EmptyState,
   ErrorText,
   Field,
+  IconButton,
   LinkButton,
   Pressable,
   ProgressBar,
@@ -83,10 +86,12 @@ interface Props {
   tasks: Task[];
   focusId: string | null;
   timezone: string;
-  onOpenTasks: () => void;
 }
 
-export function Goals({ members, teams, tasks, focusId, timezone, onOpenTasks }: Props) {
+/** 任務對話框的狀態：編輯既有任務，或帶預填值新增。 */
+type TaskEditing = { task: Task | null; draft?: TaskDraft };
+
+export function Goals({ members, teams, tasks, focusId, timezone }: Props) {
   const [mineOnly, setMineOnly] = useState(true);
   const plans = useLoad(() => api.plans(mineOnly), ['doc', 'org', 'roster']);
   const reload = plans.reload;
@@ -102,6 +107,7 @@ export function Goals({ members, teams, tasks, focusId, timezone, onOpenTasks }:
   const [offset, setOffset] = useState(0);
   const [sel, setSel] = useState<Selection>({});
   const [editing, setEditing] = useState<PlanInput | null>(null);
+  const [taskEditing, setTaskEditing] = useState<TaskEditing | null>(null);
   const items = useMemo(() => plans.data ?? [], [plans.data]);
   // 「今天」每分鐘更新一次（跨日時欄位跟著換）
   const [now, setNow] = useState(() => Date.now());
@@ -135,7 +141,15 @@ export function Goals({ members, teams, tasks, focusId, timezone, onOpenTasks }:
     keyResults: [],
     visibility: parent?.mine ? parent.visibility : defaultVis,
   });
-  const dayTasks = todayTasks(tasks, focusId, periods.day, timezone);
+  const columnTasks = taskColumn(tasks, {
+    week: periods.week,
+    selectedWeek: sel.week ?? null,
+    me,
+    focusId,
+    tz: timezone,
+  });
+  const newTask = (planItemId: string | null) =>
+    setTaskEditing({ task: null, draft: { planItemId } });
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
@@ -155,30 +169,25 @@ export function Goals({ members, teams, tasks, focusId, timezone, onOpenTasks }:
         }
       />
       <div className="flex items-center gap-2 text-sm">
-        <Button
+        <IconButton
           variant="secondary"
-          className="h-8 px-3 py-0"
-          aria-label={t('goals.prevDay')}
+          size="sm"
+          label={t('goals.prevDay')}
           onClick={() => setOffset((o) => o - 1)}
         >
           ◀
-        </Button>
-        <Button
-          variant="secondary"
-          className="h-8 px-3 py-0"
-          disabled={offset === 0}
-          onClick={() => setOffset(0)}
-        >
+        </IconButton>
+        <Button variant="secondary" size="sm" disabled={offset === 0} onClick={() => setOffset(0)}>
           {t('goals.today')}
         </Button>
-        <Button
+        <IconButton
           variant="secondary"
-          className="h-8 px-3 py-0"
-          aria-label={t('goals.nextDay')}
+          size="sm"
+          label={t('goals.nextDay')}
           onClick={() => setOffset((o) => o + 1)}
         >
           ▶
-        </Button>
+        </IconButton>
         <span className="text-muted">{periods.day}</span>
         <ErrorText message={plans.error} />
       </div>
@@ -193,8 +202,10 @@ export function Goals({ members, teams, tasks, focusId, timezone, onOpenTasks }:
           setEditing(blank(level, parent));
         }}
         nameOf={nameOf}
-        dayTasks={dayTasks}
-        onOpenTasks={onOpenTasks}
+        me={me}
+        tasks={columnTasks}
+        onOpenTask={(task) => setTaskEditing({ task })}
+        onAddTask={() => newTask(sel.week ?? null)}
       />
       <SelectedPanel
         item={selected}
@@ -202,7 +213,12 @@ export function Goals({ members, teams, tasks, focusId, timezone, onOpenTasks }:
         teams={teams}
         nameOf={nameOf}
         onEdit={(i) => setEditing(toInput(i))}
+        tasks={tasks}
         onSplit={(i) => {
+          if (i.level === 'week') {
+            newTask(i.mine ? i.id : null);
+            return;
+          }
           const next = nextLevel(i.level);
           if (next) setEditing(blank(next, i));
         }}
@@ -220,6 +236,17 @@ export function Goals({ members, teams, tasks, focusId, timezone, onOpenTasks }:
             setSel((s) => select(s, level, id));
             plans.reload();
           }}
+        />
+      )}
+      {taskEditing && (
+        <TaskDialog
+          task={taskEditing.task}
+          draft={taskEditing.draft}
+          teams={myTeams}
+          members={members}
+          timezone={timezone}
+          onClose={() => setTaskEditing(null)}
+          onSaved={() => plans.reload()}
         />
       )}
     </div>
@@ -241,7 +268,7 @@ function toInput(i: PlanView): PlanInput {
   };
 }
 
-// ── 五欄 ─────────────────────────────────────────────────────
+// ── 四欄目標 + 任務欄 ─────────────────────────────────────────
 
 function Ladder({
   items,
@@ -250,8 +277,10 @@ function Ladder({
   onSelect,
   onAdd,
   nameOf,
-  dayTasks,
-  onOpenTasks,
+  me,
+  tasks,
+  onOpenTask,
+  onAddTask,
 }: {
   items: PlanView[];
   periods: Periods;
@@ -259,8 +288,10 @@ function Ladder({
   onSelect: (level: PlanLevel, id: string) => void;
   onAdd: (level: PlanLevel) => void;
   nameOf: (id: string) => string;
-  dayTasks: Task[];
-  onOpenTasks: () => void;
+  me: string;
+  tasks: Task[];
+  onOpenTask: (task: Task) => void;
+  onAddTask: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [lines, setLines] = useState<{ d: string; color: string; key: string }[]>([]);
@@ -280,15 +311,20 @@ function Ladder({
     const out: { d: string; color: string; key: string }[] = [];
     LEVELS.forEach((l, i) => {
       const id = sel[l];
-      const next = LEVELS[i + 1];
+      // 週目標的下一欄是任務（D46）
+      const next = LEVELS[i + 1] ?? (l === 'week' ? 'day' : undefined);
       if (!id || !next) return;
       const from = root.querySelector<HTMLElement>(`[data-goal="${l}:${id}"]`);
       if (!from) return;
       const a = from.getBoundingClientRect();
       const ax = a.right - base.left;
       const ay = a.top + a.height / 2 - base.top;
-      for (const c of cols[i + 1] ?? []) {
-        const to = root.querySelector<HTMLElement>(`[data-goal="${next}:${c.id}"]`);
+      const targets =
+        next === 'day'
+          ? tasks.map((x) => `task:${x.id}`)
+          : (cols[i + 1] ?? []).map((c) => `${next}:${c.id}`);
+      for (const key of targets) {
+        const to = root.querySelector<HTMLElement>(`[data-goal="${key}"]`);
         if (!to) continue;
         const b = to.getBoundingClientRect();
         const bx = b.left - base.left;
@@ -296,7 +332,7 @@ function Ladder({
         if (by < 0 || by > base.height) continue;
         const mx = (ax + bx) / 2;
         out.push({
-          key: `${id}-${c.id}`,
+          key: `${id}-${key}`,
           color: LEVEL_VAR[next],
           d: `M${ax} ${ay}C${mx} ${ay} ${mx} ${by} ${bx} ${by}`,
         });
@@ -305,7 +341,7 @@ function Ladder({
     setLines((prev) =>
       prev.length === out.length && prev.every((p, k) => p.d === out[k]?.d) ? prev : out,
     );
-  }, [sel, cols, tick]);
+  }, [sel, cols, tasks, tick]);
   return (
     <div ref={box} className="relative grid min-h-0 flex-1 grid-cols-5 gap-3 wide:gap-4">
       {LEVELS.map((l, i) => (
@@ -319,13 +355,17 @@ function Ladder({
           onAdd={() => onAdd(l)}
           nameOf={nameOf}
           onScroll={() => setTick(tick + 1)}
-          extra={
-            l === 'day' && dayTasks.length > 0 ? (
-              <TaskRows tasks={dayTasks} onOpen={onOpenTasks} />
-            ) : null
-          }
         />
       ))}
+      <TaskColumn
+        week={periods.week}
+        tasks={tasks}
+        me={me}
+        nameOf={nameOf}
+        onOpen={onOpenTask}
+        onAdd={onAddTask}
+        onScroll={() => setTick(tick + 1)}
+      />
       <svg aria-hidden className="pointer-events-none absolute inset-0 h-full w-full">
         {lines.map((x) => (
           <path key={x.key} d={x.d} stroke={x.color} strokeWidth={2} fill="none" opacity={0.7} />
@@ -344,7 +384,6 @@ function LevelColumn({
   onAdd,
   nameOf,
   onScroll,
-  extra,
 }: {
   level: PlanLevel;
   period: string;
@@ -354,7 +393,6 @@ function LevelColumn({
   onAdd: () => void;
   nameOf: (id: string) => string;
   onScroll: () => void;
-  extra: ReactNode;
 }) {
   return (
     <section
@@ -370,7 +408,7 @@ function LevelColumn({
         <span className="text-xs text-muted">{items.length}</span>
       </header>
       <ul className="scroll-panel flex min-h-0 flex-1 flex-col gap-2 p-2" onScroll={onScroll}>
-        {items.length === 0 && !extra && (
+        {items.length === 0 && (
           <li className="px-1 py-2 text-xs text-muted">{t('goals.column.empty')}</li>
         )}
         {items.map((i) => (
@@ -391,7 +429,6 @@ function LevelColumn({
             </Pressable>
           </li>
         ))}
-        {extra}
       </ul>
       <div className="border-t border-line p-2">
         <Button variant="ghost" size="sm" className="w-full rounded-control" onClick={onAdd}>
@@ -402,22 +439,86 @@ function LevelColumn({
   );
 }
 
-function TaskRows({ tasks, onOpen }: { tasks: Task[]; onOpen: () => void }) {
+/** 任務欄（ui-spec「目標」v0.18，D46）：週目標之下的任務。 */
+function TaskColumn({
+  week,
+  tasks,
+  me,
+  nameOf,
+  onOpen,
+  onAdd,
+  onScroll,
+}: {
+  week: string;
+  tasks: Task[];
+  me: string;
+  nameOf: (id: string) => string;
+  onOpen: (task: Task) => void;
+  onAdd: () => void;
+  onScroll: () => void;
+}) {
   return (
-    <>
-      <li className="px-1 pt-1 text-xs font-bold text-muted">{t('goals.todayTasks')}</li>
-      {tasks.map((x) => (
-        <li key={`${x.team}:${x.id}`}>
-          <Pressable
-            onClick={onOpen}
-            className="flex w-full items-center gap-2 rounded-control border border-dashed border-line px-2 py-2 text-sm hover:bg-bg"
-          >
-            <Badge>{t('goals.taskBadge')}</Badge>
-            <span className="line-clamp-2">{x.title}</span>
-          </Pressable>
-        </li>
-      ))}
-    </>
+    <section
+      aria-label={`${t('goals.tasks')} ${week}`}
+      className="flex min-h-0 min-w-0 flex-col rounded-card bg-surface shadow-sm"
+    >
+      <header className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
+        <span className="flex items-center gap-2">
+          <span aria-hidden className={`size-2.5 rounded-full ${LEVEL_BG.day}`} />
+          <span className={`text-xs font-bold ${LEVEL_TEXT.day}`}>{t('goals.tasks')}</span>
+          <span className="text-sm font-bold">{periodLabel('week', week)}</span>
+        </span>
+        <span className="text-xs text-muted">{tasks.length}</span>
+      </header>
+      <ul className="scroll-panel flex min-h-0 flex-1 flex-col gap-2 p-2" onScroll={onScroll}>
+        {tasks.length === 0 && (
+          <li className="px-1 py-2 text-xs text-muted">{t('goals.tasks.empty')}</li>
+        )}
+        {tasks.map((x) => (
+          <li key={`${x.team}:${x.id}`}>
+            <Pressable
+              data-goal={`task:${x.id}`}
+              onClick={() => onOpen(x)}
+              className="flex w-full items-center gap-2 rounded-control border border-line px-2 py-2 text-sm hover:bg-bg"
+            >
+              <ProgressRing value={taskProgress(x)} level="day" />
+              <span className="flex min-w-0 flex-col">
+                <span
+                  className={`line-clamp-2 ${x.status === 'done' ? 'text-muted line-through' : ''}`}
+                >
+                  {x.title}
+                </span>
+                {isPrivateTask(x) ? (
+                  <span className="flex items-center gap-1 text-xs text-muted">
+                    <LockIcon />
+                    {t('tasks.private')}
+                  </span>
+                ) : (
+                  x.assignee &&
+                  x.assignee !== me && (
+                    <span className="truncate text-xs text-muted">{nameOf(x.assignee)}</span>
+                  )
+                )}
+              </span>
+            </Pressable>
+          </li>
+        ))}
+      </ul>
+      <div className="border-t border-line p-2">
+        <Button variant="ghost" size="sm" className="w-full rounded-control" onClick={onAdd}>
+          {t('goals.addTask')}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg width={10} height={10} viewBox="0 0 12 12" aria-hidden>
+      <rect x={2} y={5.5} width={8} height={5.5} rx={1.2} fill="currentColor" />
+      <path d="M4 5.5V4a2 2 0 0 1 4 0v1.5" stroke="currentColor" strokeWidth={1.4} fill="none" />
+    </svg>
   );
 }
 
@@ -477,6 +578,7 @@ function SelectedPanel({
   items,
   teams,
   nameOf,
+  tasks,
   onEdit,
   onSplit,
   onDeleted,
@@ -485,6 +587,7 @@ function SelectedPanel({
   items: PlanView[];
   teams: TeamView[];
   nameOf: (id: string) => string;
+  tasks: Task[];
   onEdit: (i: PlanView) => void;
   onSplit: (i: PlanView) => void;
   onDeleted: () => void;
@@ -499,6 +602,14 @@ function SelectedPanel({
   }
   const parent = item.parentId ? items.find((i) => i.id === item.parentId) : null;
   const next = nextLevel(item.level);
+  const splitLabel =
+    item.level === 'week'
+      ? t('goals.splitTasks')
+      : next
+        ? t('goals.split', { level: levelName(next) })
+        : null;
+  const linkedTasks = item.level === 'week' ? tasks.filter((x) => x.planItemId === item.id) : [];
+  const linkedDone = linkedTasks.filter((x) => x.status === 'done').length;
   const linkedKr = (() => {
     if (!item.krRef) return null;
     const [pid, kid] = item.krRef.split('/');
@@ -527,12 +638,12 @@ function SelectedPanel({
         <div className="mt-auto flex flex-wrap items-center gap-2">
           {item.mine && (
             <>
-              <Button variant="secondary" className="h-8 px-3 py-0" onClick={() => onEdit(item)}>
+              <Button variant="secondary" size="sm" onClick={() => onEdit(item)}>
                 {t('goals.edit')}
               </Button>
-              {next && (
-                <Button variant="secondary" className="h-8 px-3 py-0" onClick={() => onSplit(item)}>
-                  {t('goals.split', { level: levelName(next) })}
+              {splitLabel && (
+                <Button variant="secondary" size="sm" onClick={() => onSplit(item)}>
+                  {splitLabel}
                 </Button>
               )}
               <ConfirmButton
@@ -560,15 +671,27 @@ function SelectedPanel({
               <KrBar key={k.id} k={k} value={item.krProgress[k.id] ?? 0} level={item.level} />
             ))}
           </>
-        ) : (
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={item.done}
-              disabled={!item.mine || busy}
-              onChange={(e) => void attempt(() => api.setPlanDone(item.id, e.target.checked))}
+        ) : linkedTasks.length > 0 ? (
+          <>
+            <span className="text-xs text-muted">
+              {t('goals.tasksDone', { done: linkedDone, total: linkedTasks.length })} ·{' '}
+              {Math.round(item.progress)}%
+            </span>
+            <ProgressBar
+              size="sm"
+              value={item.progress / 100}
+              label={t('goals.tasks')}
+              barClassName={LEVEL_BG[item.level]}
             />
-            {t('goals.done')} · {Math.round(item.progress)}%
-          </label>
+            <p className="text-xs text-muted">{t('goals.tasksHint')}</p>
+          </>
+        ) : (
+          <Checkbox
+            label={`${t('goals.done')} · ${Math.round(item.progress)}%`}
+            checked={item.done}
+            disabled={!item.mine || busy}
+            onChange={(e) => void attempt(() => api.setPlanDone(item.id, e.target.checked))}
+          />
         )}
       </div>
     </section>
@@ -885,18 +1008,6 @@ function PeriodPicker({
   baseYear: number;
   onChange: (period: string) => void;
 }) {
-  if (level === 'day') {
-    return (
-      <Field label={t('goals.field.period')}>
-        <TextInput
-          type="date"
-          value={value}
-          required
-          onChange={(e) => e.target.value && onChange(e.target.value)}
-        />
-      </Field>
-    );
-  }
   const { year, n } = splitPeriod(level, value);
   const years = yearOptions(baseYear, year);
   const count =

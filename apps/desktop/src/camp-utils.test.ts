@@ -22,6 +22,7 @@ const msg = (
 const task = (steps: Task['steps']): Task => ({
   id: 't1',
   team: 'g',
+  planItemId: null,
   title: '驗收',
   assignee: null,
   status: 'doing',

@@ -12,7 +12,8 @@ import {
   periodsOfYmd,
   select,
   splitPeriod,
-  todayTasks,
+  taskColumn,
+  weekGoalOptions,
   weekRange,
   weeksInYear,
   yearOptions,
@@ -109,28 +110,39 @@ describe('selection', () => {
   });
 });
 
-describe('todayTasks', () => {
-  const task = (id: string, dueAt: number | null, status: Task['status'] = 'todo'): Task => ({
+describe('taskColumn（D46）', () => {
+  const task = (id: string, dueAt: number | null, extra: Partial<Task> = {}): Task => ({
     id,
     team: 'g',
+    planItemId: null,
     title: id,
-    assignee: null,
-    status,
+    assignee: 'me',
+    status: 'todo',
     dueAt,
     steps: [],
     createdBy: null,
     createdAt: 0,
     updatedAt: 0,
+    ...extra,
   });
-  it('keeps tasks due today or the focus, not done', () => {
-    const today = Date.UTC(2026, 10, 8, 3);
-    const list = [
-      task('a', today),
-      task('b', today + 86_400_000),
-      task('c', null),
-      task('d', today, 'done'),
-    ];
-    expect(todayTasks(list, 'c', '2026-11-08', 'UTC').map((t) => t.id)).toEqual(['a', 'c']);
+  // 2026-W46 = 11/9–11/15
+  const mon = Date.UTC(2026, 10, 9, 3);
+  const list = [
+    task('a', mon),
+    task('b', mon + 7 * 86_400_000),
+    task('c', null),
+    task('d', mon, { status: 'done' }),
+    task('e', mon, { assignee: 'other' }),
+    task('f', mon + 8 * 86_400_000, { assignee: 'other' }),
+    task('g', mon, { planItemId: 'w1', status: 'done' }),
+    task('h', null, { planItemId: 'w1' }),
+  ];
+  const opts = { week: '2026-W46', selectedWeek: null, me: 'me', focusId: 'f', tz: 'UTC' };
+  it('未選取週目標：本週或沒有期限、指派給我、未完成，加上焦點', () => {
+    expect(taskColumn(list, opts).map((t) => t.id)).toEqual(['a', 'f', 'c', 'h']);
+  });
+  it('選取週目標：連結到它的任務，已完成排最後', () => {
+    expect(taskColumn(list, { ...opts, selectedWeek: 'w1' }).map((t) => t.id)).toEqual(['h', 'g']);
   });
 });
 
@@ -180,5 +192,19 @@ describe('期間選擇器（ui-spec「目標」v0.17）', () => {
     expect(periodsFromAny('2026', 'year', anchor).quarter).toBe('2026-Q4');
     expect(periodsFromAny('2026-Q4', 'quarter', anchor).week).toBe('2026-W46');
     expect(periodsFromAny('2026-Q1', 'quarter', anchor).month).toBe('2026-01');
+  });
+});
+
+describe('weekGoalOptions（D46）', () => {
+  it('負責人的週目標：本週與之後由近到遠，接著之前由近到遠', () => {
+    const items = [
+      plan('a', 'week', '2026-W44'),
+      plan('b', 'week', '2026-W47'),
+      plan('c', 'week', '2026-W46'),
+      plan('d', 'week', '2026-W45'),
+      plan('e', 'month', '2026-11'),
+      { ...plan('f', 'week', '2026-W46'), owner: 'other' },
+    ];
+    expect(weekGoalOptions(items, 'me', '2026-W46').map((p) => p.id)).toEqual(['c', 'b', 'd', 'a']);
   });
 });

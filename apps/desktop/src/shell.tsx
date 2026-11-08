@@ -274,7 +274,6 @@ export function Shell({ info }: { info: AppInfo }) {
                 tasks={tasks.data ?? []}
                 focusId={focus.data?.task?.id ?? null}
                 timezone={overview.data.timezone}
-                onOpenTasks={() => go('tasks')}
               />
             )}
             {page === 'scrum' && overview.data && (
@@ -314,6 +313,7 @@ export function Shell({ info }: { info: AppInfo }) {
                   teams={overview.data?.teams ?? []}
                   members={overview.data?.members ?? []}
                   focus={focus.data}
+                  timezone={overview.data?.timezone ?? ''}
                   error={tasks.error}
                 />
               </div>

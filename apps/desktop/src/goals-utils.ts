@@ -1,7 +1,8 @@
 /** 目標「階梯」的純函式（ui-spec「目標」、technical-design §16.10）。 */
 import type { PlanLevel, PlanView, Task } from './api';
 
-export const LEVELS: PlanLevel[] = ['year', 'quarter', 'month', 'week', 'day'];
+/** 目標的四層（D46：日層級取消，週目標之下為任務）。 */
+export const LEVELS: PlanLevel[] = ['year', 'quarter', 'month', 'week'];
 
 export type Periods = Record<PlanLevel, string>;
 
@@ -113,14 +114,34 @@ export function columnItems(
   );
 }
 
-/** 日欄的任務：今天到期（組織時區）或今天的焦點，未完成。 */
-export function todayTasks(tasks: Task[], focusId: string | null, day: string, tz: string): Task[] {
-  return tasks.filter((t) => {
-    if (t.status === 'done') return false;
-    if (t.id === focusId) return true;
-    if (t.dueAt === null) return false;
-    return periodsAt(t.dueAt, tz).day === day;
-  });
+/**
+ * 任務欄（ui-spec「目標」v0.18，D46）：選取週目標時列出連結到它的任務（含已完成）；
+ * 否則列出這一週到期或沒有期限、指派給我且未完成的任務，加上焦點任務。
+ */
+export function taskColumn(
+  tasks: Task[],
+  opts: {
+    week: string;
+    selectedWeek: string | null;
+    me: string;
+    focusId: string | null;
+    tz: string;
+  },
+): Task[] {
+  const { week, selectedWeek, me, focusId, tz } = opts;
+  const list = selectedWeek
+    ? tasks.filter((t) => t.planItemId === selectedWeek)
+    : tasks.filter((t) => {
+        if (t.id === focusId && t.status !== 'done') return true;
+        if (t.status === 'done' || t.assignee !== me) return false;
+        return t.dueAt === null || periodsAt(t.dueAt, tz).week === week;
+      });
+  return [...list].sort(
+    (a, b) =>
+      Number(a.status === 'done') - Number(b.status === 'done') ||
+      (a.dueAt ?? Infinity) - (b.dueAt ?? Infinity) ||
+      a.createdAt - b.createdAt,
+  );
 }
 
 /** 編輯對話框「對齊上層」的選項：上一層中包含此期間的項目（我的）。 */
@@ -247,4 +268,16 @@ export function periodsFromAny(period: string, level: PlanLevel, anchor?: Period
   if (level === 'month' || level === 'day') m = Number(p[1]) || 1;
   if (level === 'day') d = Number(p[2]) || 1;
   return periodsOfYmd(y, m, d);
+}
+
+/** 週目標選項：本週、之後的週（由近到遠）、之前的週（由近到遠）。 */
+export function weekGoalOptions(plans: PlanView[], owner: string, thisWeek: string): PlanView[] {
+  const weeks = plans.filter((p) => p.level === 'week' && p.owner === owner);
+  const rank = (p: PlanView) => (p.period >= thisWeek ? 0 : 1);
+  return [...weeks].sort((a, b) => {
+    const r = rank(a) - rank(b);
+    if (r !== 0) return r;
+    if (rank(a) === 0) return a.period.localeCompare(b.period) || a.title.localeCompare(b.title);
+    return b.period.localeCompare(a.period) || a.title.localeCompare(b.title);
+  });
 }

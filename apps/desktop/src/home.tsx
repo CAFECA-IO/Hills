@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'react';
 import {
   api,
+  isPrivateTask,
   type ConvRow,
   type FocusView,
   type MemberView,
@@ -38,6 +39,7 @@ import {
   type Hill,
 } from './summit';
 import {
+  Badge,
   Button,
   Card,
   EmptyState,
@@ -978,7 +980,10 @@ function ChooseMountain({
               selected={current?.id === x.id}
               className="justify-between"
             >
-              <span className="truncate">{x.title}</span>
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="truncate">{x.title}</span>
+                {isPrivateTask(x) && <Badge>{t('tasks.private')}</Badge>}
+              </span>
               <span className="shrink-0 text-muted">
                 {x.dueAt ? formatClock(x.dueAt) : t('tasks.noDue')}
               </span>

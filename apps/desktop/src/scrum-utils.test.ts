@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { MemberView, PlanView, ScrumReport, Task } from './api';
+import type { MemberView, ScrumReport, Task } from './api';
 import {
   addDays,
   clockIn,
@@ -19,6 +19,7 @@ const MON = Date.UTC(2026, 10, 9, 2);
 const task = (id: string, extra: Partial<Task> = {}): Task => ({
   id,
   team: 'g',
+  planItemId: null,
   title: id,
   assignee: null,
   status: 'doing',
@@ -28,25 +29,6 @@ const task = (id: string, extra: Partial<Task> = {}): Task => ({
   createdAt: 0,
   updatedAt: 0,
   ...extra,
-});
-
-const plan = (id: string, period: string, done: boolean): PlanView => ({
-  id,
-  owner: 'me',
-  visibility: { kind: 'org' },
-  level: 'day',
-  period,
-  title: id,
-  parentId: null,
-  krRef: null,
-  done,
-  progressOverride: null,
-  keyResults: [],
-  createdAt: 0,
-  updatedAt: 0,
-  progress: 0,
-  krProgress: {},
-  mine: true,
 });
 
 describe('workdays', () => {
@@ -76,25 +58,21 @@ describe('prefill', () => {
     task('c', { status: 'done', assignee: 'me', updatedAt: Date.UTC(2026, 10, 1) }),
     task('d', { dueAt: MON + 3_600_000 }),
     task('e'),
-  ];
-  const plans = [
-    plan('p1', '2026-11-06', true),
-    plan('p2', '2026-11-09', false),
-    plan('p3', '2026-11-05', true),
+    task('f', { team: 'private', assignee: 'me', status: 'done', updatedAt: fri }),
   ];
   it('collects what I finished since the previous workday', () => {
-    expect(doneSince(tasks, plans, 'me', '2026-11-09', TZ).map((r) => r.title)).toEqual([
-      'a：寫測試',
-      'b',
-      'p1',
-    ]);
+    const refs = doneSince(tasks, 'me', '2026-11-09', TZ);
+    expect(refs.map((r) => r.title)).toEqual(['a：寫測試', 'b', 'f']);
+    expect(refs[2]?.kind).toBe('text');
   });
-  it("collects today's plan, focus and due tasks", () => {
-    expect(todayPlan(tasks, plans, 'e', '2026-11-09', TZ).map((r) => r.title)).toEqual([
-      'p2',
-      'd',
-      'e',
-    ]);
+  it('collects focus, and my tasks due today or in progress', () => {
+    const list = [
+      ...tasks,
+      task('g', { assignee: 'me' }),
+      task('h', { assignee: 'me', status: 'todo' }),
+      task('i', { assignee: 'x', dueAt: MON }),
+    ];
+    expect(todayPlan(list, 'me', 'e', '2026-11-09', TZ).map((r) => r.title)).toEqual(['e', 'g']);
   });
   it('merges without duplicates', () => {
     const a = [{ kind: 'text' as const, title: 'x' }];

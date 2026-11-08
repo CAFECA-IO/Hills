@@ -82,6 +82,8 @@ export interface Task {
   status: TaskStatus;
   dueAt: number | null;
   steps: TaskStep[];
+  /** 所屬週目標（D46） */
+  planItemId: string | null;
   createdBy: string | null;
   createdAt: number;
   updatedAt: number;
@@ -100,6 +102,17 @@ export interface TaskInput {
   status?: TaskStatus | null;
   dueAt: number | null;
   steps: StepInput[];
+  planItemId?: string | null;
+}
+
+/** 私人任務的「小組」值（technical-design §16.8 v0.19，D46）。 */
+export const PRIVATE_TEAM = 'private';
+export const isPrivateTask = (t: { team: string }) => t.team === PRIVATE_TEAM;
+
+/** 任務進度 0–100：完成步驟比例；沒有步驟時完成 = 100（D46）。 */
+export function taskProgress(t: Pick<Task, 'steps' | 'status'>): number {
+  if (t.steps.length === 0) return t.status === 'done' ? 100 : 0;
+  return (t.steps.filter((s) => s.done).length * 100) / t.steps.length;
 }
 
 export interface FocusView {

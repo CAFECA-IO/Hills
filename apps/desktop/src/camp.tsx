@@ -2,6 +2,7 @@
 import { useRef, useState, type ReactNode, type RefObject } from 'react';
 import {
   api,
+  isPrivateTask,
   type ConvRow,
   type MemberView,
   type MessageView,
@@ -205,7 +206,7 @@ function TaskPicker({
   onPick: (task: Task) => void;
   onClose: () => void;
 }) {
-  const open = tasks.filter((x) => x.status !== 'done');
+  const open = tasks.filter((x) => x.status !== 'done' && !isPrivateTask(x));
   const teamName = (id: string) => teams.find((x) => x.id === id)?.name ?? '';
   return (
     <Popover

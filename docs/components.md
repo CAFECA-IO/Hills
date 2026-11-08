@@ -1,6 +1,6 @@
 # Hills 通用元件
 
-> 版本：v0.1 · 2026-11-08 · 對應 [feature-plan.md](./feature-plan.md) v1.14（D45）
+> 版本：v0.2 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.15（D45）
 > 本文件定義 `apps/desktop/src/ui/` 的通用元件：用途、何時用、變體、狀態、鍵盤與無障礙、API。視覺基礎（token、字級、間距）見 [design-system.md](./design-system.md)。
 > 畫面只能組合這些元件（design-system §1、§11）。需要新元件或新變體時，**先改本文件，再改 `src/ui/`**，並補 `src/ui/ui.test.tsx`。
 
@@ -12,7 +12,7 @@
 |---|---|
 | hover | 次要元件改 `bg-bg` 底或 `text-fg` / `text-primary` 字 |
 | focus | `FOCUS_RING`：2 px 主色外框、offset 2（只在鍵盤聚焦時顯示） |
-| disabled | 50% 透明、`cursor-not-allowed` |
+| disabled | 50% 透明、`cursor-not-allowed`；主按鈕改為 `bg-line` 底 `text-muted` 字（半透明的晴藍對比不足） |
 | busy | `Button busy`：停用 + `aria-busy` |
 | error | 輸入框 `invalid`（或包在有 `error` 的 `Field` 內）：紅框 + `aria-invalid` |
 | selected | 天空霧底 `bg-primary-soft` + 主色字（清單列、膠囊切換為主色實心） |
@@ -92,6 +92,7 @@
 | `label` | ReactNode | 標籤文字 |
 | `hint` | ReactNode | 欄位下方說明 |
 | `error` | string \| null | 錯誤訊息（`role="alert"`），同時讓控制項變紅框 |
+| `required` | boolean | 標籤後顯示「（必填）」，控制項加 `aria-required`。只做標示，驗證在送出時進行（§7「表單對話框」） |
 | `children` | ReactNode | 一個 `TextInput` / `TextArea` / `Select`：自動取得 `id`、`aria-describedby`、`aria-invalid` |
 
 簡易寫法（不傳 children）：`<Field label value onChange type? multiline? placeholder? autoFocus? />` 直接產生文字輸入（`multiline` 為等寬字多行）。
@@ -102,12 +103,12 @@
 
 | prop | 型別 | 預設 | 說明 |
 |---|---|---|---|
-| `size` | `sm` \| `md` | `md` | md：`px-3 py-2`；sm：`px-2 py-1`（密集表單、表格內） |
+| `size` | `sm` \| `md` | `md` | **固定高度**：md 36（`h-9 px-3`）、sm 28（`h-7 px-2`）；TextArea 只套水平內距，高度由 `rows` 決定 |
 | `invalid` | boolean | — | 紅框；在 `Field` 內由 `error` 自動決定 |
 | `appearance` | `boxed` \| `bare` | `boxed` | `bare`：無框透明，只用在已有外框的容器內（指令面板搜尋列）。`Select` 無此項 |
 
 - `TextInput` 涵蓋 text、password、search、number、time、datetime-local。
-- `Select` 是原生 select，保留系統鍵盤與螢幕閱讀器行為。
+- `Select` 是原生 select（保留系統鍵盤與螢幕閱讀器行為），但**取消系統外觀**（`appearance-none`）並畫自己的箭頭，讓 Mac（WebKit 會忽略原生 select 的內距與高度）與 Windows 上的高度、圓角、外框一致。`className` 套在外層（版面：寬度、flex），不是 select 本身。
 - 沒有可見標籤時必須給 `aria-label`。
 
 ### Checkbox、Radio
@@ -140,6 +141,7 @@
 | `placement` | `center` \| `top` | `center` | `top`：距頂 12vh、最高 60vh（指令面板） |
 | `padded` | boolean | true | false：無內距、內容自行排版（指令面板） |
 | `closeButton` | boolean | false | 右上角 × |
+| `dirty` | boolean | false | 有未儲存的修改：Esc、點遮罩、× 不直接關閉，改在對話框底部詢問「放棄未儲存的修改？〔放棄〕〔繼續編輯〕」（聚焦「繼續編輯」）。對話框內的「取消」按鈕是明確動作，直接呼叫 `onClose` |
 
 內容由上而下：標題 → 欄位 → `ErrorText` → 動作列（右對齊，`取消` secondary 在左、主動作 primary 在右）。最高 90vh，超過時對話框內捲動。
 
@@ -267,7 +269,7 @@
 |---|---|
 | **頁首** | `PageHead`（`layout.tsx`）：標題、副標、頁面動作（SegmentedControl、期間切換 IconButton + Button、主按鈕）都放在頂列，主按鈕在最右。 |
 | **主從版面** | 左 / 中為清單（`ListButton` 或 `Pressable` 卡片），右欄 `Card` 顯示選取項目詳情；右欄寬依 ui-spec「版面」。 |
-| **表單對話框** | `Dialog onSubmit` + 多個 `Field` + `ErrorText` + 動作列（取消、儲存）；儲存鍵在必填未填時停用。 |
+| **表單對話框** | `Dialog onSubmit dirty` + 多個 `Field` + `ErrorText` + 動作列（取消、儲存）。必填欄位用 `Field required` 標示；**不以停用儲存鍵表示驗證失敗**——按下儲存時在欄位顯示錯誤（`Field error`）並聚焦第一個錯誤欄位；儲存鍵只在執行中停用（`busy`）。欄位順序依相依關係：先放會決定其他欄位的選項（例如目標的層級與期間）。 |
 | **行內表單** | 卡片或清單內直接編輯：`TextInput size="sm"` + `Button size="sm"`。 |
 | **錨定面板** | 觸發按鈕（`aria-expanded`）+ `Popover anchorRef`，或 `Menu`。 |
 | **空與錯** | 每個列表 `EmptyState`；每個動作 `useAction` + `ErrorText`。 |

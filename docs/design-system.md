@@ -1,6 +1,6 @@
 # Hills 設計系統
 
-> 版本：v0.1 · 2026-11-08 · 對應 [feature-plan.md](./feature-plan.md) v1.14（D22、D40、D43、D45）
+> 版本：v0.2 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.15（D22、D40、D43、D45）
 > 本文件定義視覺基礎：原則、token、字級、間距、圓角、陰影、層級、動態、無障礙、圖示與列印。通用元件的規格見 [components.md](./components.md)；畫面結構與流程見 [ui-spec.md](./ui-spec.md)。
 > 實作來源：`apps/desktop/src/styles/tokens.css`（token）、`apps/desktop/src/ui/`（元件）。三者不一致時以本文件為準，並修正程式碼。
 
@@ -73,7 +73,7 @@ SVG 插畫用 `var(--hills-*)` 指定 `fill` / `stroke`（`figures.tsx`、`home.
 ## 4. 間距與尺寸
 
 - **4 px 網格**：只用 Tailwind 間距刻度（`1` = 4 px）。常用：元件內 `gap-1`–`gap-2`、區塊間 `gap-3`（`wide:gap-4`）、卡片內距 `p-4` / `p-5`、頁面外距見 ui-spec「版面」。
-- **控制項高度**：一般 36（`h-9`：Button md、輸入框 md、頂列動作）、小 28（`h-7`：Button sm、輸入框 sm、膠囊）。觸控目標 ≥ 44（行動端）。
+- **控制項高度**：一般 36（`h-9`：Button md、輸入框與下拉選單 md、頂列動作）、小 28（`h-7`：Button sm、輸入框與下拉選單 sm、膠囊）。輸入框與下拉選單以固定高度實作，不靠上下內距（WebKit 會忽略原生 select 的內距）。觸控目標 ≥ 44（行動端）。
 - **固定寬度**：用間距刻度（`w-80` = 320、`w-140` = 560），不用 `w-[560px]`。對話框寬度只用 `Dialog` 的 sm 480 / md 560 / lg 600。版面欄寬見 ui-spec「版面」。
 
 ## 5. 圓角、陰影、層級
@@ -110,7 +110,7 @@ SVG 插畫用 `var(--hills-*)` 指定 `fill` / `stroke`（`figures.tsx`、`home.
 
 ## 8. 無障礙
 
-- **對比**：文字對背景 ≥ 4.5 : 1（WCAG AA）；狀態文字用 `-text` token。
+- **對比**：文字對背景 ≥ 4.5 : 1（WCAG AA）；狀態文字用 `-text` token。停用的主按鈕用 `bg-line` + `text-muted`，不用半透明晴藍（components.md「共通狀態」）。
 - **焦點**：所有互動元素有可見焦點環 `focus-visible:outline-2 outline-offset-2 outline-primary`（通用元件已內建，元件常數 `FOCUS_RING`）。
 - **鍵盤**：全部功能可用鍵盤完成；浮層開啟時焦點移入、Esc 關閉；切換群組用方向鍵（components.md 各元件「鍵盤」）。
 - **名稱**：只有圖示的按鈕必須有名稱（`IconButton` 的 `label` 必填）；裝飾性 SVG 加 `aria-hidden`；數字徽章提供 `label`（例如「3 則未讀」）。
@@ -145,3 +145,4 @@ ESLint（根目錄 `eslint.config.js`，`pnpm lint` 執行）對 `apps/desktop/s
 - 每頁一個主按鈕；不可逆動作用 `ConfirmButton`。
 - 列表有空狀態（`EmptyState`）；失敗有錯誤訊息（`ErrorText`）。
 - 1280 × 720 與 1920 × 1080、淺色與深色截圖無整頁捲動、無破版。
+- 原生控制項（select、date、time、checkbox）在 Mac（WKWebView）與 Windows（WebView2，Chromium）外觀一致：同一列的輸入框與下拉選單等高、圓角相同。開發環境的自動截圖只有 Chromium，Mac 上需目視確認。

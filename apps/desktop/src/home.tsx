@@ -1,5 +1,5 @@
 /** 首頁：焦點山（ui-spec「首頁」，D40）。 */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   api,
   type ConvRow,
@@ -21,6 +21,7 @@ import {
   textWidth,
 } from './figures';
 import { formatClock, formatDate, t } from './i18n';
+import { PageHead } from './layout';
 import {
   backSoon,
   climberPosition,
@@ -38,6 +39,9 @@ import {
 import { Button, Card, ErrorText, useAction } from './ui';
 
 const v = (name: string) => `var(--hills-${name})`;
+
+/** 山景最多放大倍數（ui-spec「版面」：字級不隨解析度放大） */
+const MAX_SCENE_SCALE = 1.2;
 
 interface Props {
   overview: Overview;
@@ -72,81 +76,119 @@ export function Home({ overview, tasks, focus, convs, onOpenConv, onOpenTasks, n
       x.status !== 'done' &&
       (x.assignee === meId || x.steps.some((s) => !s.done && s.assignee === meId)),
   );
+  const [box, setBox] = useState<HTMLElement | null>(null);
+  const size = useSize(box);
+  // 依容器長寬比調整場景（ui-spec「版面」）：山居中、山丘平均分布；最多放大 1.2 倍，
+  // 更大的容器改為顯示更多天空與更寬的山腳，字級不跟著放大
+  const scale = size && size.h > 0 ? Math.min(size.h / SCENE.h, MAX_SCENE_SCALE) : 1;
+  const sceneH = size ? Math.max(SCENE.h, Math.round(size.h / scale)) : SCENE.h;
+  const sceneW = size ? Math.max(SCENE.w, Math.round(size.w / scale)) : SCENE.w;
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-2xl font-bold">{task ? t('home.title') : t('home.title.empty')}</h2>
-          <p className="text-sm text-muted">
-            {task
-              ? task.dueAt
-                ? t('home.subtitle.due', { time: formatClock(task.dueAt), title: task.title })
-                : t('home.subtitle', { title: task.title })
-              : t('home.subtitle.empty')}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={() => setChoosing((c) => !c)}>
-            {t('home.changeMountain')}
-          </Button>
-          <div role="tablist" className="inline-flex rounded-full bg-surface p-1 shadow-sm">
-            {(['scene', 'list'] as const).map((k) => (
-              <button
-                key={k}
-                type="button"
-                role="tab"
-                aria-selected={view === k}
-                onClick={() => setView(k)}
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${view === k ? 'bg-primary text-on-primary' : ''}`}
-              >
-                {t(k === 'scene' ? 'home.view.scene' : 'home.view.list')}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-      {choosing && (
-        <ChooseMountain
-          tasks={mine}
-          current={task}
-          manual={focus?.manual ?? false}
-          onClose={() => setChoosing(false)}
-          onOpenTasks={onOpenTasks}
-        />
-      )}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <section className="relative overflow-hidden rounded-[20px] shadow-sm">
-          {view === 'scene' ? (
-            <>
-              <Scene
+    <div className="grid h-full grid-cols-[minmax(0,1fr)_280px] gap-3 wide:grid-cols-[minmax(0,1fr)_340px] wide:gap-4">
+      <PageHead
+        title={task ? t('home.title') : t('home.title.empty')}
+        subtitle={
+          task
+            ? task.dueAt
+              ? t('home.subtitle.due', { time: formatClock(task.dueAt), title: task.title })
+              : t('home.subtitle', { title: task.title })
+            : t('home.subtitle.empty')
+        }
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              className="h-9 py-0"
+              aria-expanded={choosing}
+              onClick={() => setChoosing((c) => !c)}
+            >
+              {t('home.changeMountain')}
+            </Button>
+            <div role="tablist" className="inline-flex rounded-full bg-surface p-1 shadow-sm">
+              {(['scene', 'list'] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === k}
+                  onClick={() => setView(k)}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${view === k ? 'bg-primary text-on-primary' : ''}`}
+                >
+                  {t(k === 'scene' ? 'home.view.scene' : 'home.view.list')}
+                </button>
+              ))}
+            </div>
+          </>
+        }
+      />
+      <section
+        ref={setBox}
+        className="relative min-h-0 overflow-hidden rounded-[20px] bg-sky-top shadow-sm"
+      >
+        {view === 'scene' ? (
+          <>
+            <Scene
+              overview={overview}
+              task={task}
+              onPick={setPicked}
+              nameOf={nameOf}
+              now={clock}
+              width={sceneW}
+              height={sceneH}
+            />
+            {picked && (
+              <MemberCard
+                picked={picked}
+                sceneW={sceneW}
+                sceneH={sceneH}
                 overview={overview}
-                task={task}
-                onPick={setPicked}
-                nameOf={nameOf}
                 now={clock}
+                onClose={() => setPicked(null)}
+                onOpenConv={onOpenConv}
               />
-              {picked && (
-                <MemberCard
-                  picked={picked}
-                  overview={overview}
-                  now={clock}
-                  onClose={() => setPicked(null)}
-                  onOpenConv={onOpenConv}
-                />
-              )}
-            </>
-          ) : (
+            )}
+          </>
+        ) : (
+          <div className="scroll-panel h-full">
             <SceneList overview={overview} task={task} nameOf={nameOf} now={clock} />
-          )}
-        </section>
-        <aside className="flex flex-col gap-3">
-          <NextStepCard task={task} me={me} nameOf={nameOf} now={clock} onOpenTasks={onOpenTasks} />
-          <UnreadCard convs={convs} overview={overview} onOpenConv={onOpenConv} />
-          <BackSoonCard overview={overview} task={task} now={clock} />
-        </aside>
-      </div>
+          </div>
+        )}
+        {choosing && (
+          <div className="scroll-panel absolute top-3 left-3 z-20 max-h-[calc(100%-24px)] w-80 rounded-card shadow-lg">
+            <ChooseMountain
+              tasks={mine}
+              current={task}
+              manual={focus?.manual ?? false}
+              onClose={() => setChoosing(false)}
+              onOpenTasks={onOpenTasks}
+            />
+          </div>
+        )}
+      </section>
+      <aside className="scroll-panel flex min-h-0 flex-col gap-3">
+        <NextStepCard task={task} me={me} nameOf={nameOf} now={clock} onOpenTasks={onOpenTasks} />
+        <UnreadCard convs={convs} overview={overview} onOpenConv={onOpenConv} />
+        <BackSoonCard overview={overview} task={task} now={clock} />
+      </aside>
     </div>
   );
+}
+
+/** 元素的內容尺寸（ResizeObserver）。 */
+function useSize(el: HTMLElement | null): { w: number; h: number } | null {
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => {
+      const { width, height } = e.contentRect;
+      setSize((s) =>
+        s && Math.abs(s.w - width) < 1 && Math.abs(s.h - height) < 1 ? s : { w: width, h: height },
+      );
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [el]);
+  return size;
 }
 
 // ── 場景 ────────────────────────────────────────────────────
@@ -157,75 +199,93 @@ function Scene({
   onPick,
   nameOf,
   now,
+  width,
+  height,
 }: {
   overview: Overview;
   task: Task | null;
   onPick: (p: Picked) => void;
   nameOf: (id: string | null) => string;
   now: number;
+  /** 場景寬度（≥ SCENE.w）；山與山路置中 */
+  width: number;
+  /** 場景高度（≥ SCENE.h）；多出的部分是山頂上方的天空 */
+  height: number;
 }) {
+  const top = SCENE.h - height;
   const me = overview.members.find((m) => m.isMe);
+  const dx = (width - SCENE.w) / 2;
   const others = task ? overview.members.filter((m) => !m.isMe) : overview.members;
   const { hills, leave } = groupByHill(others, overview.offices);
   const trail = task ? layoutTrail(task.steps) : null;
   const climber = trail ? climberPosition(trail) : null;
   const nextAssignee = task?.steps.find((s) => !s.done)?.assignee ?? null;
   const pick = (member: MemberView, x: number, y: number) => onPick({ member, x, y });
+  // 置中群組內的座標換回場景座標
+  const pickCentered = (member: MemberView, x: number, y: number) =>
+    onPick({ member, x: x + dx, y });
   const label = task
     ? t('home.scene.label', { title: task.title, done: doneCount(task), total: task.steps.length })
     : t('home.scene.label.empty');
   return (
     <svg
-      viewBox={`0 0 ${SCENE.w} ${SCENE.h}`}
-      className="block h-auto w-full"
+      viewBox={`0 ${top} ${width} ${height}`}
+      preserveAspectRatio="xMidYMax meet"
+      className="block h-full w-full"
       role="group"
       aria-label={label}
     >
       <SkyGradient id="home-sky" />
-      <rect width={SCENE.w} height={SCENE.h} fill="url(#home-sky)" />
-      <SkyLight x={690} y={70} now={now} />
-      <Cloud x={560} y={96} scale={0.55} />
-      {leave.length > 0 && (
-        <g>
-          <Cloud x={128} y={132} scale={1.1} />
-          {leave.slice(0, 3).map((m, i) => (
-            <Person
-              key={m.id}
-              m={m}
-              x={128 + (i - (Math.min(leave.length, 3) - 1) / 2) * 64}
-              y={126}
-              scale={0.75}
-              note={
-                i === 0 && m.until ? t('home.leaveUntil', { date: formatDate(m.until) }) : undefined
-              }
-              onPick={pick}
-            />
-          ))}
-        </g>
-      )}
-      <Mountain empty={!task} />
-      {task && trail && (
-        <>
-          <TrailPath trail={trail} />
-          <SummitFlag task={task} now={now} />
-          {trail.points.map((p) => (
-            <CheckpointMark key={p.step.id} p={p} nameOf={nameOf} />
-          ))}
-          {(trail.hiddenBefore > 0 || trail.hiddenAfter > 0) && (
-            <text
-              x={MOUNTAIN.apexX}
-              y={MOUNTAIN.baseY - 6}
-              textAnchor="middle"
-              fontSize={12}
-              fill={v('muted')}
-            >
-              {t('home.hiddenSteps', { before: trail.hiddenBefore, after: trail.hiddenAfter })}
-            </text>
-          )}
-          {me && climber && <Person m={me} x={climber.x} y={climber.y} scale={0.9} onPick={pick} />}
-        </>
-      )}
-      <Foothills hills={hills} highlight={nextAssignee} onPick={pick} />
+      <rect y={top} width={width} height={height} fill="url(#home-sky)" />
+      <SkyLight x={width - 70} y={top + 70} now={now} />
+      <g transform={`translate(${dx} 0)`}>
+        <Cloud x={560} y={96} scale={0.55} />
+        {leave.length > 0 && (
+          <g>
+            <Cloud x={128} y={132} scale={1.1} />
+            {leave.slice(0, 3).map((m, i) => (
+              <Person
+                key={m.id}
+                m={m}
+                x={128 + (i - (Math.min(leave.length, 3) - 1) / 2) * 64}
+                y={126}
+                scale={0.75}
+                note={
+                  i === 0 && m.until
+                    ? t('home.leaveUntil', { date: formatDate(m.until) })
+                    : undefined
+                }
+                onPick={pickCentered}
+              />
+            ))}
+          </g>
+        )}
+        <Mountain empty={!task} />
+        {task && trail && (
+          <>
+            <TrailPath trail={trail} />
+            <SummitFlag task={task} now={now} />
+            {trail.points.map((p) => (
+              <CheckpointMark key={p.step.id} p={p} nameOf={nameOf} />
+            ))}
+            {(trail.hiddenBefore > 0 || trail.hiddenAfter > 0) && (
+              <text
+                x={MOUNTAIN.apexX}
+                y={MOUNTAIN.baseY - 6}
+                textAnchor="middle"
+                fontSize={12}
+                fill={v('muted')}
+              >
+                {t('home.hiddenSteps', { before: trail.hiddenBefore, after: trail.hiddenAfter })}
+              </text>
+            )}
+            {me && climber && (
+              <Person m={me} x={climber.x} y={climber.y} scale={0.9} onPick={pickCentered} />
+            )}
+          </>
+        )}
+      </g>
+      <Foothills hills={hills} highlight={nextAssignee} onPick={pick} width={width} />
     </svg>
   );
 }
@@ -421,13 +481,15 @@ function Foothills({
   hills,
   highlight,
   onPick,
+  width,
 }: {
   hills: Hill[];
   highlight: string | null;
   onPick: (m: MemberView, x: number, y: number) => void;
+  width: number;
 }) {
   const n = Math.max(hills.length, 1);
-  const span = SCENE.w / n;
+  const span = width / n;
   const peakY = 556;
   return (
     <g>
@@ -535,12 +597,16 @@ function Person({
 
 function MemberCard({
   picked,
+  sceneW,
+  sceneH,
   overview,
   now,
   onClose,
   onOpenConv,
 }: {
   picked: Picked;
+  sceneW: number;
+  sceneH: number;
   overview: Overview;
   now: number;
   onClose: () => void;
@@ -552,8 +618,8 @@ function MemberCard({
   const office = overview.offices.find((o) => `office:${o.id}` === m.location);
   const place =
     office?.name ?? (m.location === 'remote' ? t('location.remote') : t('location.hidden'));
-  const left = `${Math.min(70, Math.max(2, (picked.x / SCENE.w) * 100 - 14))}%`;
-  const top = `${Math.min(64, Math.max(2, (picked.y / SCENE.h) * 100 - 30))}%`;
+  const left = `${Math.min(70, Math.max(2, (picked.x / sceneW) * 100 - 14))}%`;
+  const top = `${Math.min(64, Math.max(2, ((picked.y - SCENE.h + sceneH) / sceneH) * 100 - 30))}%`;
   return (
     <div
       role="dialog"

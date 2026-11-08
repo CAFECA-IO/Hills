@@ -157,10 +157,19 @@
   --radius-card: var(--hills-radius-card);
   --radius-control: var(--hills-radius-control);
   --font-sans: 'Inter', 'Noto Sans TC', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* 版面（D43，ui-spec「版面」）：≥ 1600 寬放大欄寬與間距 */
+  --breakpoint-wide: 1600px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
 }
 
 body {
   margin: 0;
+  overflow: hidden;
   background: var(--color-bg);
   color: var(--color-fg);
   font-family: var(--font-sans);
@@ -197,4 +206,26 @@ body {
   border-left: 2px solid var(--color-line);
   padding-left: 0.5rem;
   color: var(--color-muted);
+}
+
+/* 面板內捲動條（ui-spec「版面」）：4 px，滑過或聚焦時才顯示 */
+.scroll-panel {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.scroll-panel:hover,
+.scroll-panel:focus-visible {
+  scrollbar-color: var(--color-line) transparent;
+}
+.scroll-panel::-webkit-scrollbar {
+  width: 4px;
+}
+.scroll-panel::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+.scroll-panel:hover::-webkit-scrollbar-thumb,
+.scroll-panel:focus-visible::-webkit-scrollbar-thumb {
+  background: var(--color-line);
 }

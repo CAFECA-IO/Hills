@@ -1,5 +1,5 @@
 /** 應用外框、團隊、狀態選單、設定（ui-spec「應用外框」「團隊」「設定」，D40）。 */
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
   api,
   PRESENCE_STATES,
@@ -27,6 +27,15 @@ import {
   t,
   type MessageKey,
 } from './i18n';
+import {
+  CommandButton,
+  CommandPalette,
+  HeadContext,
+  PageHead,
+  useCommandShortcut,
+  type Command,
+  type HeadSlots,
+} from './layout';
 import { BackupForm } from './onboarding';
 import { LOOK_PALETTE, lookOf } from './summit';
 import { Tasks } from './tasks';
@@ -76,11 +85,22 @@ const PAGE_TITLE: Record<Page, MessageKey> = {
   settings: 'settings.title',
 };
 
+/** 導覽列順序（D43）：目標、知識庫隨對應功能加入。 */
+const NAV: Page[] = ['home', 'tasks', 'chat', 'team', 'settings'];
+
 const noJoins = () => Promise.resolve<JoinRequestView[]>([]);
 
 export function Shell({ info }: { info: AppInfo }) {
   const [page, setPage] = useState<Page>('home');
   const [openConv, setOpenConv] = useState<string | null>(null);
+  const [palette, setPalette] = useState(false);
+  const [slots, setSlots] = useState<HeadSlots>({ title: null, actions: null });
+  const titleRef = useCallback((el: HTMLDivElement | null) => {
+    setSlots((s) => (s.title === el ? s : { ...s, title: el }));
+  }, []);
+  const actionsRef = useCallback((el: HTMLDivElement | null) => {
+    setSlots((s) => (s.actions === el ? s : { ...s, actions: el }));
+  }, []);
   const overview = useLoad(api.overview, ['org', 'roster', 'presence', 'doc']);
   const tasks = useLoad(api.tasks, ['doc', 'org', 'roster']);
   const focus = useLoad(api.focus, ['doc', 'org', 'roster']);
@@ -97,110 +117,151 @@ export function Shell({ info }: { info: AppInfo }) {
     const id = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(id);
   }, []);
+  useCommandShortcut(() => setPalette(true));
   const go = (p: Page) => {
     setPage(p);
     if (p !== 'chat') setOpenConv(null);
   };
-  const nav: Page[] = ['home', 'team', 'tasks', 'chat', 'settings'];
+  const openChat = (conv: string) => {
+    setOpenConv(conv);
+    setPage('chat');
+  };
+  const orgName = overview.data?.orgName ?? info.orgName ?? '';
+  const commands: Command[] = [
+    ...NAV.map((p) => ({
+      id: `page:${p}`,
+      label: t(PAGE_TITLE[p]),
+      group: 'cmd.group.pages' as const,
+      run: () => go(p),
+    })),
+    ...(overview.data?.members ?? [])
+      .filter((m) => !m.isMe)
+      .map((m) => ({
+        id: `member:${m.id}`,
+        label: t('cmd.message', { name: m.name }),
+        keywords: m.name,
+        group: 'cmd.group.people' as const,
+        member: m,
+        run: () => void api.openDm(m.id).then(openChat, () => undefined),
+      })),
+  ];
   return (
-    <div className="flex min-h-screen bg-bg">
-      <nav className="flex w-24 shrink-0 flex-col items-center gap-2 border-r border-line bg-surface py-4">
-        <span
-          className="mb-3 flex size-10 items-center justify-center rounded-control bg-primary font-bold text-on-primary"
-          title={overview.data?.orgName ?? info.orgName ?? ''}
-          aria-label={overview.data?.orgName ?? info.orgName ?? t('app.name')}
+    <HeadContext.Provider value={slots}>
+      <div className="flex h-full overflow-hidden bg-bg">
+        <nav
+          aria-label={t('nav.label')}
+          className="flex w-[76px] shrink-0 flex-col items-center gap-1 border-r border-line bg-surface py-3 wide:w-[88px] wide:gap-2 wide:py-4"
         >
-          {(overview.data?.orgName ?? info.orgName ?? 'H').slice(0, 1)}
-        </span>
-        {nav.map((p) => {
-          const active = page === p;
-          return (
-            <button
-              key={p}
-              type="button"
-              aria-current={active ? 'page' : undefined}
-              onClick={() => go(p)}
-              className={`relative flex w-[72px] flex-col items-center gap-1 rounded-control py-2 text-xs ${active ? 'bg-primary-soft font-bold text-primary' : 'text-muted hover:text-fg'}`}
-            >
-              <svg width={20} height={20} viewBox="0 0 20 20" aria-hidden>
-                <path
-                  d={NAV_ICON[p]}
-                  stroke="currentColor"
-                  strokeWidth={1.6}
-                  fill="none"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+          <span
+            className="mb-2 flex size-10 items-center justify-center rounded-control bg-primary font-bold text-on-primary"
+            title={orgName}
+            aria-label={orgName || t('app.name')}
+          >
+            {(orgName || 'H').slice(0, 1)}
+          </span>
+          {NAV.map((p) => {
+            const active = page === p;
+            const badge = p === 'settings' ? pendingJoins : p === 'chat' ? unread : 0;
+            return (
+              <button
+                key={p}
+                type="button"
+                aria-current={active ? 'page' : undefined}
+                onClick={() => go(p)}
+                className={`relative flex w-[60px] flex-col items-center gap-0.5 rounded-control py-1.5 text-xs wide:w-[72px] wide:py-2 ${active ? 'bg-primary-soft font-bold text-primary' : 'text-muted hover:text-fg'}`}
+              >
+                <svg width={20} height={20} viewBox="0 0 20 20" aria-hidden>
+                  <path
+                    d={NAV_ICON[p]}
+                    stroke="currentColor"
+                    strokeWidth={1.6}
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                {t(PAGE_TITLE[p])}
+                {badge > 0 && (
+                  <span
+                    className="absolute top-0.5 right-1.5 min-w-[18px] rounded-full bg-st-busy px-1 text-[11px] leading-[18px] font-bold text-on-primary"
+                    aria-label={
+                      p === 'chat'
+                        ? t('chat.unread', { count: badge })
+                        : t('joins.badge', { count: badge })
+                    }
+                  >
+                    {badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+          {me && overview.data && <StatusMenu me={me} overview={overview.data} />}
+        </nav>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="flex h-[52px] shrink-0 items-center gap-3 px-4 wide:h-[60px] wide:px-6">
+            <div ref={titleRef} className="flex min-w-0 flex-1" />
+            <div ref={actionsRef} className="flex shrink-0 items-center gap-2" />
+            <CommandButton onOpen={() => setPalette(true)} />
+            <SyncIndicator />
+          </header>
+          <main className="min-h-0 flex-1 px-4 pb-4 wide:px-6 wide:pb-6">
+            {page !== 'home' && (
+              <PageHead
+                title={t(PAGE_TITLE[page])}
+                subtitle={page === 'tasks' ? undefined : orgName}
+              />
+            )}
+            {overview.error && <ErrorText message={overview.error} />}
+            {page === 'home' && overview.data && (
+              <Home
+                overview={overview.data}
+                tasks={tasks.data ?? []}
+                focus={focus.data}
+                convs={convs.data ?? []}
+                onOpenConv={openChat}
+                onOpenTasks={() => go('tasks')}
+                now={now}
+              />
+            )}
+            {page === 'team' && overview.data && (
+              <div className="scroll-panel h-full">
+                <TeamList overview={overview.data} />
+              </div>
+            )}
+            {page === 'tasks' && (
+              <div className="scroll-panel h-full">
+                <Tasks
+                  tasks={tasks.data ?? []}
+                  teams={overview.data?.teams ?? []}
+                  members={overview.data?.members ?? []}
+                  focus={focus.data}
+                  error={tasks.error}
                 />
-              </svg>
-              {t(PAGE_TITLE[p])}
-              {p === 'settings' && pendingJoins > 0 && (
-                <span
-                  className="absolute top-1 right-3 min-w-[18px] rounded-full bg-st-busy px-1 text-[11px] leading-[18px] font-bold text-on-primary"
-                  aria-label={t('joins.badge', { count: pendingJoins })}
-                >
-                  {pendingJoins}
-                </span>
-              )}
-              {p === 'chat' && unread > 0 && (
-                <span
-                  className="absolute top-1 right-3 min-w-[18px] rounded-full bg-st-busy px-1 text-[11px] leading-[18px] font-bold text-on-primary"
-                  aria-label={t('chat.unread', { count: unread })}
-                >
-                  {unread}
-                </span>
-              )}
-            </button>
-          );
-        })}
-        {me && overview.data && <StatusMenu me={me} overview={overview.data} />}
-      </nav>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between px-6 pt-5 pb-2">
-          <h1 className="text-sm font-semibold text-muted">
-            {overview.data?.orgName ?? info.orgName} · {t(PAGE_TITLE[page])}
-          </h1>
-          <SyncIndicator />
-        </header>
-        <main className="flex-1 overflow-auto px-6 pb-6">
-          <ErrorText message={overview.error} />
-          {page === 'home' && overview.data && (
-            <Home
-              overview={overview.data}
-              tasks={tasks.data ?? []}
-              focus={focus.data}
-              convs={convs.data ?? []}
-              onOpenConv={(c) => {
-                setOpenConv(c);
-                setPage('chat');
-              }}
-              onOpenTasks={() => go('tasks')}
-              now={now}
-            />
-          )}
-          {page === 'team' && overview.data && <TeamList overview={overview.data} />}
-          {page === 'tasks' && (
-            <Tasks
-              tasks={tasks.data ?? []}
-              teams={overview.data?.teams ?? []}
-              members={overview.data?.members ?? []}
-              focus={focus.data}
-              error={tasks.error}
-            />
-          )}
-          {page === 'chat' && (
-            <Chat key={openConv ?? ''} members={overview.data?.members ?? []} initial={openConv} />
-          )}
-          {page === 'settings' && (
-            <Settings
-              info={info}
-              members={overview.data?.members ?? []}
-              orgName={overview.data?.orgName ?? ''}
-              overview={overview.data}
-            />
-          )}
-        </main>
+              </div>
+            )}
+            {page === 'chat' && (
+              <Chat
+                key={openConv ?? ''}
+                members={overview.data?.members ?? []}
+                initial={openConv}
+              />
+            )}
+            {page === 'settings' && (
+              <div className="scroll-panel h-full">
+                <Settings
+                  info={info}
+                  members={overview.data?.members ?? []}
+                  orgName={overview.data?.orgName ?? ''}
+                  overview={overview.data}
+                />
+              </div>
+            )}
+          </main>
+        </div>
+        {palette && <CommandPalette commands={commands} onClose={() => setPalette(false)} />}
       </div>
-    </div>
+    </HeadContext.Provider>
   );
 }
 

@@ -87,7 +87,7 @@ export function Chat({ members, initial = null }: Props) {
   };
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex h-full min-h-0 flex-col gap-3">
       <PendingUploads
         count={pending.length}
         onResume={() => {
@@ -99,8 +99,8 @@ export function Chat({ members, initial = null }: Props) {
           setPending([]);
         }}
       />
-      <div className="flex h-full min-h-[480px] gap-4">
-        <aside className="flex w-60 shrink-0 flex-col gap-3">
+      <div className="flex min-h-0 flex-1 gap-3 wide:gap-4">
+        <aside className="scroll-panel flex w-60 shrink-0 flex-col gap-3">
           <Button onClick={() => setCreating(true)}>{t('chat.new')}</Button>
           <ErrorText message={convs.error} />
           {list.length === 0 && <p className="text-sm text-muted">{t('chat.empty')}</p>}
@@ -117,7 +117,7 @@ export function Chat({ members, initial = null }: Props) {
             </section>
           )}
         </aside>
-        <section className="flex min-w-0 flex-1 flex-col rounded-card bg-surface shadow-sm">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-card bg-surface shadow-sm">
           {creating ? (
             <NewConversation
               members={members.filter((m) => !m.isMe)}
@@ -262,7 +262,7 @@ function Conversation({
             </Button>
           )}
         </header>
-        <div className="flex-1 overflow-auto px-4 py-3" aria-live="polite">
+        <div className="scroll-panel min-h-0 flex-1 px-4 py-3" aria-live="polite">
           <ErrorText message={msgs.error} />
           {list.length === 0 && <p className="text-sm text-muted">{t('chat.noMessages')}</p>}
           <ul className="flex flex-col gap-3">

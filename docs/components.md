@@ -1,6 +1,6 @@
 # Hills 通用元件
 
-> 版本：v0.3 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.18（D45、D47）
+> 版本：v0.4 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.18（D45、D47）
 > 本文件定義 `apps/desktop/src/ui/` 的通用元件：用途、何時用、變體、狀態、鍵盤與無障礙、API。視覺基礎（token、字級、間距）見 [design-system.md](./design-system.md)。
 > 畫面只能組合這些元件（design-system §1、§11）。需要新元件或新變體時，**先改本文件，再改 `src/ui/`**，並補 `src/ui/ui.test.tsx`。
 
@@ -173,6 +173,19 @@
 | `className` / `style` | — | — | **位置**（`absolute bottom-full left-0 mb-2`）與寬度、內距 |
 
 觸發按鈕設定 `aria-expanded`，父層 `relative`。
+
+### Tooltip（v0.4，D47）
+
+滑過或聚焦觸發元素時顯示的說明卡（方向羅盤的人像摘要）。內容只用於補充；重要資訊在點擊後的畫面也要找得到。
+
+| prop | 型別 | 說明 |
+|---|---|---|
+| `content` | ReactNode | 卡片內容 |
+| `children` | ReactElement | 觸發元素（應可聚焦，例如 `Pressable`） |
+| `side` | `'left' \| 'right'` | 卡片往哪一側展開（預設 right） |
+| `open` | boolean | 選填：固定顯示（設計稿、測試） |
+
+觸發元素加 `aria-describedby` 指向卡片（`role="tooltip"`）；滑過、聚焦時顯示，離開、失焦或 Esc 時隱藏；卡片本身滑過時保持顯示。
 
 ### Menu、MenuItem
 

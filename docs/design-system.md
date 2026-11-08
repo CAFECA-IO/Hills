@@ -1,6 +1,6 @@
 # Hills 設計系統
 
-> 版本：v0.3 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.17（D22、D40、D43、D45）
+> 版本：v0.4 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.18（D22、D40、D43、D45、D47）
 > 本文件定義視覺基礎：原則、token、字級、間距、圓角、陰影、層級、動態、無障礙、圖示與列印。通用元件的規格見 [components.md](./components.md)；畫面結構與流程見 [ui-spec.md](./ui-spec.md)。
 > 實作來源：`apps/desktop/src/styles/tokens.css`（token）、`apps/desktop/src/ui/`（元件）。三者不一致時以本文件為準，並修正程式碼。
 
@@ -45,6 +45,7 @@
 | 知識關聯 | `--hills-rel-ref/-topic/-task/-conv` | 星座連線、關聯膠囊邊框 | 一律搭配線型（實線 / 虛線 / 點線）與圖例 |
 | 目標層級 | `--hills-level-year/-quarter/-month/-week/-day`（`bg-level-*`、`text-level-*`） | 層級標記、進度環、進度條；`-day` 用於任務欄（D46 取消日目標） | 一律搭配層級文字 |
 | 狀態 | `--hills-st-<狀態>`（徽章色）、`--hills-st-<狀態>-text`（文字色，對 surface ≥ 4.5 : 1） | Presence 徽章、狀態文字、成功 / 進行中標示 | 搭配徽章形狀與文字（ui-spec 狀態表） |
+| 方向羅盤 | `--hills-drift-floor`、`--hills-drift-floor-edge`、`--hills-drift-zone`（`fill-drift-*`） | 方向羅盤的地面、地面厚度、「在路上」扇形（§9） | 狀態另用 `primary`（在路上）、`warning`（可能偏離）、`muted`（太久沒更新）、`level-year`（小組方向），一律搭配形狀與文字 |
 | 角色 | `--hills-ink*`、`--hills-cloud`、`--hills-sun*`、`--hills-moon*`、`--hills-roof`、`--hills-laptop*`、`--hills-hair-0…7`、`--hills-shirt-0…7`、`--hills-skin-0…7` | 原創簡筆角色與天空裝飾 | 只用於 `figures.tsx` 等插畫；成員從色盤選擇（`team.rs` 的 `LOOK_PALETTE` = 8） |
 
 SVG 插畫用 `var(--hills-*)` 指定 `fill` / `stroke`（`figures.tsx`、`home.tsx` 的 `v()` 函式），不寫色碼。
@@ -132,6 +133,18 @@ SVG 插畫用 `var(--hills-*)` 指定 `fill` / `stroke`（`figures.tsx`、`home.
 | `app-icon.svg` | Windows（`icon.ico`、`Square*Logo.png`、`StoreLogo.png`）、Linux（`*.png`） | 1024 畫布，主體四周留 64，圓角 176，不加陰影（由系統處理） |
 
 重新產生：`pnpm --filter @hills/desktop tauri icon src-tauri/icons/source/app-icon.svg -o <暫存>` 後把頂層檔案（不含 android、ios）複製到 `icons/`，再以 `app-icon-macos.svg` 產生一次並只取 `icon.icns` 覆蓋。修改圖案時兩份來源一起改。
+
+### 方向羅盤（v0.4，D47）
+
+ui-spec「目標 → 團隊」D7 等畫面的資料視覺：
+
+- **地面**：半圓盤，先在平面上旋轉 −5°（大）/ −7°（小）再垂直壓扁為 0.78 / 0.58，表現微微傾斜的透視；前緣加 8 px（迷你版 3 px）厚度（`drift-floor-edge`）。線條用 `vector-effect: non-scaling-stroke`，壓扁後粗細不變。
+- **刻度**：25 / 50 / 75 / 100% 進度環（`line`）、今天應到的虛線弧（`fg` 50%）、綠色扇形 ±45°（`drift-zone`，由中心往外漸淡）。
+- **小組方向**：紫色（`level-year`）粗箭頭，終點是小山加旗子。
+- **成員**：每人一條線（6 px 我 / 3 px 他人），在路上 = `primary`、可能偏離 = `warning`、太久沒更新 = `muted` 點線、目標沒對齊 = 虛線。尖端是圖釘（地面陰影 + 細線）立著的頭肩像（直徑 36，我 44），外框顏色同狀態、右上角徽章 ✓ / ▲ / 時鐘；人像重疊時左右推開，圖釘線斜著連回地面點。
+- **三種尺寸**：完整版（D7，含標籤與人像）、「我」版（只畫我與小組，右欄）、迷你版（110 × 52，只有圓點，小組列）。
+- 人像是按鈕：滑過 / 聚焦放大 8% 並顯示 `Tooltip`；`prefers-reduced-motion` 時不做動畫。
+- 圖上一律有文字（名字、偏幾度、今天應到 N%），顏色不是唯一的訊息。
 
 ## 10. 列印
 

@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.20 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.21 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -165,6 +165,7 @@ CAFECA 帳戶（chainId + 身分合約地址 account，由使用者的 Passkey /
 | `member/<id>/requests` | 本人 | 本人、核准者 | `AK_member` | 請假、加班、補打卡申請 |
 | `member/<id>/secrets` | 本人 | 本人 | `PK_member` | 本人的私密設定 |
 | `member/<id>/tasks` | 本人 | 本人 | `PK_member` | 私人任務（D46，§16.8） |
+| `member/<id>/direction` | 本人 | 全員 | `GK` | 方向摘要與對齊建議（v0.21，D47，§16.14） |
 | `approvals/<approverId>` | 核准者本人 | 申請者、管理者 | 申請者的 `AK_member` | 核准 / 退回決定 |
 | `member/<id>/reports/<teamId>/<yyyy>` | 本人 | 該小組成員 | `TK_team` | 日 / 週報（發佈到哪些小組就寫入哪些小組，§16.13） |
 | `kb/meta` | 全體成員 | 全員 | `GK` | 知識庫的分類與主題（§16.11） |
@@ -360,7 +361,7 @@ LeaveType   { id, name, paid: boolean, minUnitHours, annualLimitHours?, requireP
 HolidayCalendar { region, year, holidays: {date, name}[], workdays: Date[] }
 
 // team 文件
-Task        { id, teamId | private, title, assigneeId?, status: todo|doing|review|done,
+Task        { id, teamId | private, title, assigneeId?, status: todo|doing|review|done, doneAt?,
               estimateHours?, dueAt?, steps?: TaskStep[], planItemId?（週目標，D46）, blockedReason?,
               createdAt, updatedAt }
 TaskStep    { id, title, assigneeId?, done: boolean, doneAt? }
@@ -782,10 +783,12 @@ org = {
   teams:   { <teamId>: { name, leadIds: [..], memberIds: [..] } },
   offices: { <officeId>: { name, wifiHashes: [] } },     // v0.11（D40）；M1 wifiHashes 為空
   lunchBreak?: { start: "12:00", end: "13:30" },          // v0.11；組織時區
+  directionRules?: { minAlignedShare: 50, behindPoints: 25, staleDays: 14 },   // v0.21（D47，§16.14）；管理者可改
 }
 
 team/<teamId> = {                                         // v0.11（D40）
   "task:<taskId ULID>": { title, assignee?, status: todo|doing|review|done, dueAt?,
+                          doneAt?,                        // v0.21（D47）：改成完成時寫入，離開完成時刪除
                           steps: [ { id, title, assignee?, done, doneAt? } ],
                           planItemId?,                    // v0.19（D46）：所屬週目標
                           createdBy, createdAt, updatedAt },
@@ -923,7 +926,37 @@ team-goals/<teamId> = {
   - 否則小組目標 = 對齊它的個人年 / 季目標進度平均；公司方向 = 對齊它的小組目標與直接對齊它的個人目標平均；
   - 都沒有 → 0。只計算讀者看得到的個人目標（§4.3），所以不同讀者可能看到不同數字；第 2 批的方向摘要（本節後續）讓全員看到一致的比例。
 - 刪除公司方向或小組目標時不連帶修改他人的文件；對齊它的目標讀取時視為未對齊（介面提示重新選擇）。
-- **方向摘要、四項檢查、方向羅盤**於第 2 批補充本節（`member/<id>/direction`）。
+**方向摘要**（v0.21，第 2 批）：
+
+```
+member/<id>/direction = {
+  "week:<YYYY-Www>": "<JSON 字串>",      // 最近 8 週，較舊的在發佈時刪除
+  "suggest:<ULID>": "<JSON 字串>"        // 我送給別人的對齊建議
+}
+DirectionWeek = { v: 1, week, units, alignedUnits, quarterProgress: number | null,
+                  goals: [ { id, title, progress, alignedGoalId? } ],   // 本季我的季目標，不含私人
+                  privateGoals,                                       // 私人季目標的數量
+                  lastActivity, openTasks, dueThisWeek, updatedAt }
+Suggestion    = { v: 1, to: memberId, planItemId, goalId, createdAt }
+```
+
+- 只有本人可寫、全員可讀（`GK`，D47 全員透明）；伺服器看不到內容。每則最多 16 KB；`goals` 最多 20 個。
+- **由本人的 App 計算**（前端，依組織時區，同 §16.13）：啟動後與任務 / 目標變更後 30 秒內重算，與上次發佈的內容（不含 `updatedAt`）相同時不寫入。計算只用本人看得到的資料：
+  - `units`（這週完成的事）= 這週完成、負責人是我的步驟（步驟沒有負責人時看任務負責人）＋ 這週完成、沒有步驟、負責人是我的任務（`doneAt` 在這週）；私人任務也算。
+  - `alignedUnits` = 其中所屬任務的 `planItemId` 往上（週 → 月 → 季 → 年，經 `parentId`）有任一層設定了 `alignedGoalId` 者。
+  - `goals` = 我這一季的季目標（含所屬年目標的對齊：季目標沒有 `alignedGoalId` 時沿用 `parentId` 年目標的）；`quarterProgress` = 已對齊的季目標進度平均，沒有已對齊的季目標時為全部季目標平均，沒有季目標時為 null。
+  - `lastActivity` = 我完成步驟 / 任務、或修改自己目標（`updatedAt`）的最近時間。
+  - `openTasks` / `dueThisWeek` = 指派給我、未完成的任務數，以及其中這週到期的數量（第 5 批「負荷外圈」使用）。
+- **四項檢查**（讀者端計算，門檻取 org `directionRules`，沒有時用預設值）：
+  1. **目標沒對齊團隊**：最新摘要的 `goals` 都沒有 `alignedGoalId`（含沒有季目標，但 `privateGoals > 0` 時不判定，介面註明「有私人目標」）。
+  2. **時間花在別的事**：本週 `units > 0` 且 `alignedUnits / units × 100 < minAlignedShare`。本週沒有摘要或 `units = 0` 時不判定。
+  3. **進度落後時程**：`quarterProgress < 本季經過比例 × 100 − behindPoints`。
+  4. **太久沒更新**：`現在 − lastActivity ≥ staleDays` 天（本人沒開 App 也能判定）。
+  - 狀態：第 4 項成立 → 「太久沒更新」；其他任一項成立 → 「可能偏離」；都不成立 → 「在路上」；沒有任何摘要 → 「還沒有資料」。
+  - **角度**（方向羅盤）= 90° ×（1 − alignedUnits / units）；`units = 0` 時為 0° 並以灰色顯示。**長度** = `quarterProgress`。
+- **對齊建議**：任何人可以對「目標沒對齊團隊」的成員送出建議（寫在自己的文件，`to` 為對象、`planItemId` 為對方摘要中的季目標、`goalId` 為小組目標）。對象的 App 讀取所有成員文件中 `to` 為自己的建議，在目標首頁顯示，按「套用」才修改自己的目標（只有本人可寫計劃，D17 精神）；「不用了」記在本機。建議 30 天後不再顯示。
+- **隱私**：摘要讓全員看到比例、季目標標題與進度（D47 的決定）；私人目標只計數量，私人任務只算進 `units`，不露標題。私人任務多的人可能被判為「時間花在別的事」，介面註明。
+
 
 ### 16.9 部署（M0）
 

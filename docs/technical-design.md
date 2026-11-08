@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.16 草案 · 2026-11-08 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.17 草案 · 2026-11-08 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -159,7 +159,7 @@ CAFECA 帳戶（chainId + 身分合約地址 account，由使用者的 Passkey /
 | `org` | 管理者 | 全員 | `GK` | 設定、品牌、成員憑證與 CAFECA 帳戶、小組、假日曆、假別、工作規則、核准規則 |
 | `team/<teamId>` | 小組成員 | 小組成員 | `TK_team` | 任務、小組目標 |
 | `member/<id>/plans/private`、`plans/team/<teamId>`、`plans/org` | 本人 | 本人 / 該小組成員 / 全員 | `PK` / `TK_team` / `GK` | 五層計劃（見 §4.3、§16.10） |
-| `member/<id>/scrum/<yyyy-mm>` | 本人 | 小組成員 | `TK_team` | 每日 Scrum |
+| `member/<id>/scrum/<teamId>/<yyyy-mm>` | 本人 | 該小組成員 | `TK_team` | 每日 Scrum（每個所屬小組各一份，§16.12） |
 | `member/<id>/attendance/<yyyy-mm>` | 本人 | 本人、負責人、管理者 | `AK_member` | 打卡紀錄 |
 | `member/<id>/requests` | 本人 | 本人、核准者 | `AK_member` | 請假、加班、補打卡申請 |
 | `member/<id>/secrets` | 本人 | 本人 | `PK_member` | 本人的私密設定 |
@@ -369,7 +369,7 @@ PlanItem    { id, level: year|quarter|month|week|day, period: '2026' | '2026-Q4'
               '2026-11' | '2026-W45' | '2026-11-05', parentId?, alignedTeamGoalId?,
               title, keyResults?: KeyResult[], done?: boolean, progress, progressOverride? }
 KeyResult   { id, title, start: number, target: number, current: number, unit }
-ScrumReport { date, done: Ref[], today: Ref[], blockers: Blocker[], submittedAt }
+ScrumReport { date, done: Ref[], today: Ref[], blockers: Blocker[], submittedAt }   // 詳見 §16.12
 AttendanceRecord { id, kind: in|out, localTime, serverTime?, tsaToken?, location,
                    lateStamped, sig }
 LeaveRequest    { id, typeId, start, end, hours, delegateId?, reason, proof?, ruleId,
@@ -848,6 +848,24 @@ source = { kind: "manual" }
 - 限制：標題 1–200 字、內容 ≤ 64 KB、標籤 ≤ 10 個、引用 ≤ 20 個、附件 JSON ≤ 512 KB。
 - **隱私**：知識內容與 `source` 全組織可讀。從對話「存成知識」會把該訊息內容與 convId 公開給全組織；從檔案建立會把附件（含 `fileKey`）公開，等於全組織都能下載該檔案，介面在送出前明確提示。伺服器仍只看到 `GK` 密文。
 - M3 的 AI 歸納建議存為本機的待套用項目，使用者按「套用」後才以上述格式寫入（D17）。
+
+### 16.12 每日 Scrum（v0.17，feature-plan §5.4、D21）
+
+```
+member/<id>/scrum/<teamId>/<yyyy-mm> = {
+  "day:<yyyy-mm-dd>": "<JSON 字串>"     // 一天一份，依組織時區
+}
+ScrumReport JSON = { v: 1, date, done: Ref[], today: Ref[], blockers: Blocker[],
+                     submittedAt, updatedAt }
+Ref     = { kind: "task", teamId, taskId, title } | { kind: "plan", planId, title } | { kind: "text", title }
+Blocker = { text, notified: MemberId[] }
+```
+
+- 成員可能屬於多個小組：送出時**把同一份 Scrum 寫入每個所屬小組的文件**（`TK_team` 加密、只有該小組成員能讀），每個小組都看得到；讀取時同一天出現多份取 `updatedAt` 較新者。只有本人可寫（§4.1）。
+- `Ref.title` 在填寫時複製進來，讀者看不到來源任務或計劃時仍能顯示。每區最多 30 項，每項 1–200 字。
+- 草稿只存在本機（不同步）；按「送出」才寫入文件。送出後可再修改，覆寫同一天並更新 `updatedAt`。
+- **阻礙通知**：送出時 `notified` = 各所屬小組的負責人（`leadIds`）；小組沒有負責人時為全體管理者。負責人的裝置收到 `notified` 含自己、且有阻礙的新 Scrum 時發桌機通知（本機判斷，伺服器不參與）。
+- **提醒**：組織預設時間存在 org 文件 `scrumReminder: "HH:MM"`（管理者可改，預設 `17:30`），個人可在本機覆寫（本機設定檔，不同步）。工作日依 §7.1；**M1 第一版在假日曆（backlog #6）與請假（#14）尚未實作前，只排除週六與週日**。當天已送出就不提醒，每天最多提醒一次。
 
 ### 16.9 部署（M0）
 

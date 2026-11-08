@@ -305,3 +305,49 @@ proptest! {
         prop_assert_eq!(eh, rh);
     }
 }
+
+#[test]
+fn kb_items_only_author_or_admin() {
+    let w = world();
+    let alice = w.alice.0.member_id();
+    let v = Validator::new(&w.trust, &w.dir);
+    let doc_id = "kb/items/2026-11";
+    let sign = |doc: &mut AutoCommit, dev: &DeviceKey| {
+        doc.commit();
+        sign_change(doc_id, &doc.get_last_local_change().unwrap(), dev).unwrap()
+    };
+    let key = format!("{alice}:01abc");
+    let mut doc = AutoCommit::new();
+    // 作者新增、修改、刪除自己的
+    doc.put(ROOT, key.as_str(), "{\"v\":1}").unwrap();
+    assert!(v.check(doc_id, &sign(&mut doc, &w.alice.1)).is_ok());
+    doc.put(ROOT, key.as_str(), "{\"v\":1,\"title\":\"x\"}")
+        .unwrap();
+    assert!(v.check(doc_id, &sign(&mut doc, &w.alice.1)).is_ok());
+    // 別人改不行，用別人的前綴新增也不行
+    doc.put(ROOT, key.as_str(), "{}").unwrap();
+    assert_eq!(
+        v.check(doc_id, &sign(&mut doc, &w.bob.1)).unwrap_err(),
+        SyncError::NotOwnKey
+    );
+    // 管理者可改、可刪
+    doc.put(ROOT, key.as_str(), "{\"v\":1,\"title\":\"y\"}")
+        .unwrap();
+    assert!(v.check(doc_id, &sign(&mut doc, &w.admin.1)).is_ok());
+    doc.delete(ROOT, key.as_str()).unwrap();
+    assert!(v.check(doc_id, &sign(&mut doc, &w.admin.1)).is_ok());
+    // 巢狀物件不行（即使是作者）
+    doc.put_object(ROOT, format!("{alice}:02").as_str(), ObjType::Map)
+        .unwrap();
+    assert_eq!(
+        v.check(doc_id, &sign(&mut doc, &w.alice.1)).unwrap_err(),
+        SyncError::NotOwnKey
+    );
+    // kb/meta 任何成員可寫
+    let mut meta = AutoCommit::new();
+    let m = meta.put_object(ROOT, "cat:01", ObjType::Map).unwrap();
+    meta.put(&m, "name", "工程").unwrap();
+    meta.commit();
+    let sc = sign_change("kb/meta", &meta.get_last_local_change().unwrap(), &w.bob.1).unwrap();
+    assert!(v.check("kb/meta", &sc).is_ok());
+}

@@ -22,6 +22,16 @@
   --hills-hill-near: #b6dec6;
   --hills-hill-mid: #cdebd8;
   --hills-hill-far: #c4e5d0;
+  /* 知識庫星空（ui-spec「知識庫」：亮色與暗色模式都使用夜空色） */
+  --hills-night-top: #0b1730;
+  --hills-night-bottom: #1b2d52;
+  --hills-night-text: #c9d6ee;
+  --hills-star: #fff6d6;
+  --hills-star-dim: #7f93b8;
+  --hills-rel-ref: #ffd166;
+  --hills-rel-topic: #8fb8ff;
+  --hills-rel-task: #7ee0b5;
+  --hills-rel-conv: #f4a3c8;
   /* 目標層級（ui-spec「目標」，一律搭配層級文字） */
   --hills-level-year: #7c5cfc;
   --hills-level-quarter: #1f6feb;
@@ -152,6 +162,11 @@
   --color-hill-mid: var(--hills-hill-mid);
   --color-hill-far: var(--hills-hill-far);
   --color-level-year: var(--hills-level-year);
+  --color-night-top: var(--hills-night-top);
+  --color-night-bottom: var(--hills-night-bottom);
+  --color-night-text: var(--hills-night-text);
+  --color-star: var(--hills-star);
+  --color-star-dim: var(--hills-star-dim);
   --color-level-quarter: var(--hills-level-quarter);
   --color-level-month: var(--hills-level-month);
   --color-level-week: var(--hills-level-week);

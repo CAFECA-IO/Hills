@@ -8,6 +8,7 @@ mod chat;
 pub mod config;
 pub mod conv;
 mod gossip;
+pub mod kb;
 mod lifecycle;
 mod local;
 mod mailbox;

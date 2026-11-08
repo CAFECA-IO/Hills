@@ -11,6 +11,7 @@ import {
 import { AttachmentCard } from './attachments';
 import { firstLine, reportableStep } from './camp-utils';
 import { StatusBadge } from './figures';
+import { SaveToKb } from './kb';
 import { formatClock, formatDate, formatTime, t, type MessageKey } from './i18n';
 import { parseAttachments, type Attachment } from './share';
 import { Button, ErrorText, useAction } from './ui';
@@ -289,6 +290,7 @@ export function MessageActions({
   myTeams: string[];
 }) {
   const [making, setMaking] = useState(false);
+  const [saving, setSaving] = useState(false);
   const { busy, error, attempt } = useAction();
   const step = reportableStep(task, me);
   return (
@@ -310,12 +312,36 @@ export function MessageActions({
             type="button"
             className="rounded-full border border-line bg-surface px-2 py-0.5 text-xs hover:text-primary"
             aria-expanded={making}
-            onClick={() => setMaking((v) => !v)}
+            onClick={() => {
+              setSaving(false);
+              setMaking((v) => !v);
+            }}
           >
             {t('camp.action.toTask')}
           </button>
         )}
+        {m.body.trim() && (
+          <button
+            type="button"
+            className="rounded-full border border-line bg-surface px-2 py-0.5 text-xs hover:text-primary"
+            aria-expanded={saving}
+            onClick={() => {
+              setMaking(false);
+              setSaving((v) => !v);
+            }}
+          >
+            {t('camp.action.toKb')}
+          </button>
+        )}
       </div>
+      {saving && (
+        <SaveToKb
+          conv={conv.id}
+          messageKey={`${m.author}:${m.id}`}
+          defaultTitle={firstLine(m.body) || t('camp.toTask.untitled')}
+          onDone={() => setSaving(false)}
+        />
+      )}
       <ErrorText message={error} />
       {making && (
         <MakeTaskForm

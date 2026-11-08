@@ -17,6 +17,7 @@ import { Chat } from './chat';
 import { Portrait, StatusBadge, stateLabel } from './figures';
 import { Goals } from './goals';
 import { Home } from './home';
+import { Knowledge } from './kb';
 import { useIdleAway, useLoad, useSyncStatus } from './hooks';
 import {
   formatClock,
@@ -42,7 +43,7 @@ import { LOOK_PALETTE, lookOf } from './summit';
 import { Tasks } from './tasks';
 import { Button, Card, CodeBox, ConfirmButton, ErrorText, Field, useAction } from './ui';
 
-type Page = 'home' | 'goals' | 'team' | 'tasks' | 'chat' | 'settings';
+type Page = 'home' | 'goals' | 'team' | 'tasks' | 'chat' | 'kb' | 'settings';
 
 const SYNC_ICON: Record<SyncStatus, string> = {
   Synced: '●',
@@ -75,6 +76,7 @@ const NAV_ICON: Record<Page, string> = {
   team: 'M7 7m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M2 16c.8-3 3-4.5 5-4.5s4.2 1.5 5 4.5M14 8m-2.4 0a2.4 2.4 0 1 0 4.8 0a2.4 2.4 0 1 0 -4.8 0M12 15.5c.5-2 1.7-3 3-3s2.6 1 3 3',
   tasks: 'M4 5h2M4 10h2M4 15h2M9 5h7M9 10h7M9 15h7',
   chat: 'M3 4.5h14v9H8l-4 3v-3H3z',
+  kb: 'M10 2.5l2 4.6 5 .5-3.8 3.3 1.1 4.9L10 13.3l-4.3 2.5 1.1-4.9L3 7.6l5-.5z',
   settings:
     'M10 7a3 3 0 1 0 0 6a3 3 0 1 0 0 -6M10 2v2M10 16v2M2 10h2M16 10h2M4.3 4.3l1.4 1.4M14.3 14.3l1.4 1.4M4.3 15.7l1.4-1.4M14.3 5.7l1.4-1.4',
 };
@@ -85,11 +87,12 @@ const PAGE_TITLE: Record<Page, MessageKey> = {
   team: 'team.title',
   tasks: 'nav.tasks',
   chat: 'chat.title',
+  kb: 'nav.kb',
   settings: 'settings.title',
 };
 
-/** 導覽列順序（D43）：知識庫隨對應功能加入。 */
-const NAV: Page[] = ['home', 'goals', 'tasks', 'chat', 'team', 'settings'];
+/** 導覽列順序（D43）。 */
+const NAV: Page[] = ['home', 'goals', 'tasks', 'chat', 'kb', 'team', 'settings'];
 
 const noJoins = () => Promise.resolve<JoinRequestView[]>([]);
 
@@ -209,7 +212,7 @@ export function Shell({ info }: { info: AppInfo }) {
             <SyncIndicator />
           </header>
           <main className="min-h-0 flex-1 px-4 pb-4 wide:px-6 wide:pb-6">
-            {page !== 'home' && page !== 'goals' && (
+            {page !== 'home' && page !== 'goals' && page !== 'kb' && (
               <PageHead
                 title={t(PAGE_TITLE[page])}
                 subtitle={page === 'tasks' ? undefined : orgName}
@@ -235,6 +238,14 @@ export function Shell({ info }: { info: AppInfo }) {
                 focusId={focus.data?.task?.id ?? null}
                 timezone={overview.data.timezone}
                 onOpenTasks={() => go('tasks')}
+              />
+            )}
+            {page === 'kb' && overview.data && (
+              <Knowledge
+                members={overview.data.members}
+                isAdmin={info.isAdmin}
+                timezone={overview.data.timezone}
+                onOpenConv={openChat}
               />
             )}
             {page === 'team' && overview.data && (

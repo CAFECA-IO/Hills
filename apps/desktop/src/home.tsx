@@ -1,5 +1,5 @@
 /** 首頁：焦點山（ui-spec「首頁」，D40）。 */
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   api,
   type ConvRow,
@@ -20,6 +20,7 @@ import {
   stateLabel,
   textWidth,
 } from './figures';
+import { useSize } from './hooks';
 import { formatClock, formatDate, t } from './i18n';
 import { PageHead } from './layout';
 import {
@@ -172,23 +173,6 @@ export function Home({ overview, tasks, focus, convs, onOpenConv, onOpenTasks, n
       </aside>
     </div>
   );
-}
-
-/** 元素的內容尺寸（ResizeObserver）。 */
-function useSize(el: HTMLElement | null): { w: number; h: number } | null {
-  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
-  useEffect(() => {
-    if (!el) return;
-    const ro = new ResizeObserver(([e]) => {
-      const { width, height } = e.contentRect;
-      setSize((s) =>
-        s && Math.abs(s.w - width) < 1 && Math.abs(s.h - height) < 1 ? s : { w: width, h: height },
-      );
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [el]);
-  return size;
 }
 
 // ── 場景 ────────────────────────────────────────────────────

@@ -159,6 +159,61 @@ export interface PlanView {
   mine: boolean;
 }
 
+// ── 知識庫（technical-design §16.11）──
+
+export interface KbCategory {
+  id: string;
+  name: string;
+  createdAt: number;
+  /** 合併後的最終分類 */
+  resolved: string;
+}
+
+export interface KbTopic {
+  id: string;
+  name: string;
+  categoryId: string;
+  createdAt: number;
+  resolved: string;
+}
+
+export type KbSource =
+  | { kind: 'manual' }
+  | { kind: 'message'; convId: string; messageKey: string }
+  | { kind: 'file'; convId: string; attachment: unknown }
+  | { kind: 'task'; teamId: string; taskId: string };
+
+export interface KbItem {
+  /** `<作者>:<ULID>` */
+  key: string;
+  author: string;
+  title: string;
+  body: string;
+  tags: string[];
+  topicId: string;
+  refs: string[];
+  source: KbSource;
+  createdAt: number;
+  updatedAt: number;
+  updatedBy: string;
+}
+
+export interface KbSnapshot {
+  categories: KbCategory[];
+  topics: KbTopic[];
+  items: KbItem[];
+}
+
+export interface KbInput {
+  key?: string | null;
+  title: string;
+  body: string;
+  tags: string[];
+  topicId: string;
+  refs: string[];
+  source?: KbSource | null;
+}
+
 export interface PlanInput {
   id?: string | null;
   level: PlanLevel;
@@ -376,6 +431,23 @@ export const api = {
   savePlan: (input: PlanInput) => call<string>('save_plan', { input }),
   setPlanDone: (id: string, done: boolean) => call<void>('set_plan_done', { id, done }),
   deletePlan: (id: string) => call<void>('delete_plan', { id }),
+  kb: () => call<KbSnapshot>('kb'),
+  kbSave: (input: KbInput) => call<string>('kb_save', { input }),
+  kbDelete: (key: string) => call<void>('kb_delete', { key }),
+  kbCreateCategory: (name: string) => call<string>('kb_create_category', { name }),
+  kbCreateTopic: (category: string, name: string) =>
+    call<string>('kb_create_topic', { category, name }),
+  kbRename: (kind: 'category' | 'topic', id: string, name: string) =>
+    call<void>('kb_rename', { kind, id, name }),
+  kbMerge: (kind: 'category' | 'topic', from: string, into: string) =>
+    call<void>('kb_merge', { kind, from, into }),
+  kbFromMessage: (
+    conv: string,
+    messageKey: string,
+    topic: string,
+    title: string,
+    attachment: number | null,
+  ) => call<string>('kb_from_message', { conv, messageKey, topic, title, attachment }),
   focus: () => call<FocusView>('focus'),
   setFocus: (team: string | null, task: string | null) => call<void>('set_focus', { team, task }),
   setProfile: (look: Look) => call<void>('set_profile', { look }),

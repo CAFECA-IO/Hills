@@ -29,6 +29,7 @@ import {
   type MentionCandidate,
 } from './chat-utils';
 import { useLoad, useMediaQuery } from './hooks';
+import { SaveToKb } from './kb';
 import { formatTime, t } from './i18n';
 import { Button, ConfirmButton, ErrorText, Field, useAction } from './ui';
 
@@ -400,6 +401,7 @@ function MessageItem({
   actions?: React.ReactNode;
 }) {
   const mentioned = m.mentions.includes(me);
+  const [savingFile, setSavingFile] = useState<number | null>(null);
   const attachments = m.kind === 'files' ? parseAttachments(m.attachments) : [];
   return (
     <li
@@ -438,7 +440,26 @@ function MessageItem({
         </Markdown>
       </div>
       {attachments.map((a, i) => (
-        <AttachmentCard key={i} a={a} author={author} createdAt={m.createdAt} />
+        <div key={i} className="flex flex-col items-start gap-1">
+          <AttachmentCard a={a} author={author} createdAt={m.createdAt} />
+          <button
+            type="button"
+            className="text-xs text-muted hover:text-primary"
+            aria-expanded={savingFile === i}
+            onClick={() => setSavingFile(savingFile === i ? null : i)}
+          >
+            {t('camp.action.toKb')}
+          </button>
+          {savingFile === i && (
+            <SaveToKb
+              conv={m.conv}
+              messageKey={`${m.author}:${m.id}`}
+              defaultTitle={a.type === 'folder' ? a.name : a.manifest.name}
+              attachment={i}
+              onDone={() => setSavingFile(null)}
+            />
+          )}
+        </div>
       ))}
     </li>
   );

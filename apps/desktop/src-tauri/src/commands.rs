@@ -869,6 +869,77 @@ pub async fn delete_plan(state: State<'_, AppState>, id: String) -> CmdResult<()
     with_node!(state, n => n.delete_plan(&id).await.map_err(e))
 }
 
+// ── 知識庫（technical-design §16.11）─────────────────────────
+
+#[tauri::command]
+pub async fn kb(state: State<'_, AppState>) -> CmdResult<hills_node::kb::KbSnapshot> {
+    with_node!(state, n => n.kb().map_err(e))
+}
+
+#[tauri::command]
+pub async fn kb_save(
+    state: State<'_, AppState>,
+    input: hills_node::kb::KbInput,
+) -> CmdResult<String> {
+    with_node!(state, n => n.kb_save(input).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn kb_delete(state: State<'_, AppState>, key: String) -> CmdResult<()> {
+    with_node!(state, n => n.kb_delete(&key).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn kb_create_category(state: State<'_, AppState>, name: String) -> CmdResult<String> {
+    with_node!(state, n => n.kb_create_category(&name).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn kb_create_topic(
+    state: State<'_, AppState>,
+    category: String,
+    name: String,
+) -> CmdResult<String> {
+    with_node!(state, n => n.kb_create_topic(&category, &name).await.map_err(e))
+}
+
+/// `kind` = category / topic。
+#[tauri::command]
+pub async fn kb_rename(
+    state: State<'_, AppState>,
+    kind: String,
+    id: String,
+    name: String,
+) -> CmdResult<()> {
+    with_node!(state, n => n.kb_rename(&kind, &id, &name).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn kb_merge(
+    state: State<'_, AppState>,
+    kind: String,
+    from: String,
+    into: String,
+) -> CmdResult<()> {
+    with_node!(state, n => n.kb_merge(&kind, &from, &into).await.map_err(e))
+}
+
+/// 從訊息（或其第 `attachment` 個附件）存成知識。
+#[tauri::command]
+pub async fn kb_from_message(
+    state: State<'_, AppState>,
+    conv: String,
+    message_key: String,
+    topic: String,
+    title: String,
+    attachment: Option<usize>,
+) -> CmdResult<String> {
+    with_node!(state, n => n
+        .kb_from_message(&conv, &message_key, &topic, &title, attachment)
+        .await
+        .map_err(e))
+}
+
 #[tauri::command]
 pub async fn focus(state: State<'_, AppState>) -> CmdResult<FocusView> {
     with_node!(state, n => {

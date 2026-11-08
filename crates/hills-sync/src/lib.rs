@@ -59,6 +59,25 @@ pub fn own_profile_only(change: &Change, author: &MemberId) -> bool {
         })
 }
 
+/// 知識庫 `kb/items/*`（technical-design §16.11）：每個 op 都必須在根物件上放入字串或刪除 key，
+/// 且 key 以作者 memberId 開頭；管理者可改任何 key（仍限根物件上的字串）。
+pub fn own_keys_or_admin(change: &Change, who: &Verified) -> bool {
+    use automerge::ScalarValue;
+    use automerge::legacy::{Key, ObjectId, OpType};
+    let prefix = format!("{}:", who.member_id);
+    let admin = who.is_admin();
+    let decoded = change.decode();
+    decoded.operations.iter().all(|op| {
+        matches!(op.obj, ObjectId::Root)
+            && !op.insert
+            && matches!(&op.key, Key::Map(k) if k.len() <= 128 && (admin || k.starts_with(&prefix)))
+            && matches!(
+                &op.action,
+                OpType::Put(ScalarValue::Str(_)) | OpType::Delete
+            )
+    })
+}
+
 /// 判斷驗證通過的成員可否寫入此類文件（technical-design §4.1 表格）。
 pub fn allowed(kind: &DocKind, who: &Verified, dir: &dyn Directory) -> bool {
     match kind {
@@ -68,6 +87,8 @@ pub fn allowed(kind: &DocKind, who: &Verified, dir: &dyn Directory) -> bool {
         DocKind::Approvals(approver) => *approver == who.member_id,
         DocKind::ConvMeta(c) => dir.is_conv_admin(c, &who.member_id),
         DocKind::ConvLog(c) => dir.is_conv_member(c, &who.member_id),
+        // 知識庫：任何已驗證成員（kb/items 的作者限制另由 own_keys_or_admin 檢查）
+        DocKind::KbMeta | DocKind::KbItems(_) => true,
     }
 }
 
@@ -89,6 +110,8 @@ pub enum SyncError {
     NotAppendOnly,
     #[error("只能修改自己的角色外觀")]
     NotOwnProfile,
+    #[error("只有作者與管理者能修改這則知識")]
+    NotOwnKey,
     #[error("簽署裝置與宣告的作者不同")]
     AuthorMismatch,
     #[error("不支援的版本")]
@@ -182,6 +205,9 @@ impl<'a> Validator<'a> {
         }
         if matches!(kind, DocKind::Team(_)) && !own_profile_only(&change, &who.member_id) {
             return Err(SyncError::NotOwnProfile);
+        }
+        if matches!(kind, DocKind::KbItems(_)) && !own_keys_or_admin(&change, &who) {
+            return Err(SyncError::NotOwnKey);
         }
         Ok((change, who))
     }

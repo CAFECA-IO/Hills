@@ -20,6 +20,10 @@ pub enum DocKind {
     ConvMeta(String),
     /// `conv/<convId>/log/<yyyy-mm>`：對話成員
     ConvLog(String),
+    /// `kb/meta`：知識庫的分類與主題，全體成員（technical-design §16.11）
+    KbMeta,
+    /// `kb/items/<yyyy-mm>`：知識，全體成員；每則只限作者與管理者（§16.11）
+    KbItems(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,6 +90,8 @@ impl DocKind {
             ["org"] => DocKind::Org,
             ["team", t] if is_segment(t) => DocKind::Team((*t).into()),
             ["approvals", m] => DocKind::Approvals(MemberId::parse(m).ok()?),
+            ["kb", "meta"] => DocKind::KbMeta,
+            ["kb", "items", ym] if is_month(ym) => DocKind::KbItems((*ym).into()),
             ["conv", c, "meta"] if is_segment(c) => DocKind::ConvMeta((*c).into()),
             ["conv", c, "log", seg] if is_segment(c) && is_log_segment(seg) => {
                 DocKind::ConvLog((*c).into())
@@ -145,6 +151,11 @@ mod tests {
                 })
             );
         }
+        assert_eq!(DocKind::parse("kb/meta"), Some(DocKind::KbMeta));
+        assert_eq!(
+            DocKind::parse("kb/items/2026-11"),
+            Some(DocKind::KbItems("2026-11".into()))
+        );
         assert_eq!(
             DocKind::parse(&format!("approvals/{m}")),
             Some(DocKind::Approvals(m))
@@ -171,6 +182,10 @@ mod tests {
             format!("member/{m}/plans/team/a.b"),
             "member/notbase32/requests".into(),
             "conv/c1/log/202611".into(),
+            "kb".into(),
+            "kb/items".into(),
+            "kb/items/2026-1".into(),
+            "kb/other".into(),
         ] {
             assert_eq!(DocKind::parse(&bad), None, "{bad}");
         }

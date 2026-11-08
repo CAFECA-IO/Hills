@@ -11,6 +11,10 @@ import type {
   OnboardArgs,
   OnboardStatus,
   Overview,
+  KbCategory,
+  KbInput,
+  KbItem,
+  KbTopic,
   PlanInput,
   PlanView,
   PresenceState,
@@ -205,6 +209,82 @@ let plans: PlanView[] = [
   plan('d1', 'day', 'relay 更新', 50, 'w1'),
   plan('d2', 'day', 'Windows 驗收', 0, 'w1'),
   plan('d3', 'day', '寫週報', 0, null, { visibility: { kind: 'private' } }),
+];
+// 示範知識庫（虛構，與設計稿第八輪相同的分類）
+const kbCats: KbCategory[] = [
+  ['c-prod', '產品'],
+  ['c-eng', '工程'],
+  ['c-ops', '部署'],
+  ['c-hr', '假勤人事'],
+  ['c-design', '設計'],
+].map(([id, name], i) => ({
+  id: id!,
+  name: name!,
+  createdAt: now0 - (60 - i) * 86400_000,
+  resolved: id!,
+}));
+const kbTopics: KbTopic[] = [
+  ['t-onb', 'c-prod', '引導流程'],
+  ['t-goal', 'c-prod', '目標'],
+  ['t-store', 'c-eng', '儲存'],
+  ['t-sync', 'c-eng', '同步'],
+  ['t-crypto', 'c-eng', '加密'],
+  ['t-relay', 'c-ops', 'relay'],
+  ['t-docker', 'c-ops', 'Docker'],
+  ['t-leave', 'c-hr', '請假'],
+  ['t-vis', 'c-design', '視覺語言'],
+].map(([id, categoryId, name], i) => ({
+  id: id!,
+  name: name!,
+  categoryId: categoryId!,
+  createdAt: now0 - (50 - i) * 86400_000,
+  resolved: id!,
+}));
+const ki = (
+  n: number,
+  topicId: string,
+  title: string,
+  daysAgo: number,
+  refs: number[] = [],
+  extra: Partial<KbItem> = {},
+): KbItem => ({
+  key: `mem-${n % 3 === 0 ? 'me' : n % 3 === 1 ? 'a' : 'd'}:k${n}`,
+  author: n % 3 === 0 ? 'mem-me' : n % 3 === 1 ? 'mem-a' : 'mem-d',
+  title,
+  body: `${title}的重點整理。\n\n- 為什麼這樣做\n- 怎麼操作\n- 常見問題`,
+  tags: [],
+  topicId,
+  refs: refs.map((r) => `mem-${r % 3 === 0 ? 'me' : r % 3 === 1 ? 'a' : 'd'}:k${r}`),
+  source: { kind: 'manual' },
+  createdAt: now0 - daysAgo * 86400_000,
+  updatedAt: now0 - daysAgo * 86400_000,
+  updatedBy: 'mem-me',
+  ...extra,
+});
+let kbItems: KbItem[] = [
+  ki(1, 't-store', 'D39 儲存節點', 40),
+  ki(2, 't-store', 'Reed-Solomon 8/5 分片', 38, [1]),
+  ki(3, 't-store', '檔案續傳', 30, [1, 2]),
+  ki(4, 't-sync', 'Automerge 文件切分', 35, [1]),
+  ki(5, 't-sync', 'mailbox 補同步', 28, [4]),
+  ki(6, 't-crypto', 'HPKE 金鑰封裝', 33, [4, 5]),
+  ki(7, 't-relay', 'relay 部署', 20, [1, 5], {
+    source: { kind: 'message', convId: 'g1', messageKey: 'mem-a:1' },
+  }),
+  ki(8, 't-relay', 'LetsEncrypt 憑證更新', 18, [7]),
+  ki(9, 't-docker', 'compose 重置步驟', 12, [7], {
+    source: { kind: 'message', convId: 'g1', messageKey: 'mem-b:2' },
+  }),
+  ki(10, 't-docker', '儲存節點 volume', 9, [1, 9]),
+  ki(11, 't-onb', 'CAFECA 登入流程', 15, [6]),
+  ki(12, 't-onb', '測試帳號', 3, [11]),
+  ki(13, 't-goal', 'OKR 寫法', 25),
+  ki(14, 't-goal', '週目標怎麼拆', 2, [13]),
+  ki(15, 't-leave', '特休計算', 22),
+  ki(16, 't-leave', '補打卡規則', 16, [15]),
+  ki(17, 't-vis', '焦點山配色', 26),
+  ki(18, 't-vis', '星空夜色', 1, [17]),
+  ki(19, 't-vis', '狀態徽章', 14, [17]),
 ];
 let manualFocus: string | null = null;
 let myLook = look(0, 5, 2);
@@ -406,6 +486,92 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     lunchBreak,
     timezone: 'Asia/Taipei',
   }),
+  kb: () => ({ categories: kbCats, topics: kbTopics, items: kbItems }),
+  kb_save: (a) => {
+    const input = a.input as KbInput;
+    const key = input.key || `${state.me}:k${Date.now()}`;
+    const old = kbItems.find((x) => x.key === key);
+    const item: KbItem = {
+      key,
+      author: old?.author ?? state.me,
+      title: input.title,
+      body: input.body,
+      tags: input.tags,
+      topicId: input.topicId,
+      refs: input.refs,
+      source: old?.source ?? input.source ?? { kind: 'manual' },
+      createdAt: old?.createdAt ?? Date.now(),
+      updatedAt: Date.now(),
+      updatedBy: state.me,
+    };
+    kbItems = [...kbItems.filter((x) => x.key !== key), item];
+    touch();
+    return key;
+  },
+  kb_delete: (a) => {
+    kbItems = kbItems.filter((x) => x.key !== a.key);
+    touch();
+  },
+  kb_create_category: (a) => {
+    const id = 'c' + Date.now();
+    kbCats.push({ id, name: String(a.name), createdAt: Date.now(), resolved: id });
+    touch();
+    return id;
+  },
+  kb_create_topic: (a) => {
+    const id = 't' + Date.now();
+    kbTopics.push({
+      id,
+      name: String(a.name),
+      categoryId: String(a.category),
+      createdAt: Date.now(),
+      resolved: id,
+    });
+    touch();
+    return id;
+  },
+  kb_rename: (a) => {
+    const list: { id: string; name: string }[] = a.kind === 'category' ? kbCats : kbTopics;
+    const x = list.find((y) => y.id === a.id);
+    if (x) x.name = String(a.name);
+    touch();
+  },
+  kb_merge: (a) => {
+    if (a.kind === 'category') {
+      const x = kbCats.find((y) => y.id === a.from);
+      if (x) x.resolved = String(a.into);
+      kbTopics.forEach((tp) => {
+        if (tp.categoryId === a.from) tp.categoryId = String(a.into);
+      });
+    } else {
+      const x = kbTopics.find((y) => y.id === a.from);
+      if (x) x.resolved = String(a.into);
+    }
+    touch();
+  },
+  kb_from_message: (a) => {
+    const m = msgs.find((x) => `${x.author}:${x.id}` === a.messageKey);
+    if (!m) throw new Error('找不到訊息');
+    const key = `${state.me}:k${Date.now()}`;
+    kbItems.push({
+      key,
+      author: state.me,
+      title: String(a.title),
+      body: m.body,
+      tags: [],
+      topicId: String(a.topic),
+      refs: [],
+      source:
+        a.attachment === null || a.attachment === undefined
+          ? { kind: 'message', convId: m.conv, messageKey: String(a.messageKey) }
+          : { kind: 'file', convId: m.conv, attachment: null },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      updatedBy: state.me,
+    });
+    touch();
+    return key;
+  },
   plans: (a) => (a.mineOnly ? plans.filter((x) => x.mine) : plans),
   save_plan: (a) => {
     const input = a.input as PlanInput;

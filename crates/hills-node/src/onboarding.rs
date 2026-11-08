@@ -24,7 +24,7 @@ use hills_proto::cafeca::{
 };
 use hills_proto::mailbox::JoinState;
 use hills_proto::ticket::{MailboxTicket, OrgTicket, Ticket};
-use hills_proto::{FORMAT_VERSION, KeyFamily, OrgId, PeerAddr, Pub32};
+use hills_proto::{FORMAT_VERSION, KeyFamily, OrgId, PeerAddr, ProtoError, Pub32};
 use iroh::address_lookup::MemoryLookup;
 use iroh::{Endpoint, RelayMode, SecretKey, endpoint::presets};
 
@@ -143,6 +143,19 @@ async fn temp_endpoint(device: &DeviceKey, mailbox: &PeerAddr) -> Result<Endpoin
         .await?)
 }
 
+/// 連線碼解析錯誤：版本不符時說明是伺服器（或發出連線碼的裝置）版本不同（§17.9）。
+fn ticket_error(e: ProtoError, what: &str) -> anyhow::Error {
+    match e {
+        ProtoError::UnsupportedVersion(v) if v < FORMAT_VERSION => anyhow!(
+            "{what}是舊版格式（v{v}，目前 v{FORMAT_VERSION}）：請將伺服器更新到目前版本、依部署文件重置後，改用新的{what}"
+        ),
+        ProtoError::UnsupportedVersion(v) => {
+            anyhow!("{what}是較新版本（v{v}，目前 v{FORMAT_VERSION}）：請更新 Hills")
+        }
+        _ => anyhow!("{what}無效"),
+    }
+}
+
 fn pub_of(keys: &MemberKeys) -> (Pub32, Pub32) {
     (
         Pub32(keys.identity_public().to_bytes()),
@@ -178,13 +191,14 @@ impl Onboarding {
         let (org_root, mailbox, ok) = match &kind {
             OnboardKind::Create(c) => {
                 let mailbox = MailboxTicket::from_code(&c.mailbox_code)
-                    .context("mailbox 連線碼無效")?
+                    .map_err(|e| ticket_error(e, "mailbox 連線碼"))?
                     .mailbox;
                 let ok = OrgRootKey::generate()?;
                 (ok.public(), mailbox, Some(ok))
             }
             OnboardKind::Join { org_code, .. } | OnboardKind::Recover { org_code, .. } => {
-                let t = OrgTicket::from_code(org_code).context("組織連線碼無效")?;
+                let t =
+                    OrgTicket::from_code(org_code).map_err(|e| ticket_error(e, "組織連線碼"))?;
                 (t.org_root, t.mailbox, None)
             }
         };

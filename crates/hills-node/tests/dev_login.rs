@@ -135,3 +135,18 @@ async fn dev_login_requires_both_sides() {
     );
     real.router.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn old_ticket_version_is_explained() {
+    // v1 時代的 mailbox 連線碼（D41 之前的伺服器）
+    let mut t = MailboxTicket::from_code(&dev_mailbox().await.code).unwrap();
+    t.v = 1;
+    let code = t.to_code().unwrap();
+    let d = tempfile::tempdir().unwrap();
+    let err = Onboarding::begin_with(d.path(), store(), create_kind(&code), dev_opts(), None)
+        .await
+        .err()
+        .expect("舊版連線碼應被拒絕")
+        .to_string();
+    assert!(err.contains("舊版") && err.contains("v1"), "{err}");
+}

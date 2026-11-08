@@ -1,5 +1,5 @@
 /*
- * 設計 token（D22、D40「晴空 · 焦點山」、ui-spec「視覺語言」、development-guidelines §4.2）。
+ * 設計 token（D22、D40「晴空 · 焦點山」、D45；完整說明見 docs/design-system.md）。
  * 元件只能使用這些變數，不得寫死色碼。主題色 --hills-primary 可由組織設定覆寫（D20）。
  */
 @import 'tailwindcss';
@@ -187,6 +187,9 @@
   --color-st-offline-text: var(--hills-st-offline-text);
   --radius-card: var(--hills-radius-card);
   --radius-control: var(--hills-radius-control);
+  /* 字級（D45，docs/design-system.md「字級」）：額外的 11 px 徽章字級 */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
   --font-sans: 'Inter', 'Noto Sans TC', system-ui, -apple-system, 'Segoe UI', sans-serif;
   /* 版面（D43，ui-spec「版面」）：≥ 1600 寬放大欄寬與間距 */
   --breakpoint-wide: 1600px;

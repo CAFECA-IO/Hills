@@ -37,6 +37,8 @@
 | `--hills-mountain` | `#C9DAF2` | `#2A3B55` | 焦點山 |
 | `--hills-hill-near` / `--hills-hill-mid` / `--hills-hill-far` | `#B6DEC6` / `#CDEBD8` / `#C4E5D0` | `#1E3A2D` / `#22402F` / `#264535` | 辦公室山丘 |
 | `--hills-level-year` / `-quarter` / `-month` / `-week` / `-day` | `#7C5CFC` / `#1F6FEB` / `#0F7B5F` / `#D9661F` / `#1E9E6A` | `#9D85FF` / `#4C8DF6` / `#3CC49A` / `#F29A5C` / `#4FCB8D` | 目標層級（紫、藍、深綠、橘、綠），一律搭配層級文字 |
+| `--hills-night-top` / `-bottom` / `--hills-star` / `--hills-star-dim` / `--hills-night-text` | `#0B1730` / `#1B2D52` / `#FFF6D6` / `#7F93B8` / `#C9D6EE` | 同左 | 知識庫星空（亮暗色相同） |
+| `--hills-rel-ref` / `-topic` / `-task` / `-conv` | `#FFD166` / `#8FB8FF` / `#7EE0B5` / `#F4A3C8` | 同左 | 知識關聯（引用、同主題、同任務、同對話；搭配線型與圖例） |
 
 - **狀態**（顏色 + 徽章形狀 + 角色姿勢 + 文字，四者同時出現；文字色對白底 ≥ 4.5:1）：
 

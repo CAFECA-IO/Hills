@@ -967,6 +967,95 @@ pub async fn kb_from_message(
         .map_err(e))
 }
 
+// ── 日 / 週報（technical-design §16.13）────────────────────────
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportMine {
+    report: Option<hills_node::reports::Report>,
+    draft: Option<String>,
+}
+
+fn report_kind(kind: &str) -> CmdResult<hills_node::reports::ReportKind> {
+    use hills_node::reports::ReportKind;
+    match kind {
+        "daily" => Ok(ReportKind::Daily),
+        "weekly" => Ok(ReportKind::Weekly),
+        _ => Err("未知的報表種類".into()),
+    }
+}
+
+#[tauri::command]
+pub async fn report_mine(
+    state: State<'_, AppState>,
+    kind: String,
+    period: String,
+) -> CmdResult<ReportMine> {
+    let k = report_kind(&kind)?;
+    with_node!(state, n => Ok(ReportMine {
+        report: n.my_report(k, &period).map_err(e)?,
+        draft: n.report_local().drafts.get(&format!("{kind}:{period}")).cloned(),
+    }))
+}
+
+#[tauri::command]
+pub async fn report_publish(
+    state: State<'_, AppState>,
+    input: hills_node::reports::ReportInput,
+) -> CmdResult<hills_node::reports::Report> {
+    with_node!(state, n => {
+        let (kind, period) = (input.kind, input.period.clone());
+        let r = n.publish_report(input).await.map_err(e)?;
+        n.set_report_draft(kind, &period, None).map_err(e)?;
+        Ok(r)
+    })
+}
+
+#[tauri::command]
+pub async fn report_team(
+    state: State<'_, AppState>,
+    team: String,
+    kind: String,
+    period: String,
+) -> CmdResult<Vec<hills_node::reports::Report>> {
+    let k = report_kind(&kind)?;
+    with_node!(state, n => n.team_reports(&team, k, &period).map_err(e))
+}
+
+#[tauri::command]
+pub async fn report_draft_set(
+    state: State<'_, AppState>,
+    kind: String,
+    period: String,
+    draft: Option<String>,
+) -> CmdResult<()> {
+    let k = report_kind(&kind)?;
+    with_node!(state, n => n.set_report_draft(k, &period, draft).map_err(e))
+}
+
+/// 週五提醒產生週報（每週一次，本週已發佈就不提醒）。
+#[tauri::command]
+pub async fn report_remind(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    week: String,
+    title: String,
+    body: String,
+) -> CmdResult<bool> {
+    use tauri_plugin_notification::NotificationExt;
+    with_node!(state, n => {
+        let published = n
+            .my_report(hills_node::reports::ReportKind::Weekly, &week)
+            .map_err(e)?
+            .is_some();
+        if published || !n.mark_report_reminded(&week).map_err(e)? {
+            return Ok(false);
+        }
+        let _ = app.notification().builder().title(title).body(body).show();
+        Ok(true)
+    })
+}
+
 // ── 每日 Scrum（technical-design §16.12）──────────────────────
 
 #[derive(Serialize)]

@@ -37,7 +37,11 @@ pub enum MemberSection {
     },
     Attendance(String),
     Requests,
-    Reports,
+    /// 日 / 週報：`reports/<teamId>/<yyyy>`（technical-design §16.13）
+    Reports {
+        team: String,
+        year: String,
+    },
     /// 本人的私密設定，例如邀請 secret（technical-design §16.2）
     Secrets,
 }
@@ -114,7 +118,16 @@ impl DocKind {
                     },
                     ["attendance", ym] if is_month(ym) => MemberSection::Attendance((*ym).into()),
                     ["requests"] => MemberSection::Requests,
-                    ["reports"] => MemberSection::Reports,
+                    ["reports", t, y]
+                        if is_segment(t)
+                            && y.len() == 4
+                            && y.bytes().all(|c| c.is_ascii_digit()) =>
+                    {
+                        MemberSection::Reports {
+                            team: (*t).into(),
+                            year: (*y).into(),
+                        }
+                    }
                     ["secrets"] => MemberSection::Secrets,
                     _ => return None,
                 };
@@ -168,6 +181,16 @@ mod tests {
                 }
             })
         );
+        assert_eq!(
+            DocKind::parse(&format!("member/{m}/reports/t-1/2026")),
+            Some(DocKind::Member {
+                owner: m,
+                section: MemberSection::Reports {
+                    team: "t-1".into(),
+                    year: "2026".into()
+                }
+            })
+        );
         assert_eq!(DocKind::parse("kb/meta"), Some(DocKind::KbMeta));
         assert_eq!(
             DocKind::parse("kb/items/2026-11"),
@@ -201,6 +224,8 @@ mod tests {
             "conv/c1/log/202611".into(),
             format!("member/{m}/scrum/2026-11"),
             format!("member/{m}/scrum/t/2026-1"),
+            format!("member/{m}/reports"),
+            format!("member/{m}/reports/t/26"),
             "kb".into(),
             "kb/items".into(),
             "kb/items/2026-1".into(),

@@ -169,6 +169,27 @@ pub async fn save_target_file(
     Ok(Some(registry(&state)?.add_target_file(path)))
 }
 
+/// 匯出文字檔（報表 Markdown，technical-design §16.13）：存檔對話框選路徑後寫入；取消時回傳 false。
+#[tauri::command]
+pub async fn export_text(app: AppHandle, name: String, content: String) -> CmdResult<bool> {
+    if content.len() > 1024 * 1024 {
+        return Err("內容過大".into());
+    }
+    let name = crate::files::safe_component(&name);
+    let picked = tokio::task::spawn_blocking(move || {
+        app.dialog().file().set_file_name(name).blocking_save_file()
+    })
+    .await
+    .map_err(e)?;
+    let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
+        return Ok(false);
+    };
+    tokio::fs::write(&path, content.as_bytes())
+        .await
+        .map_err(e)?;
+    Ok(true)
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TargetDir {

@@ -17,6 +17,8 @@ import type {
   KbTopic,
   PlanInput,
   PlanView,
+  Report,
+  ReportInput,
   ScrumInput,
   ScrumReport,
   PresenceState,
@@ -315,6 +317,26 @@ let scrumReports: ScrumReport[] = [
 ];
 const scrumDrafts: Record<string, string> = {};
 let scrumReminder = { org: '17:30', mine: null as string | null };
+// 示範報表（虛構）
+let reports: Report[] = [
+  {
+    member: 'mem-a',
+    kind: 'weekly',
+    period: periodsAt(Date.now(), 'Asia/Taipei').week,
+    sections: {
+      progress:
+        '**完成**\n- 邀請碼流程\n\n**進行中**\n- SAS 驗證\n\n**阻礙**\n- 需要 relay 測試主機',
+      okr: '- 招募兩位工程師 — 50%',
+      attendance: '出勤資料將於假勤功能上線後自動帶入。',
+      next: '- 檢查 relay',
+    },
+    publishedTo: ['default'],
+    generatedAt: now0 - 7200_000,
+    publishedAt: now0 - 3600_000,
+    editedAt: null,
+  },
+];
+const reportDrafts: Record<string, string> = {};
 let manualFocus: string | null = null;
 let myLook = look(0, 5, 2);
 const syncStatus = (t: MockTask) => {
@@ -637,6 +659,40 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     touch('org');
   },
   scrum_remind: () => false,
+  report_mine: (a) => ({
+    report:
+      reports.find((r) => r.member === state.me && r.kind === a.kind && r.period === a.period) ??
+      null,
+    draft: reportDrafts[`${String(a.kind)}:${String(a.period)}`] ?? null,
+  }),
+  report_publish: (a) => {
+    const input = a.input as ReportInput;
+    const old = reports.find(
+      (r) => r.member === state.me && r.kind === input.kind && r.period === input.period,
+    );
+    const r: Report = {
+      member: state.me,
+      kind: input.kind,
+      period: input.period,
+      sections: input.sections,
+      publishedTo: input.publishedTo,
+      generatedAt: input.generatedAt ?? Date.now(),
+      publishedAt: Date.now(),
+      editedAt: old ? Date.now() : null,
+    };
+    reports = [...reports.filter((x) => x !== old), r];
+    delete reportDrafts[`${input.kind}:${input.period}`];
+    touch();
+    return r;
+  },
+  report_team: (a) => reports.filter((r) => r.kind === a.kind && r.period === a.period),
+  report_draft_set: (a) => {
+    const k = `${String(a.kind)}:${String(a.period)}`;
+    if (a.draft === null) delete reportDrafts[k];
+    else reportDrafts[k] = String(a.draft);
+  },
+  report_remind: () => false,
+  export_text: () => true,
   plans: (a) => (a.mineOnly ? plans.filter((x) => x.mine) : plans),
   save_plan: (a) => {
     const input = a.input as PlanInput;

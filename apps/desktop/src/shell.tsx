@@ -18,6 +18,7 @@ import { Portrait, StatusBadge, stateLabel } from './figures';
 import { Goals } from './goals';
 import { Home } from './home';
 import { Knowledge } from './kb';
+import { Reports, useWeeklyReportReminder } from './reports';
 import { Scrum, useScrumReminder } from './scrum';
 import { useIdleAway, useLoad, useSyncStatus } from './hooks';
 import {
@@ -44,7 +45,7 @@ import { LOOK_PALETTE, lookOf } from './summit';
 import { Tasks } from './tasks';
 import { Button, Card, CodeBox, ConfirmButton, ErrorText, Field, useAction } from './ui';
 
-type Page = 'home' | 'goals' | 'team' | 'tasks' | 'scrum' | 'chat' | 'kb' | 'settings';
+type Page = 'home' | 'goals' | 'team' | 'tasks' | 'scrum' | 'reports' | 'chat' | 'kb' | 'settings';
 
 const SYNC_ICON: Record<SyncStatus, string> = {
   Synced: '●',
@@ -77,6 +78,7 @@ const NAV_ICON: Record<Page, string> = {
   team: 'M7 7m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M2 16c.8-3 3-4.5 5-4.5s4.2 1.5 5 4.5M14 8m-2.4 0a2.4 2.4 0 1 0 4.8 0a2.4 2.4 0 1 0 -4.8 0M12 15.5c.5-2 1.7-3 3-3s2.6 1 3 3',
   tasks: 'M4 5h2M4 10h2M4 15h2M9 5h7M9 10h7M9 15h7',
   scrum: 'M4 3.5h12v13H4zM7 7.5l1.5 1.5L11 6.5M7 12.5h6',
+  reports: 'M5 2.5h7l3 3v12H5zM12 2.5v3h3M7.5 10h5M7.5 13h5M7.5 7h2',
   chat: 'M3 4.5h14v9H8l-4 3v-3H3z',
   kb: 'M10 2.5l2 4.6 5 .5-3.8 3.3 1.1 4.9L10 13.3l-4.3 2.5 1.1-4.9L3 7.6l5-.5z',
   settings:
@@ -89,13 +91,24 @@ const PAGE_TITLE: Record<Page, MessageKey> = {
   team: 'team.title',
   tasks: 'nav.tasks',
   scrum: 'nav.scrum',
+  reports: 'nav.reports',
   chat: 'chat.title',
   kb: 'nav.kb',
   settings: 'settings.title',
 };
 
 /** 導覽列順序（D43）。 */
-const NAV: Page[] = ['home', 'goals', 'tasks', 'scrum', 'chat', 'kb', 'team', 'settings'];
+const NAV: Page[] = [
+  'home',
+  'goals',
+  'tasks',
+  'scrum',
+  'reports',
+  'chat',
+  'kb',
+  'team',
+  'settings',
+];
 
 const noJoins = () => Promise.resolve<JoinRequestView[]>([]);
 
@@ -128,6 +141,7 @@ export function Shell({ info }: { info: AppInfo }) {
   }, []);
   useCommandShortcut(() => setPalette(true));
   useScrumReminder(overview.data?.timezone ?? null);
+  useWeeklyReportReminder(overview.data?.timezone ?? null);
   const go = (p: Page) => {
     setPage(p);
     if (p !== 'chat') setOpenConv(null);
@@ -216,12 +230,16 @@ export function Shell({ info }: { info: AppInfo }) {
             <SyncIndicator />
           </header>
           <main className="min-h-0 flex-1 px-4 pb-4 wide:px-6 wide:pb-6">
-            {page !== 'home' && page !== 'goals' && page !== 'kb' && page !== 'scrum' && (
-              <PageHead
-                title={t(PAGE_TITLE[page])}
-                subtitle={page === 'tasks' ? undefined : orgName}
-              />
-            )}
+            {page !== 'home' &&
+              page !== 'goals' &&
+              page !== 'kb' &&
+              page !== 'scrum' &&
+              page !== 'reports' && (
+                <PageHead
+                  title={t(PAGE_TITLE[page])}
+                  subtitle={page === 'tasks' ? undefined : orgName}
+                />
+              )}
             {overview.error && <ErrorText message={overview.error} />}
             {page === 'home' && overview.data && (
               <Home
@@ -250,6 +268,14 @@ export function Shell({ info }: { info: AppInfo }) {
                 teams={overview.data.teams}
                 tasks={tasks.data ?? []}
                 focusId={focus.data?.task?.id ?? null}
+                timezone={overview.data.timezone}
+              />
+            )}
+            {page === 'reports' && overview.data && (
+              <Reports
+                members={overview.data.members}
+                teams={overview.data.teams}
+                tasks={tasks.data ?? []}
                 timezone={overview.data.timezone}
               />
             )}

@@ -256,6 +256,41 @@ export interface ScrumReminder {
   mine: string | null;
 }
 
+// ── 日 / 週報（technical-design §16.13）──
+
+export type ReportKind = 'daily' | 'weekly';
+
+export interface ReportSections {
+  progress: string;
+  okr: string;
+  attendance: string;
+  next: string;
+}
+
+export interface Report {
+  member: string;
+  kind: ReportKind;
+  period: string;
+  sections: ReportSections;
+  publishedTo: string[];
+  generatedAt: number;
+  publishedAt: number;
+  editedAt: number | null;
+}
+
+export interface ReportInput {
+  kind: ReportKind;
+  period: string;
+  sections: ReportSections;
+  publishedTo: string[];
+  generatedAt?: number | null;
+}
+
+export interface ReportMine {
+  report: Report | null;
+  draft: string | null;
+}
+
 export interface PlanInput {
   id?: string | null;
   level: PlanLevel;
@@ -501,6 +536,16 @@ export const api = {
   setOrgScrumReminder: (hhmm: string) => call<void>('set_org_scrum_reminder', { hhmm }),
   scrumRemind: (date: string, title: string, body: string) =>
     call<boolean>('scrum_remind', { date, title, body }),
+  reportMine: (kind: ReportKind, period: string) =>
+    call<ReportMine>('report_mine', { kind, period }),
+  reportPublish: (input: ReportInput) => call<Report>('report_publish', { input }),
+  reportTeam: (team: string, kind: ReportKind, period: string) =>
+    call<Report[]>('report_team', { team, kind, period }),
+  reportDraftSet: (kind: ReportKind, period: string, draft: string | null) =>
+    call<void>('report_draft_set', { kind, period, draft }),
+  reportRemind: (week: string, title: string, body: string) =>
+    call<boolean>('report_remind', { week, title, body }),
+  exportText: (name: string, content: string) => call<boolean>('export_text', { name, content }),
   focus: () => call<FocusView>('focus'),
   setFocus: (team: string | null, task: string | null) => call<void>('set_focus', { team, task }),
   setProfile: (look: Look) => call<void>('set_profile', { look }),

@@ -260,3 +260,28 @@ body {
 .scroll-panel:focus-visible::-webkit-scrollbar-thumb {
   background: var(--color-line);
 }
+
+/* 報表列印（ui-spec「報表」）：只印 .print-area */
+.print-area {
+  display: none;
+}
+@media print {
+  html,
+  body,
+  #root {
+    height: auto;
+    overflow: visible;
+  }
+  body > *:not(.print-area) {
+    display: none !important;
+  }
+  .print-area {
+    display: block;
+    font-family: var(--font-sans);
+    font-size: 12pt;
+    line-height: 1.6;
+    color: #000;
+    background: #fff;
+    margin: 0;
+  }
+}

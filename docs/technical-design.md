@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.15 草案 · 2026-11-08 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.16 草案 · 2026-11-08 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -165,6 +165,8 @@ CAFECA 帳戶（chainId + 身分合約地址 account，由使用者的 Passkey /
 | `member/<id>/secrets` | 本人 | 本人 | `PK_member` | 本人的私密設定 |
 | `approvals/<approverId>` | 核准者本人 | 申請者、管理者 | 申請者的 `AK_member` | 核准 / 退回決定 |
 | `member/<id>/reports` | 本人 | 依發佈範圍 | `TK_team` | 日 / 週報 |
+| `kb/meta` | 全體成員 | 全員 | `GK` | 知識庫的分類與主題（§16.11） |
+| `kb/items/<yyyy-mm>` | 全體成員（每則只限作者與管理者） | 全員 | `GK` | 知識（§16.11） |
 
 - 申請與核准分屬不同寫入者的文件，申請狀態由投影層組合兩者得出，避免多人寫同一欄位造成衝突或越權。
 - `AK_member`（出勤金鑰）：每位成員一把，封裝給本人、其小組負責人與所有管理者；負責人異動時輪替。
@@ -820,6 +822,32 @@ member/<id>/plans/{private | team/<teamId> | org} = {
 - 關鍵結果：`manual` 為真 → `(current − start) / (target − start)`（限制在 0–100）；否則有以 `krRef` 連結的待辦 → 其平均；都沒有 → 以 `current` 計算。
 - 年 / 季目標：有關鍵結果 → 關鍵結果平均；否則子項目平均；都沒有 → 0。
 - `progressOverride` 優先於自動計算；讀者看不到的子項目不列入計算。
+
+### 16.11 知識庫（v0.16，D42「星空」）
+
+```
+kb/meta = {
+  "cat:<ULID>":   { name, createdAt, createdBy, mergedInto? },
+  "topic:<ULID>": { name, categoryId, createdAt, createdBy, mergedInto? },
+}
+kb/items/<yyyy-mm> = {                       // 依知識 id（ULID）的建立月份（UTC）分份
+  "<作者 memberId>:<ULID>": "<JSON 字串>"     // 見下
+}
+KbItem JSON = { v: 1, title, body /* Markdown */, tags: string[], topicId,
+                refs: string[] /* 其他知識的 key */, source, createdAt, updatedAt, updatedBy }
+source = { kind: "manual" }
+       | { kind: "message", convId, messageKey }
+       | { kind: "file", convId, attachment /* §14.2 Attachment，含 fileKey */ }
+       | { kind: "task", teamId, taskId }
+```
+
+- **寫入規則**：
+  - `kb/meta`：任何成員可建立分類與主題、改名、合併（設定 `mergedInto`）；讀取時沿 `mergedInto` 鏈找到最終的分類 / 主題（遇到循環時停在鏈上 id 最小者）。
+  - `kb/items/*`：任何成員可新增；驗證層規則 `own_keys_or_admin`——每個 op 都必須在根物件上放入字串或刪除 key，且 key 以作者 memberId 開頭；管理者可修改或刪除任何 key。因此「只有作者與管理者能編輯或刪除」在驗證層強制，不只是介面限制。
+- **關聯**（投影層計算，不存入文件）：引用 = `refs`；同主題 = 相同（合併後的）主題；同任務 = 相同來源任務；同對話 = 相同來源對話。被引用次數 = 其他知識 `refs` 指到它的數量。`refs` 指到不存在的知識時忽略。
+- 限制：標題 1–200 字、內容 ≤ 64 KB、標籤 ≤ 10 個、引用 ≤ 20 個、附件 JSON ≤ 512 KB。
+- **隱私**：知識內容與 `source` 全組織可讀。從對話「存成知識」會把該訊息內容與 convId 公開給全組織；從檔案建立會把附件（含 `fileKey`）公開，等於全組織都能下載該檔案，介面在送出前明確提示。伺服器仍只看到 `GK` 密文。
+- M3 的 AI 歸納建議存為本機的待套用項目，使用者按「套用」後才以上述格式寫入（D17）。
 
 ### 16.9 部署（M0）
 

@@ -437,8 +437,10 @@ impl Inner {
             let kinds: BTreeMap<String, conv::ConvKind> =
                 st.convs.iter().map(|(k, c)| (k.clone(), c.kind)).collect();
             for m in &new_messages {
-                let notify =
-                    kinds.get(&m.conv) == Some(&conv::ConvKind::Dm) || m.mentions.contains(&me);
+                // 連結任務的系統訊息不通知（§14.2 v0.14）
+                let notify = !m.is_task_link()
+                    && (kinds.get(&m.conv) == Some(&conv::ConvKind::Dm)
+                        || m.mentions.contains(&me));
                 self.emit(Event::Message {
                     conv: m.conv.clone(),
                     author: m.author,

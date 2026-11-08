@@ -19,6 +19,8 @@ pub struct ConvView {
     pub info: ConvInfo,
     pub last: Option<Message>,
     pub unread: u32,
+    /// 對話目前連結的任務（最新一則連結訊息，§14.2 v0.14）
+    pub task: Option<conv::TaskRef>,
 }
 
 fn recipients(st: &State, members: &BTreeSet<MemberId>) -> Result<Vec<(MemberId, Pub32)>> {
@@ -178,11 +180,12 @@ impl Node {
                 let seen = marks.0.get(&info.id).copied().unwrap_or(0);
                 let unread = msgs
                     .iter()
-                    .filter(|m| m.author != me && m.created_at > seen)
+                    .filter(|m| !m.is_task_link() && m.author != me && m.created_at > seen)
                     .count() as u32;
                 ConvView {
-                    last: msgs.last().cloned(),
+                    last: msgs.iter().rev().find(|m| !m.is_task_link()).cloned(),
                     unread,
+                    task: conv::linked_task(&msgs),
                     info,
                 }
             })
@@ -258,11 +261,6 @@ impl Node {
         mentions: &[MemberId],
         attachments: serde_json::Value,
     ) -> Result<Message> {
-        let inner = &self.inner;
-        let me = self.member_id();
-        let now = now_ms();
-        let epoch = conv_epoch(&lock(&inner.st), conv_id)?;
-        let doc_id = conv::log_doc(conv_id, &conv::month_of(now), epoch);
         let kind = if attachments.is_null() {
             "text"
         } else {
@@ -271,6 +269,50 @@ impl Node {
         if body.trim().is_empty() && attachments.is_null() {
             bail!("訊息不能空白");
         }
+        self.post_message(conv_id, kind, body, mentions, attachments, None)
+            .await
+    }
+
+    /// 把對話連到任務或取消連結（任何現任成員，§14.2 v0.14）。任務必須在本人所屬的小組。
+    pub async fn set_conv_task(&self, conv_id: &str, task: Option<(&str, &str)>) -> Result<()> {
+        let task = match task {
+            Some((team, id)) => {
+                if !self.tasks()?.iter().any(|t| t.team == team && t.id == id) {
+                    bail!("找不到這個任務，或你不是該小組的成員");
+                }
+                Some(conv::TaskRef {
+                    team: team.to_owned(),
+                    id: id.to_owned(),
+                })
+            }
+            None => None,
+        };
+        self.post_message(
+            conv_id,
+            conv::KIND_TASK,
+            "",
+            &[],
+            serde_json::Value::Null,
+            task,
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn post_message(
+        &self,
+        conv_id: &str,
+        kind: &str,
+        body: &str,
+        mentions: &[MemberId],
+        attachments: serde_json::Value,
+        task: Option<conv::TaskRef>,
+    ) -> Result<Message> {
+        let inner = &self.inner;
+        let me = self.member_id();
+        let now = now_ms();
+        let epoch = conv_epoch(&lock(&inner.st), conv_id)?;
+        let doc_id = conv::log_doc(conv_id, &conv::month_of(now), epoch);
         let mut key = String::new();
         let heads = {
             let mut st = lock(&inner.st);
@@ -290,6 +332,7 @@ impl Node {
                 body,
                 mentions: &mentions,
                 attachments,
+                task,
             };
             inner.change_locked(&mut st, &doc_id, |doc| {
                 key = conv::append(doc, &me, &msg, now)?;

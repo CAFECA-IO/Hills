@@ -1040,6 +1040,24 @@ pub struct MessageView {
     body: String,
     mentions: Vec<String>,
     attachments: serde_json::Value,
+    task: Option<TaskRefView>,
+}
+
+/// 對話連結的任務（technical-design §14.2 v0.14）。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskRefView {
+    team: String,
+    id: String,
+}
+
+impl From<hills_node::conv::TaskRef> for TaskRefView {
+    fn from(t: hills_node::conv::TaskRef) -> Self {
+        Self {
+            team: t.team,
+            id: t.id,
+        }
+    }
 }
 
 impl From<Message> for MessageView {
@@ -1053,6 +1071,7 @@ impl From<Message> for MessageView {
             body: m.body,
             mentions: m.mentions.iter().map(|x| x.to_string()).collect(),
             attachments: m.attachments,
+            task: m.task.map(Into::into),
         }
     }
 }
@@ -1068,6 +1087,7 @@ pub struct ConvRow {
     members: Vec<String>,
     last: Option<MessageView>,
     unread: u32,
+    task: Option<TaskRefView>,
 }
 
 #[tauri::command]
@@ -1084,6 +1104,7 @@ pub async fn conversations(state: State<'_, AppState>) -> CmdResult<Vec<ConvRow>
             members: v.info.members.iter().map(|m| m.to_string()).collect(),
             last: v.last.map(Into::into),
             unread: v.unread,
+            task: v.task.map(Into::into),
         })
         .collect()))
 }
@@ -1168,6 +1189,22 @@ pub async fn remove_conv_member(
 #[tauri::command]
 pub async fn rename_conv(state: State<'_, AppState>, conv: String, name: String) -> CmdResult<()> {
     with_node!(state, n => n.rename_conv(&conv, &name).await.map_err(e))
+}
+
+/// 把對話連到任務；`team` / `task` 省略時取消連結（ui-spec「聊天」焦點營地）。
+#[tauri::command]
+pub async fn set_conv_task(
+    state: State<'_, AppState>,
+    conv: String,
+    team: Option<String>,
+    task: Option<String>,
+) -> CmdResult<()> {
+    let link = match (&team, &task) {
+        (Some(team), Some(task)) => Some((team.as_str(), task.as_str())),
+        (None, None) => None,
+        _ => return Err("需同時指定小組與任務".into()),
+    };
+    with_node!(state, n => n.set_conv_task(&conv, link).await.map_err(e))
 }
 
 /// 前端開啟（或離開）某個對話：標記已讀並記錄，用於決定是否通知。

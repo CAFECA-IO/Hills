@@ -105,3 +105,18 @@ export function defaultDeviceName(): string {
   if (/Linux/i.test(ua)) return 'Linux';
   return '';
 }
+
+/** CSS media query 是否符合（視窗大小改變時更新）。 */
+export function useMediaQuery(query: string): boolean {
+  const get = () => typeof window !== 'undefined' && window.matchMedia?.(query).matches === true;
+  const [match, setMatch] = useState(get);
+  useEffect(() => {
+    const mq = window.matchMedia?.(query);
+    if (!mq) return;
+    const on = () => setMatch(mq.matches);
+    on();
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, [query]);
+  return match;
+}

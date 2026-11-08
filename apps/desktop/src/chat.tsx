@@ -3,7 +3,23 @@ import { cancel, loadPending, parseAttachments, resume } from './share';
 /** M1 對話（ui-spec「聊天」M1 畫面、technical-design §14）。 */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import Markdown from 'react-markdown';
-import { api, type ConvRow, type MemberView, type MessageView } from './api';
+import {
+  api,
+  type ConvRow,
+  type MemberView,
+  type MessageView,
+  type Task,
+  type TeamView,
+} from './api';
+import { knockTargets, resolveLinked, timeline } from './camp-utils';
+import {
+  ConvDrawer,
+  ConvMountain,
+  KnockHint,
+  linkRowText,
+  MessageActions,
+  SystemRow,
+} from './camp';
 import {
   activeMention,
   convTitle,
@@ -12,17 +28,20 @@ import {
   insertMention,
   type MentionCandidate,
 } from './chat-utils';
-import { useLoad } from './hooks';
+import { useLoad, useMediaQuery } from './hooks';
 import { formatTime, t } from './i18n';
 import { Button, ConfirmButton, ErrorText, Field, useAction } from './ui';
 
 interface Props {
   members: MemberView[];
+  /** 我所屬小組的任務（焦點營地連結任務用） */
+  tasks: Task[];
+  teams: TeamView[];
   /** 從首頁開啟時直接進入的對話 */
   initial?: string | null;
 }
 
-export function Chat({ members, initial = null }: Props) {
+export function Chat({ members, tasks, teams, initial = null }: Props) {
   const convs = useLoad(api.conversations, ['convs', 'message', 'doc', 'roster']);
   const [pending, setPending] = useState<string[]>([]);
   useEffect(() => {
@@ -135,6 +154,8 @@ export function Chat({ members, initial = null }: Props) {
               me={me}
               members={members}
               nameOf={nameOf}
+              tasks={tasks}
+              teams={teams}
             />
           ) : (
             <p className="m-auto text-sm text-muted">{t('chat.pick')}</p>
@@ -222,22 +243,44 @@ function NewConversation({
   );
 }
 
+/** 抽屜的手動開關在本次執行期間記住（ui-spec「聊天」焦點營地）。 */
+let drawerPref: boolean | null = null;
+
 function Conversation({
   conv,
   me,
   members,
   nameOf,
+  tasks,
+  teams,
 }: {
   conv: ConvRow;
   me: string;
   members: MemberView[];
   nameOf: (id: string) => string;
+  tasks: Task[];
+  teams: TeamView[];
 }) {
   const msgs = useLoad(() => api.messages(conv.id), ['message', 'doc', 'convs']);
-  const [panel, setPanel] = useState(false);
+  const wide = useMediaQuery('(min-width: 1600px)');
+  const [drawer, setDrawer] = useState<boolean | null>(drawerPref);
+  const open = drawer ?? wide;
+  const toggle = () => {
+    drawerPref = !open;
+    setDrawer(!open);
+  };
+  const [mentioned, setMentioned] = useState<string[]>([]);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
   const bottom = useRef<HTMLDivElement>(null);
   const list = msgs.data ?? [];
   const last = list[list.length - 1];
+  const { task, missing } = resolveLinked(conv.task, tasks);
+  const items = timeline(list, task);
+  const myTeams = teams.filter((x) => x.members.includes(me)).map((x) => x.id);
 
   // 開著的對話：標記已讀、告知 Rust 端（不通知）
   useEffect(() => {
@@ -245,7 +288,7 @@ function Conversation({
   }, [conv.id, last?.createdAt]);
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: 'end' });
-  }, [list.length]);
+  }, [items.length]);
 
   const candidates: MentionCandidate[] = members
     .filter((m) => conv.members.includes(m.id) && m.id !== me)
@@ -254,36 +297,87 @@ function Conversation({
   return (
     <div className="flex h-full min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-line px-4 py-3">
+        <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-2">
           <h2 className="truncate font-medium">{convTitle(conv, me, nameOf)}</h2>
-          {conv.kind === 'group' && (
-            <Button variant="secondary" className="px-3 py-1" onClick={() => setPanel((p) => !p)}>
-              {t('chat.members')} · {t('chat.membersCount', { count: conv.members.length })}
-            </Button>
-          )}
+          <Button
+            variant="secondary"
+            className="h-8 px-3 py-0 text-xs"
+            aria-expanded={open}
+            onClick={toggle}
+          >
+            {open ? t('camp.drawer.hide') : t('camp.drawer.show')}
+            {conv.kind === 'group' &&
+              ` · ${t('chat.membersCount', { count: conv.members.length })}`}
+          </Button>
         </header>
+        <ConvMountain
+          conv={conv}
+          task={task}
+          missing={missing}
+          tasks={tasks}
+          teams={teams}
+          nameOf={nameOf}
+        />
         <div className="scroll-panel min-h-0 flex-1 px-4 py-3" aria-live="polite">
           <ErrorText message={msgs.error} />
           {list.length === 0 && <p className="text-sm text-muted">{t('chat.noMessages')}</p>}
           <ul className="flex flex-col gap-3">
-            {list.map((m) => (
-              <MessageItem
-                key={`${m.author}:${m.id}`}
-                m={m}
-                mine={m.author === me}
-                nameOf={nameOf}
-                me={me}
-                author={members.find((x) => x.id === m.author)}
-              />
-            ))}
+            {items.map((it) =>
+              it.type === 'step' ? (
+                <SystemRow key={`step:${it.step.id}`} at={it.at}>
+                  {t('camp.row.step', {
+                    title: it.step.title,
+                    name: it.step.assignee ? nameOf(it.step.assignee) : t('home.unassigned'),
+                  })}
+                </SystemRow>
+              ) : it.type === 'link' ? (
+                <SystemRow key={`${it.m.author}:${it.m.id}`} at={it.at}>
+                  {linkRowText(it.m, tasks, nameOf)}
+                </SystemRow>
+              ) : (
+                <MessageItem
+                  key={`${it.m.author}:${it.m.id}`}
+                  m={it.m}
+                  mine={it.m.author === me}
+                  nameOf={nameOf}
+                  me={me}
+                  author={members.find((x) => x.id === it.m.author)}
+                  actions={
+                    <MessageActions
+                      m={it.m}
+                      conv={conv}
+                      me={me}
+                      task={task}
+                      teams={teams}
+                      myTeams={myTeams}
+                    />
+                  }
+                />
+              ),
+            )}
           </ul>
           <div ref={bottom} />
         </div>
         <UploadQueue conv={conv.id} />
-        <Composer conv={conv.id} candidates={candidates} onSent={msgs.reload} />
+        <KnockHint targets={knockTargets(conv, members, me, mentioned, now)} />
+        <Composer
+          conv={conv.id}
+          candidates={candidates}
+          onSent={msgs.reload}
+          onMentions={setMentioned}
+        />
       </div>
-      {panel && conv.kind === 'group' && (
-        <MembersPanel conv={conv} me={me} members={members} nameOf={nameOf} />
+      {open && (
+        <ConvDrawer
+          conv={conv}
+          me={me}
+          members={members}
+          msgs={list}
+          task={task}
+          missing={missing}
+          nameOf={nameOf}
+          membersPanel={<MembersPanel conv={conv} me={me} members={members} nameOf={nameOf} />}
+        />
       )}
     </div>
   );
@@ -295,19 +389,27 @@ function MessageItem({
   me,
   nameOf,
   author,
+  actions,
 }: {
   m: MessageView;
   mine: boolean;
   me: string;
   nameOf: (id: string) => string;
   author: MemberView | undefined;
+  /** 快速動作（滑過或聚焦時顯示） */
+  actions?: React.ReactNode;
 }) {
   const mentioned = m.mentions.includes(me);
   const attachments = m.kind === 'files' ? parseAttachments(m.attachments) : [];
   return (
     <li
-      className={`rounded-control px-2 py-1 ${mentioned ? 'border-l-2 border-primary bg-bg' : ''}`}
+      className={`group relative rounded-control px-2 py-1 ${mentioned ? 'border-l-2 border-primary bg-bg' : ''}`}
     >
+      {actions && (
+        <div className="absolute top-0 right-1 z-10 hidden group-focus-within:block group-hover:block">
+          {actions}
+        </div>
+      )}
       <p className="text-xs text-muted">
         <span className={`font-medium ${mine ? 'text-primary' : 'text-fg'}`}>
           {nameOf(m.author)}
@@ -346,10 +448,13 @@ function Composer({
   conv,
   candidates,
   onSent,
+  onMentions,
 }: {
   conv: string;
   candidates: MentionCandidate[];
   onSent: () => void;
+  /** 草稿中 @ 到的成員（敲門提示用） */
+  onMentions?: (ids: string[]) => void;
 }) {
   const [text, setText] = useState('');
   const [caret, setCaret] = useState(0);
@@ -367,6 +472,14 @@ function Composer({
     }
   }, [text]);
   const { busy, error, attempt } = useAction();
+  const mentionKey = extractMentions(text, picked).join(',');
+  const onMentionsRef = useRef(onMentions);
+  useEffect(() => {
+    onMentionsRef.current = onMentions;
+  });
+  useEffect(() => {
+    onMentionsRef.current?.(mentionKey ? mentionKey.split(',') : []);
+  }, [mentionKey]);
   const mention = activeMention(text, caret);
   const options = mention ? filterCandidates(candidates, mention.query) : [];
 
@@ -476,8 +589,7 @@ function MembersPanel({
   const { busy, error, attempt } = useAction();
   const others = members.filter((m) => !conv.members.includes(m.id));
   return (
-    <aside className="flex w-64 shrink-0 flex-col gap-3 border-l border-line p-4 text-sm">
-      <h3 className="font-medium">{t('chat.members')}</h3>
+    <div className="flex flex-col gap-3 p-4 text-sm">
       <p className="text-xs text-muted">{t('chat.panel.historyNote')}</p>
       <ul className="flex flex-col gap-2">
         {conv.members.map((id) => (
@@ -535,6 +647,6 @@ function MembersPanel({
         <p className="text-xs text-muted">{t('chat.panel.creatorOnly')}</p>
       )}
       <ErrorText message={error} />
-    </aside>
+    </div>
   );
 }

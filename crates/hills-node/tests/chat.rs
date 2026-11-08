@@ -308,3 +308,87 @@ async fn recovered_member_reads_history() {
     admin.shutdown().await;
     mb.router.shutdown().await.unwrap();
 }
+
+/// 焦點營地：任何成員可連結任務，以最新一則為準；連結訊息不計未讀、不通知（§14.2 v0.14）。
+#[tokio::test]
+async fn conversation_task_link() {
+    let mb = mailbox().await;
+    let (_d, _admin, alice, bob) = trio(&mb).await;
+    let team = alice.org().teams_of(&alice.member_id())[0].clone();
+    let input = |title: &str| hills_node::team::TaskInput {
+        title: title.into(),
+        assignee: None,
+        status: None,
+        due_at: None,
+        steps: vec![],
+    };
+    let t1 = alice.create_task(&team, input("驗收")).await.unwrap();
+    let t2 = alice.create_task(&team, input("部署")).await.unwrap();
+    let conv = alice
+        .create_conv(ConvKind::Dm, "", &[bob.member_id()])
+        .await
+        .unwrap();
+    // 不存在的任務被拒
+    assert!(
+        alice
+            .set_conv_task(&conv, Some((&team, "nope")))
+            .await
+            .is_err()
+    );
+    alice
+        .set_conv_task(&conv, Some((&team, &t1)))
+        .await
+        .unwrap();
+    let linked = |n: &Node| {
+        n.conversations()
+            .into_iter()
+            .find(|c| c.info.id == conv)
+            .and_then(|c| c.task)
+            .map(|t| t.id)
+    };
+    assert_eq!(linked(&alice), Some(t1.clone()));
+    let mut ev = bob.events();
+    assert!(
+        eventually(Duration::from_secs(10), || async {
+            let _ = bob.sync_now().await;
+            linked(&bob) == Some(t1.clone())
+        })
+        .await,
+        "bob 應看到連結的任務"
+    );
+    let row = bob
+        .conversations()
+        .into_iter()
+        .find(|c| c.info.id == conv)
+        .unwrap();
+    assert_eq!(row.unread, 0, "連結訊息不計未讀");
+    assert!(row.last.is_none(), "連結訊息不是最後訊息");
+    while let Ok(e) = ev.try_recv() {
+        if let Event::Message { notify, .. } = e {
+            assert!(!notify, "連結訊息不通知");
+        }
+    }
+    // bob 等任務同步後改連另一個；以最新為準
+    assert!(
+        eventually(Duration::from_secs(10), || async {
+            let _ = bob.sync_now().await;
+            bob.tasks().unwrap().iter().any(|t| t.id == t2)
+        })
+        .await
+    );
+    bob.set_conv_task(&conv, Some((&team, &t2))).await.unwrap();
+    assert!(
+        eventually(Duration::from_secs(10), || async {
+            let _ = alice.sync_now().await;
+            linked(&alice) == Some(t2.clone())
+        })
+        .await
+    );
+    // 取消連結
+    alice.set_conv_task(&conv, None).await.unwrap();
+    assert_eq!(linked(&alice), None);
+    for n in [alice, bob] {
+        n.shutdown().await;
+    }
+    mb.router.shutdown().await.unwrap();
+}

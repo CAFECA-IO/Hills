@@ -55,6 +55,36 @@ pub struct Message {
     pub mentions: Vec<MemberId>,
     /// 附件（§14.2 Attachment，前端定義的 JSON；只出現在 CK 加密的訊息中）
     pub attachments: serde_json::Value,
+    /// `kind = "task"`：連結的任務；None = 取消連結（§14.2 v0.14）。其他 kind 一律為 None
+    pub task: Option<TaskRef>,
+}
+
+/// 連結訊息的 kind（§14.2 v0.14）。
+pub const KIND_TASK: &str = "task";
+
+/// 對話連結的任務（`team/<teamId>` 中的 `task:<taskId>`）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskRef {
+    #[serde(rename = "teamId")]
+    pub team: String,
+    #[serde(rename = "taskId")]
+    pub id: String,
+}
+
+impl Message {
+    /// 是否為連結任務的系統訊息（不計未讀、不通知、不當作最後訊息）。
+    pub fn is_task_link(&self) -> bool {
+        self.kind == KIND_TASK
+    }
+}
+
+/// 最新一則連結訊息決定對話目前連結的任務（`messages` 需已依時間排序）。
+pub fn linked_task(messages: &[Message]) -> Option<TaskRef> {
+    messages
+        .iter()
+        .rev()
+        .find(|m| m.is_task_link())
+        .and_then(|m| m.task.clone())
 }
 
 /// 訊息在文件中的 JSON 內容（作者與 id 由 key 表示）。
@@ -69,6 +99,8 @@ struct MessageBody {
     mentions: Vec<String>,
     #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
     attachments: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    task: Option<TaskRef>,
 }
 
 pub const MAX_BODY: usize = 16 * 1024;
@@ -235,6 +267,8 @@ pub struct NewMessage<'a> {
     pub body: &'a str,
     pub mentions: &'a [MemberId],
     pub attachments: serde_json::Value,
+    /// 只用於 `kind = "task"`
+    pub task: Option<TaskRef>,
 }
 
 /// 新增一則訊息，回傳 key（`<author>:<ulid>`）。
@@ -254,6 +288,7 @@ pub fn append(
         body: msg.body.to_owned(),
         mentions: msg.mentions.iter().map(|m| m.to_string()).collect(),
         attachments: msg.attachments.clone(),
+        task: msg.task.clone().filter(|_| msg.kind == KIND_TASK),
     };
     let json = serde_json::to_string(&body)?;
     if json.len() > MAX_BODY + MAX_ATTACHMENTS_JSON {
@@ -268,6 +303,9 @@ fn parse_message(conv: &str, key: &str, json: &str) -> Option<Message> {
     let (author, id) = key.split_once(':')?;
     let author = MemberId::parse(author).ok()?;
     let b: MessageBody = serde_json::from_str(json).ok()?;
+    let task = b
+        .task
+        .filter(|t| b.kind == KIND_TASK && t.team.len() <= 64 && t.id.len() <= 64);
     Some(Message {
         id: id.to_owned(),
         conv: conv.to_owned(),
@@ -281,6 +319,7 @@ fn parse_message(conv: &str, key: &str, json: &str) -> Option<Message> {
             .filter_map(|m| MemberId::parse(m).ok())
             .collect(),
         attachments: b.attachments,
+        task,
     })
 }
 
@@ -388,6 +427,7 @@ mod tests {
             body: "hi @x",
             mentions: &[mid(2)],
             attachments: serde_json::Value::Null,
+            task: None,
         };
         append(&mut log, &mid(1), &msg, 7).unwrap();
         log.commit();
@@ -409,6 +449,7 @@ mod tests {
             body: "a",
             mentions: &[],
             attachments: serde_json::Value::Null,
+            task: None,
         };
         let key = append(&mut log, &mid(1), &msg, 7).unwrap();
         log.commit();
@@ -417,5 +458,60 @@ mod tests {
         log.commit();
         let c = log.get_changes(&before);
         assert!(!hills_sync::append_only_by(&c[0], &mid(1)));
+    }
+
+    #[test]
+    fn task_link_messages() {
+        let conv = format!("{}-x", mid(1));
+        let mut log = AutoCommit::new();
+        let r = TaskRef {
+            team: "t1".into(),
+            id: "k1".into(),
+        };
+        let link = NewMessage {
+            kind: KIND_TASK,
+            body: "",
+            mentions: &[],
+            attachments: serde_json::Value::Null,
+            task: Some(r.clone()),
+        };
+        append(&mut log, &mid(1), &link, 10).unwrap();
+        // 其他 kind 的 task 欄位不寫入
+        let text = NewMessage {
+            kind: "text",
+            body: "hi",
+            mentions: &[],
+            attachments: serde_json::Value::Null,
+            task: Some(r.clone()),
+        };
+        append(&mut log, &mid(1), &text, 20).unwrap();
+        let mut msgs = read_log(&conv, &log);
+        sort_messages(&mut msgs);
+        assert_eq!(msgs[0].task.as_ref(), Some(&r));
+        assert!(msgs[0].is_task_link());
+        assert_eq!(msgs[1].task, None);
+        assert_eq!(linked_task(&msgs), Some(r));
+        // 取消連結
+        let unlink = NewMessage {
+            kind: KIND_TASK,
+            body: "",
+            mentions: &[],
+            attachments: serde_json::Value::Null,
+            task: None,
+        };
+        append(&mut log, &mid(2), &unlink, 30).unwrap();
+        let mut msgs = read_log(&conv, &log);
+        sort_messages(&mut msgs);
+        assert_eq!(linked_task(&msgs), None);
+        // 手寫的 text 訊息帶 task 欄位會被忽略
+        log.put(
+            ROOT,
+            format!("{}:zzzz", mid(3)).as_str(),
+            r#"{"v":1,"createdAt":40,"kind":"text","body":"x","task":{"teamId":"a","taskId":"b"}}"#,
+        )
+        .unwrap();
+        let mut msgs = read_log(&conv, &log);
+        sort_messages(&mut msgs);
+        assert_eq!(linked_task(&msgs), None);
     }
 }

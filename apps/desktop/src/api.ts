@@ -195,6 +195,14 @@ export interface MessageView {
   body: string;
   mentions: string[];
   attachments: unknown;
+  /** kind = 'task'：連結的任務，null = 取消連結（technical-design §14.2 v0.14） */
+  task?: TaskRefView | null;
+}
+
+/** 對話連結的任務。 */
+export interface TaskRefView {
+  team: string;
+  id: string;
 }
 
 export interface ConvRow {
@@ -206,6 +214,8 @@ export interface ConvRow {
   members: string[];
   last: MessageView | null;
   unread: number;
+  /** 對話目前連結的任務（焦點營地） */
+  task: TaskRefView | null;
 }
 
 export const EVENTS = {
@@ -355,6 +365,8 @@ export const api = {
   devices: () => call<DeviceInfo[]>('devices'),
   revokeDevice: (deviceId: string) => call<void>('revoke_device', { deviceId }),
   conversations: () => call<ConvRow[]>('conversations'),
+  setConvTask: (conv: string, link: TaskRefView | null) =>
+    call<void>('set_conv_task', { conv, team: link?.team ?? null, task: link?.id ?? null }),
   messages: (conv: string, limit?: number) => call<MessageView[]>('messages', { conv, limit }),
   openDm: (member: string) => call<string>('open_dm', { member }),
   createGroup: (name: string, members: string[]) => call<string>('create_group', { name, members }),

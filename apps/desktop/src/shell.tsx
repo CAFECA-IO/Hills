@@ -244,6 +244,8 @@ export function Shell({ info }: { info: AppInfo }) {
               <Chat
                 key={openConv ?? ''}
                 members={overview.data?.members ?? []}
+                tasks={tasks.data ?? []}
+                teams={overview.data?.teams ?? []}
                 initial={openConv}
               />
             )}

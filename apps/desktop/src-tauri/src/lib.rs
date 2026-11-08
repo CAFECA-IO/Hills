@@ -53,6 +53,7 @@ pub fn run() {
             commands::open_dm,
             commands::create_group,
             commands::send_message,
+            commands::set_conv_task,
             commands::add_conv_members,
             commands::remove_conv_member,
             commands::rename_conv,

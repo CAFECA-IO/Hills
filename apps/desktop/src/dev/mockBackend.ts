@@ -165,6 +165,7 @@ interface MockMsg {
   body: string;
   mentions: string[];
   attachments: unknown;
+  task?: { team: string; id: string } | null;
 }
 const convs = [
   {
@@ -185,6 +186,27 @@ const convs = [
   },
 ];
 const msgs: MockMsg[] = [
+  {
+    id: '0',
+    conv: 'g1',
+    author: 'mem-me',
+    createdAt: Date.now() - 2 * 3600_000,
+    kind: 'text',
+    body: '今天把 Windows 驗收收尾',
+    mentions: [],
+    attachments: null,
+  },
+  {
+    id: '0b',
+    conv: 'g1',
+    author: 'mem-me',
+    createdAt: Date.now() - 2 * 3600_000 + 1000,
+    kind: 'task',
+    body: '',
+    mentions: [],
+    attachments: null,
+    task: { team: 'default', id: 't1' },
+  },
   {
     id: '1',
     conv: 'g1',
@@ -418,12 +440,14 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   },
   conversations: () =>
     convs.map((c) => {
-      const list = msgs.filter((m) => m.conv === c.id);
+      const all = msgs.filter((m) => m.conv === c.id);
+      const list = all.filter((m) => m.kind !== 'task');
       const last = list[list.length - 1] ?? null;
       const unread = list.filter(
         (m) => m.author !== state.me && m.createdAt > (read[c.id] ?? 0),
       ).length;
-      return { ...c, last, unread };
+      const link = [...all].reverse().find((m) => m.kind === 'task');
+      return { ...c, last, unread, task: link?.task ?? null };
     }),
   messages: (a) => msgs.filter((m) => m.conv === a.conv),
   open_dm: (a) => {
@@ -452,6 +476,25 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     });
     emit('hills://node', 'convs');
     return id;
+  },
+  set_conv_task: (a) => {
+    const team = a.team as string | null;
+    const id = a.task as string | null;
+    if (team && id && !tasks.some((x) => x.team === team && x.id === id)) {
+      throw new Error('找不到這個任務');
+    }
+    msgs.push({
+      id: String(msgs.length + 1),
+      conv: String(a.conv),
+      author: state.me,
+      createdAt: Date.now(),
+      kind: 'task',
+      body: '',
+      mentions: [],
+      attachments: null,
+      task: team && id ? { team, id } : null,
+    });
+    emit('hills://node', 'message');
   },
   send_message: (a) => {
     const m: MockMsg = {

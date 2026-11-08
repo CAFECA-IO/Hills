@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.19 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.20 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -156,8 +156,9 @@ CAFECA 帳戶（chainId + 身分合約地址 account，由使用者的 Passkey /
 
 | 文件 | 寫入者 | 讀取者 | 金鑰 | 內容 |
 |------|--------|--------|------|------|
-| `org` | 管理者 | 全員 | `GK` | 設定、品牌、成員憑證與 CAFECA 帳戶、小組、假日曆、假別、工作規則、核准規則 |
-| `team/<teamId>` | 小組成員 | 小組成員 | `TK_team` | 任務、小組目標 |
+| `org` | 管理者 | 全員 | `GK` | 設定、品牌、成員憑證與 CAFECA 帳戶、小組、假日曆、假別、工作規則、核准規則、公司方向（v0.20，D47） |
+| `team/<teamId>` | 小組成員 | 小組成員 | `TK_team` | 任務、角色外觀 |
+| `team-goals/<teamId>` | 該小組負責人、管理者 | 全員 | `GK` | 小組目標（v0.20，D47，§16.14） |
 | `member/<id>/plans/private`、`plans/team/<teamId>`、`plans/org` | 本人 | 本人 / 該小組成員 / 全員 | `PK` / `TK_team` / `GK` | 五層計劃（見 §4.3、§16.10） |
 | `member/<id>/scrum/<teamId>/<yyyy-mm>` | 本人 | 該小組成員 | `TK_team` | 每日 Scrum（每個所屬小組各一份，§16.12） |
 | `member/<id>/attendance/<yyyy-mm>` | 本人 | 本人、負責人、管理者 | `AK_member` | 打卡紀錄 |
@@ -363,11 +364,10 @@ Task        { id, teamId | private, title, assigneeId?, status: todo|doing|revie
               estimateHours?, dueAt?, steps?: TaskStep[], planItemId?（週目標，D46）, blockedReason?,
               createdAt, updatedAt }
 TaskStep    { id, title, assigneeId?, done: boolean, doneAt? }
-TeamGoal    { id, teamId, period, title, keyResults: KeyResult[] }
 
 // member 文件
 PlanItem    { id, level: year|quarter|month|week, period: '2026' | '2026-Q4' |
-              '2026-11' | '2026-W45', parentId?, alignedTeamGoalId?,
+              '2026-11' | '2026-W45', parentId?, alignedGoalId?（年 / 季，D47）,
               title, keyResults?: KeyResult[], done?: boolean, progress, progressOverride? }
 KeyResult   { id, title, start: number, target: number, current: number, unit }
 ScrumReport { date, done: Ref[], today: Ref[], blockers: Blocker[], submittedAt }   // 詳見 §16.12
@@ -379,6 +379,10 @@ OvertimeRequest { id, start, end, hours, reason, compensation: pay|compTime, rul
 CorrectionRequest { id, date, kind: in|out, time, reason, ruleId, createdAt }
 Report      { id, scope: member|team, period, sections: { progress, okr, attendance, next },
               publishedTo: teamId[], generatedAt, editedAt? }   // M1 個人日 / 週報見 §16.13；小組彙整為即時合併，不另存
+
+// org 文件 / team-goals 文件（v0.20，D47，§16.14）
+Direction   { id, year, title, keyResults: KeyResult[], createdAt, updatedAt }
+TeamGoal    { id, teamId, year, title, directionId?, keyResults: KeyResult[], createdAt, updatedAt }
 
 // approvals 文件
 ApprovalDecision { requestId, requesterId, step, decision: approve|reject, comment?, at }
@@ -807,6 +811,9 @@ member/<id>/plans/{private | team/<teamId> | org} = {
     level: year|quarter|month|week,
     period: "2026" | "2026-Q4" | "2026-11" | "2026-W45",
     title, parentId?, krRef?: "<上層 planItemId>/<krId>",
+    alignedGoalId?,                // v0.20（D47）：年 / 季，指向公司方向或小組目標（§16.14）
+    criteria: [ { id, text } ],    // v0.20（D47）：年 / 季「做到的標準」，純文字，0–5 個，不影響進度
+    helps: [ criterionId ],        // v0.20（D47）：季，幫助達成上層年目標的哪些標準（只供顯示）
     done: boolean,                 // 月 / 週
     progressOverride?: 0..100,
     keyResults: [ { id, title, start, target, current, unit, manual } ],   // 年 / 季，0–5 個
@@ -819,7 +826,7 @@ member/<id>/plans/{private | team/<teamId> | org} = {
 - **v0.19（D46）**：寫入時拒絕 `level = day`；既有的日目標（M1 試用前的測試資料）讀取時略過、不顯示。週目標之下為任務（§16.8）。
 - `period` 依**組織時區**（org `timezone`）計算，週為 ISO 週（週一開始，跨年週屬於含週四的那一年）；寫入時檢查格式與 `level` 相符。
 - 改變可見度：在新文件寫入同一 id，再從舊文件刪除；同一 id 同時出現在兩份文件時取 `updatedAt` 較新者。
-- `alignedTeamGoalId`（對齊小組目標）隨小組目標功能加入，M1 第一版不使用。
+- **v0.20（D47）**：`alignedGoalId` 只用於年 / 季，指向公司方向（org 文件 `direction:<id>`）或小組目標（`team-goals/<teamId>` 的 `goal:<id>`）；寫入時檢查目標存在。所指的方向或小組目標被刪除時，讀取端視為未對齊。取代原預留的 `alignedTeamGoalId`。`criteria`（每則 1–80 字）與 `helps` 只供引導式介面顯示，不參與進度彙總；`helps` 指向的標準不存在時略過。
 
 **進度彙總**（0–100，由投影層計算，不存入文件）：
 
@@ -895,6 +902,28 @@ Report JSON = { v: 1, kind, period,
 - **小組彙整**：把同一小組成員同期間已發佈的報表依欄位合併顯示，不另存。
 - 週五（組織時區）到 Scrum 提醒時間時，若本週週報尚未發佈，提醒一次；開啟報表頁時若沒有草稿也沒有已發佈的週報，自動產生草稿。
 - 月報、年報在 M5；AI 摘要在 M3；發佈到小組頻道在 M2（頻道上線後）。
+
+### 16.14 團隊方向（v0.20，D47）
+
+```
+org = { …,
+  "direction:<ULID>": { year: "2027", title, keyResults: [ KeyResult ], createdAt, updatedAt }
+}
+team-goals/<teamId> = {
+  "goal:<ULID>": { year: "2027", title, directionId?, keyResults: [ KeyResult ], createdAt, updatedAt }
+}
+```
+
+- **公司方向**存在 org 文件，只有管理者可寫（org 文件規則），每年建議 1–3 個（介面限制 5 個）。
+- **小組目標**存在 `team-goals/<teamId>`，以 `GK` 加密，全員可讀（D47 全員透明）。寫入者是該小組的負責人（org `teams.<id>.leadIds`）或管理者，由驗證層檢查（`DocKind::TeamGoals`，`Directory::is_team_lead`）。`directionId` 指向同一年的公司方向（選填）。
+- 標題 1–80 字；`keyResults` 結構與計劃相同（§16.10），最多 5 個。
+- **對齊**：個人的年 / 季目標以 `alignedGoalId` 指向公司方向或小組目標（§16.10）。一個目標只對齊一個。
+- **進度**（投影層計算，0–100）：
+  - 有關鍵結果 → 關鍵結果平均（規則同 §16.10）；
+  - 否則小組目標 = 對齊它的個人年 / 季目標進度平均；公司方向 = 對齊它的小組目標與直接對齊它的個人目標平均；
+  - 都沒有 → 0。只計算讀者看得到的個人目標（§4.3），所以不同讀者可能看到不同數字；第 2 批的方向摘要（本節後續）讓全員看到一致的比例。
+- 刪除公司方向或小組目標時不連帶修改他人的文件；對齊它的目標讀取時視為未對齊（介面提示重新選擇）。
+- **方向摘要、四項檢查、方向羅盤**於第 2 批補充本節（`member/<id>/direction`）。
 
 ### 16.9 部署（M0）
 

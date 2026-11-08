@@ -733,6 +733,53 @@
         "area:sync"
       ],
       "body": "## 目標\n\n全組織知識庫，依分類 → 主題 → 知識歸納，以星空知識圖譜呈現（D42）。\n\n## 工作項目\n\n- [ ] 資料模型與加密文件（technical-design 補充後實作）\n- [ ] 新增 / 編輯 / 分類 / 主題 / 引用；從對話存成知識\n- [ ] 星空圖譜、預覽卡、關聯圖例、時間軸；清單檢視\n\n## 驗收條件\n\n- 兩台裝置新增的知識互相同步並出現在星空中\n\n## 參考\n\nfeature-plan §5.13、D42；ui-spec「知識庫」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M1] 引導式目標與公司 / 小組方向（D47 第 1 批）",
+      "milestone": "M1 計劃、Scrum、對話與檔案（MVP）",
+      "labels": [
+        "type:feature",
+        "area:ui",
+        "area:sync"
+      ],
+      "body": "## 目標\n\n目標頁預設改為引導式；新增公司方向與小組目標，個人年 / 季目標可對齊。\n\n## 工作項目\n\n- [ ] 公司方向（org 文件）、小組目標（team-goals 文件，負責人寫入）\n- [ ] PlanItem alignedGoalId、criteria、helps\n- [ ] 引導式首頁、規劃精靈、分到下一層、這一週清單、復原\n- [ ] 團隊分頁（方向清單）、設定小組方向精靈、設定 → 公司方向\n- [ ] Stepper、ChoiceCard、Toast 元件\n\n## 驗收條件\n\n- 非負責人無法寫入小組目標\n- 走完精靈即建立年與季目標，首頁鏈顯示對齊的方向\n\n## 參考\n\nfeature-plan D47、§5.3；technical-design §16.10、§16.14；ui-spec「目標」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M1] 方向摘要、偏離檢查與方向羅盤（D47 第 2 批）",
+      "milestone": "M1 計劃、Scrum、對話與檔案（MVP）",
+      "labels": [
+        "type:feature",
+        "area:ui",
+        "area:sync"
+      ],
+      "body": "## 目標\n\n每個人發佈方向摘要，團隊頁以方向羅盤呈現誰在路上、誰可能偏離。\n\n## 工作項目\n\n- [ ] member/<id>/direction 摘要文件與計算\n- [ ] 任務 / 步驟 doneAt\n- [ ] 四項檢查與門檻設定\n- [ ] 方向羅盤（傾斜地面、人像、滑過看摘要）、團隊頁 D1 / D2 / D3 / D7、首頁「你的方向」\n- [ ] 建議對齊\n\n## 驗收條件\n\n- 其他小組成員看得到摘要、看不到任務\n- 勾完任務後我的角度變小\n\n## 參考\n\nfeature-plan D47；technical-design §16.14；ui-spec「目標 → 團隊」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M1] 目標路線圖（進階檢視，D47 第 3 批）",
+      "milestone": "M1 計劃、Scrum、對話與檔案（MVP）",
+      "labels": [
+        "type:feature",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n以時間軸 + 關鍵結果泳道的路線圖取代階梯，作為進階檢視。\n\n## 工作項目\n\n- [ ] 縮放年 / 季 / 月 / 週\n- [ ] 拖曳建立與改期間、鍵盤替代\n- [ ] 一次拆解\n- [ ] 週層級任務排到每一天\n\n## 驗收條件\n\n- 拖曳與鍵盤都能改期間\n\n## 參考\n\nfeature-plan D47；ui-spec「目標 → 進階檢視」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M1] 週一方向時刻、四週軌跡、大家實際走向（D47 第 4 批）",
+      "milestone": "M1 計劃、Scrum、對話與檔案（MVP）",
+      "labels": [
+        "type:feature",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n每週一先讓本人看到自己的方向並調整；羅盤顯示趨勢與整體走向。\n\n## 工作項目\n\n- [ ] 週一方向時刻頁與預測角度\n- [ ] 四週軌跡\n- [ ] 大家實際走向\n- [ ] 負責人這週重點\n\n## 驗收條件\n\n- 連結任務後預測角度更新\n\n## 參考\n\nfeature-plan D47；ui-spec「目標」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M1] 方向羅盤延伸（D47 第 5 批）",
+      "milestone": "M1 計劃、Scrum、對話與檔案（MVP）",
+      "labels": [
+        "type:feature",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n群聚提示、公司羅盤、配對拉回、負荷外圈、說明狀態、進場動畫。\n\n## 工作項目\n\n- [ ] 群聚＝新方向\n- [ ] 公司羅盤\n- [ ] 配對拉回\n- [ ] 負荷外圈\n- [ ] 說明狀態\n- [ ] 進場動畫（遵守減少動態）\n\n## 驗收條件\n\n- 說明狀態期間羅盤不顯示橘色\n\n## 參考\n\nfeature-plan D47\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
     }
   ]
 }

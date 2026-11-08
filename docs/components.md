@@ -1,6 +1,6 @@
 # Hills 通用元件
 
-> 版本：v0.2 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.15（D45）
+> 版本：v0.3 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.18（D45、D47）
 > 本文件定義 `apps/desktop/src/ui/` 的通用元件：用途、何時用、變體、狀態、鍵盤與無障礙、API。視覺基礎（token、字級、間距）見 [design-system.md](./design-system.md)。
 > 畫面只能組合這些元件（design-system §1、§11）。需要新元件或新變體時，**先改本文件，再改 `src/ui/`**，並補 `src/ui/ui.test.tsx`。
 
@@ -123,6 +123,18 @@
 
 原生 range。必須給 `aria-label` 與 `aria-valuetext`（例如時間軸的週次）。
 
+### ChoiceCard（v0.3，D47）
+
+大面積的單選卡片：精靈中「選一個方向 / 目標」這種選項需要標題＋說明＋標記時使用（引導式規劃、設定小組方向）。選項只有短文字時用 Radio。
+
+| prop | 型別 | 說明 |
+|---|---|---|
+| `label` | string | 群組名稱（`role="radiogroup"` 的 `aria-label`） |
+| `options` | `{ value, title, description?, badge?, dashed? }[]` | `dashed`：虛線外框的「都不是」選項 |
+| `value`、`onChange` | 受控；`value` 可為 null（尚未選） |
+
+每張卡是 `role="radio"`、`aria-checked`；只有選取的卡（或未選時第一張）可 Tab 聚焦，↑ ↓ / ← → 移動並選取，Space 選取。選取時 2px primary 外框與淡藍底，前方圓點填滿。
+
 ---
 
 ## 3. 浮層
@@ -195,6 +207,16 @@
 
 選擇：切換「怎麼看同一份資料」用 SegmentedControl；切換「看哪一份內容」用 Tabs。
 
+### Stepper（v0.3，D47）
+
+精靈的步驟指示：`<nav aria-label>` 內依序顯示編號圓點與步驟名稱，步驟之間以短線相連；已完成 = 綠底 ✓、目前 = primary 底且 `aria-current="step"`、未到 = 灰框。只做顯示，不可點（回上一步用頁面的「上一步」）。
+
+| prop | 型別 |
+|---|---|
+| `label` | string |
+| `steps` | string[] |
+| `current` | number（0 起算） |
+
 ---
 
 ## 5. 顯示
@@ -260,6 +282,7 @@
 | `useAction` | 執行非同步動作並追蹤 `busy` / `error` | `run(f)` 回傳結果；`attempt(f)` 成功回傳 true |
 | `Centered` | 初次啟動流程的置中單欄頁 | 標題 24 / 600 |
 | `CodeBox` | 文字碼 + QR + 複製 | QR 一律白底 |
+| `Toast`（v0.3，D47） | 剛完成的動作的短暫通知，可附「復原」 | 畫面底部置中深色膠囊，`role="status"`；`message`、`action?: { label, onClick }`、`onClose`；預設 10 秒後自動關閉，滑過或聚焦時暫停計時；Esc 關閉；同時只顯示一則（新的取代舊的） |
 
 ---
 

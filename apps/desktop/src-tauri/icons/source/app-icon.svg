@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hills App 圖示（Windows / Linux）：1024 畫布、圓角方形主體四周留 64、圓角 176、不加陰影。docs/design-system.md §9 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3AA07E"/>
+      <stop offset="1" stop-color="#2A8063"/>
+    </linearGradient>
+    <clipPath id="body"><rect width="824" height="824" rx="161.9"/></clipPath>
+  </defs>
+  <g transform="translate(64 64) scale(1.087379)">
+    <rect width="824" height="824" rx="161.9" fill="#2A8063"/>
+  </g>
+  <g transform="translate(64 64) scale(1.087379)" clip-path="url(#body)">
+    <rect width="824" height="824" fill="url(#sky)"/>
+    <path d="M430 600 C 500 470 590 440 670 500 C 720 538 770 566 824 572 V824 H430 Z" fill="#CDEBD8"/>
+    <path d="M0 568 C 90 552 150 480 230 400 C 310 320 400 322 480 420 C 550 505 640 572 824 584 V824 H0 Z" fill="#F4FBF8"/>
+  </g>
+</svg>

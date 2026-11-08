@@ -705,6 +705,7 @@ pub struct TaskView {
     status: TaskStatus,
     due_at: Option<i64>,
     steps: Vec<StepView>,
+    plan_item_id: Option<String>,
     created_by: Option<String>,
     created_at: i64,
     updated_at: i64,
@@ -730,6 +731,7 @@ impl From<Task> for TaskView {
                     done_at: s.done_at,
                 })
                 .collect(),
+            plan_item_id: t.plan_item_id,
             created_by: t.created_by.map(|m| m.to_string()),
             created_at: t.created_at,
             updated_at: t.updated_at,
@@ -756,6 +758,8 @@ pub struct TaskArgs {
     due_at: Option<i64>,
     #[serde(default)]
     steps: Vec<StepArgs>,
+    #[serde(default)]
+    plan_item_id: Option<String>,
 }
 
 impl TaskArgs {
@@ -777,6 +781,7 @@ impl TaskArgs {
                     })
                 })
                 .collect::<CmdResult<_>>()?,
+            plan_item_id: self.plan_item_id,
         })
     }
 }
@@ -856,7 +861,14 @@ pub async fn plans(state: State<'_, AppState>, mine_only: bool) -> CmdResult<Vec
     with_node!(state, n => {
         let me = n.member_id();
         let items = n.plans(query).map_err(e)?;
-        let r = rollup(&items);
+        // 任務進度計入週目標（D46，technical-design §16.10）
+        let tasks: Vec<(String, f64)> = n
+            .tasks()
+            .map_err(e)?
+            .iter()
+            .filter_map(|t| t.plan_item_id.clone().map(|p| (p, t.progress())))
+            .collect();
+        let r = rollup(&items, &tasks);
         Ok(items
             .into_iter()
             .map(|item| {

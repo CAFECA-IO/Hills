@@ -44,6 +44,8 @@ pub enum MemberSection {
     },
     /// 本人的私密設定，例如邀請 secret（technical-design §16.2）
     Secrets,
+    /// 私人任務：`tasks`（technical-design §16.8 v0.19，D46）
+    Tasks,
 }
 
 /// 計劃文件的可見度：`plans/private`、`plans/team/<teamId>`、`plans/org`（technical-design §4.3 v0.15）。
@@ -129,6 +131,7 @@ impl DocKind {
                         }
                     }
                     ["secrets"] => MemberSection::Secrets,
+                    ["tasks"] => MemberSection::Tasks,
                     _ => return None,
                 };
                 DocKind::Member { owner, section }
@@ -189,6 +192,13 @@ mod tests {
                     team: "t-1".into(),
                     year: "2026".into()
                 }
+            })
+        );
+        assert_eq!(
+            DocKind::parse(&format!("member/{m}/tasks")),
+            Some(DocKind::Member {
+                owner: m,
+                section: MemberSection::Tasks
             })
         );
         assert_eq!(DocKind::parse("kb/meta"), Some(DocKind::KbMeta));

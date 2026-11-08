@@ -13,7 +13,7 @@ pub fn key_family(doc_id: &str) -> Option<KeyFamily> {
         DocKind::Team(t) => Some(KeyFamily::Team(t)),
         DocKind::Member {
             owner,
-            section: MemberSection::Secrets,
+            section: MemberSection::Secrets | MemberSection::Tasks,
         } => Some(KeyFamily::MemberPrivate(owner)),
         // 每日 Scrum（§16.12）
         DocKind::Member {
@@ -40,7 +40,7 @@ pub fn can_read(doc_id: &str, who: &Verified, dir: &crate::org::OrgSnapshot) -> 
         Some(DocKind::Team(t)) => dir.is_team_member(&t, &who.member_id),
         Some(DocKind::Member {
             owner,
-            section: MemberSection::Secrets,
+            section: MemberSection::Secrets | MemberSection::Tasks,
         }) => owner == who.member_id,
         Some(DocKind::Member {
             section: MemberSection::Scrum { team, .. } | MemberSection::Reports { team, .. },

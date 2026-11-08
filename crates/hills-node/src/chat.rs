@@ -277,6 +277,9 @@ impl Node {
     pub async fn set_conv_task(&self, conv_id: &str, task: Option<(&str, &str)>) -> Result<()> {
         let task = match task {
             Some((team, id)) => {
+                if team == crate::team::PRIVATE_TEAM {
+                    bail!("私人任務不能連結到對話");
+                }
                 if !self.tasks()?.iter().any(|t| t.team == team && t.id == id) {
                     bail!("找不到這個任務，或你不是該小組的成員");
                 }

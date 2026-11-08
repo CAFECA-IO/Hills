@@ -227,6 +227,10 @@ pub fn read_items(doc: &AutoCommit, owner: &MemberId, vis: &Visibility) -> Vec<P
             let id = k.strip_prefix(ITEM_PREFIX)?.to_owned();
             let o = get_obj(doc, &ROOT, &k)?;
             let level = PlanLevel::parse(&get_str(doc, &o, "level")?)?;
+            // D46：日層級已取消，既有的日目標不再顯示
+            if level == PlanLevel::Day {
+                return None;
+            }
             let period = get_str(doc, &o, "period")?;
             if !valid_period(level, &period) {
                 return None;
@@ -259,6 +263,9 @@ fn validate(input: &PlanInput) -> Result<()> {
     let n = input.title.trim().chars().count();
     if n == 0 || n > MAX_TITLE {
         bail!("目標標題需為 1–{MAX_TITLE} 字");
+    }
+    if input.level == PlanLevel::Day {
+        bail!("日目標已改為任務（D46）");
     }
     if !valid_period(input.level, &input.period) {
         bail!("期間格式與層級不符");
@@ -407,8 +414,13 @@ pub struct Rollup {
     pub krs: HashMap<String, f64>,
 }
 
-/// 依 §16.10 計算進度。只用讀者看得到的項目（傳入的 `items`）。
-pub fn rollup(items: &[PlanItem]) -> Rollup {
+/// 依 §16.10 計算進度。只用讀者看得到的項目（傳入的 `items`）與任務。
+/// `tasks` = (所屬週目標 id, 任務進度 0–100)，見 [`crate::team::Task::progress`]。
+pub fn rollup(items: &[PlanItem], tasks: &[(String, f64)]) -> Rollup {
+    let mut task_progress: HashMap<&str, Vec<f64>> = HashMap::new();
+    for (p, v) in tasks {
+        task_progress.entry(p.as_str()).or_default().push(*v);
+    }
     let by_id: HashMap<&str, &PlanItem> = items.iter().map(|i| (i.id.as_str(), i)).collect();
     let mut children: HashMap<&str, Vec<&str>> = HashMap::new();
     let mut linked: HashMap<&str, Vec<&str>> = HashMap::new();
@@ -424,10 +436,23 @@ pub fn rollup(items: &[PlanItem]) -> Rollup {
     }
     let mut out = Rollup::default();
     let mut visiting = BTreeSet::new();
+    let ctx = Ctx {
+        by_id: &by_id,
+        children: &children,
+        linked: &linked,
+        tasks: &task_progress,
+    };
     for i in items {
-        item_progress(&i.id, &by_id, &children, &linked, &mut out, &mut visiting);
+        item_progress(&i.id, &ctx, &mut out, &mut visiting);
     }
     out
+}
+
+struct Ctx<'a, 'b> {
+    by_id: &'b HashMap<&'a str, &'a PlanItem>,
+    children: &'b HashMap<&'a str, Vec<&'a str>>,
+    linked: &'b HashMap<&'a str, Vec<&'a str>>,
+    tasks: &'b HashMap<&'a str, Vec<f64>>,
 }
 
 fn avg(v: &[f64]) -> Option<f64> {
@@ -436,30 +461,26 @@ fn avg(v: &[f64]) -> Option<f64> {
 
 fn item_progress<'a>(
     id: &'a str,
-    by_id: &HashMap<&'a str, &'a PlanItem>,
-    children: &HashMap<&'a str, Vec<&'a str>>,
-    linked: &HashMap<&'a str, Vec<&'a str>>,
+    ctx: &Ctx<'a, '_>,
     out: &mut Rollup,
     visiting: &mut BTreeSet<&'a str>,
 ) -> f64 {
     if let Some(v) = out.items.get(id) {
         return *v;
     }
-    let Some(item) = by_id.get(id) else {
+    let Some(item) = ctx.by_id.get(id) else {
         return 0.0;
     };
     // 防止 parentId 形成循環
     if !visiting.insert(id) {
         return 0.0;
     }
-    let kids = |out: &mut Rollup, visiting: &mut BTreeSet<&'a str>, ids: &[&'a str]| {
-        let v: Vec<f64> = ids
-            .iter()
-            .map(|c| item_progress(c, by_id, children, linked, out, visiting))
-            .collect();
-        avg(&v)
+    let kids = |out: &mut Rollup, visiting: &mut BTreeSet<&'a str>, ids: &[&'a str]| -> Vec<f64> {
+        ids.iter()
+            .map(|c| item_progress(c, ctx, out, visiting))
+            .collect()
     };
-    let child_ids = children.get(id).cloned().unwrap_or_default();
+    let child_ids = ctx.children.get(id).cloned().unwrap_or_default();
     let auto = if item.level.is_okr() {
         let mut kr_vals = Vec::new();
         for k in &item.key_results {
@@ -467,8 +488,8 @@ fn item_progress<'a>(
             let v = if k.manual {
                 kr_value(k)
             } else {
-                match linked.get(key.as_str()) {
-                    Some(ids) => kids(out, visiting, ids).unwrap_or_else(|| kr_value(k)),
+                match ctx.linked.get(key.as_str()) {
+                    Some(ids) => avg(&kids(out, visiting, ids)).unwrap_or_else(|| kr_value(k)),
                     None => kr_value(k),
                 }
             };
@@ -476,10 +497,15 @@ fn item_progress<'a>(
             kr_vals.push(v);
         }
         avg(&kr_vals)
-            .or_else(|| kids(out, visiting, &child_ids))
+            .or_else(|| avg(&kids(out, visiting, &child_ids)))
             .unwrap_or(0.0)
     } else {
-        match kids(out, visiting, &child_ids) {
+        // 待辦（月 / 週）：子項目與連結的任務（週目標，D46）合併平均
+        let mut parts = kids(out, visiting, &child_ids);
+        if let Some(t) = ctx.tasks.get(id) {
+            parts.extend(t.iter().copied());
+        }
+        match avg(&parts) {
             Some(v) => v,
             None if item.done => 100.0,
             None => 0.0,
@@ -715,7 +741,7 @@ mod tests {
             Ok(format!("kr{n}"))
         })
         .unwrap();
-        let mut d = input(PlanLevel::Day, "2026-11-08");
+        let mut d = input(PlanLevel::Week, "2026-W45");
         d.parent_id = Some("q1".into());
         d.kr_ref = Some("q1/kr1".into());
         write_item(&mut doc, "d1", &d, 6, 11, &mut || Ok("x".into())).unwrap();
@@ -735,12 +761,27 @@ mod tests {
     }
 
     #[test]
+    fn day_items_are_hidden() {
+        // 既有的日目標（D46 之前寫入）讀取時略過
+        let mut doc = AutoCommit::new();
+        let o = doc.put_object(ROOT, "item:d0", ObjType::Map).unwrap();
+        doc.put(&o, "level", "day").unwrap();
+        doc.put(&o, "period", "2026-11-08").unwrap();
+        doc.put(&o, "title", "舊的日目標").unwrap();
+        assert!(read_items(&doc, &me(), &Visibility::Org).is_empty());
+    }
+
+    #[test]
     fn validation() {
         let mut bad = input(PlanLevel::Month, "2026-W45");
         assert!(validate(&bad).is_err());
         bad.period = "2026-11".into();
         bad.title = " ".into();
         assert!(validate(&bad).is_err());
+        assert!(
+            validate(&input(PlanLevel::Day, "2026-11-08")).is_err(),
+            "D46 不再寫入日目標"
+        );
         let mut q = input(PlanLevel::Quarter, "2026-Q4");
         q.key_results = (0..6)
             .map(|i| kr(&i.to_string(), 0.0, 1.0, 0.0, true))
@@ -752,7 +793,7 @@ mod tests {
 
     #[test]
     fn dedup_prefers_newer() {
-        let mut a = item("x", PlanLevel::Day);
+        let mut a = item("x", PlanLevel::Week);
         a.updated_at = 1;
         a.visibility = Visibility::Org;
         let mut b = a.clone();
@@ -779,15 +820,11 @@ mod tests {
         let mut m2 = item("m2", Month);
         m2.parent_id = Some("q".into());
         m2.kr_ref = Some("q/k2".into());
-        // 週待辦有子項目：日待辦 1/2 完成 → 50
+        // 週目標有任務：一個完成（100）、一個 0 → 50（D46）
         let mut w = item("w", Week);
         w.parent_id = Some("m2".into());
-        let mut d1 = item("d1", Day);
-        d1.parent_id = Some("w".into());
-        d1.done = true;
-        let mut d2 = item("d2", Day);
-        d2.parent_id = Some("w".into());
-        let r = rollup(&[q.clone(), m1, m2, w, d1, d2]);
+        let tasks = vec![("w".to_string(), 100.0), ("w".to_string(), 0.0)];
+        let r = rollup(&[q.clone(), m1, m2, w], &tasks);
         assert_eq!(r.items["w"], 50.0);
         assert_eq!(r.items["m2"], 50.0, "有子項目時用子項目平均（忽略 done）");
         assert_eq!(r.krs["q/k1"], 50.0);
@@ -796,15 +833,25 @@ mod tests {
         // 覆寫優先
         let mut q2 = q.clone();
         q2.progress_override = Some(90);
-        assert_eq!(rollup(&[q2]).items["q"], 90.0);
+        assert_eq!(rollup(&[q2], &[]).items["q"], 90.0);
         // 沒有 KR、沒有子項目 → 0；沒有 KR 有子項目 → 子項目平均
         let y = item("y", Year);
         let mut q3 = item("q3", Quarter);
         q3.parent_id = Some("y".into());
         q3.progress_override = Some(40);
-        let r = rollup(&[y, q3]);
+        let r = rollup(&[y, q3], &[]);
         assert_eq!(r.items["y"], 40.0);
-        assert_eq!(rollup(&[item("z", Year)]).items["z"], 0.0);
+        assert_eq!(rollup(&[item("z", Year)], &[]).items["z"], 0.0);
+        // 週目標沒有任務 → 依 done；有任務時忽略 done、依步驟比例；覆寫優先
+        let mut w2 = item("w2", Week);
+        w2.done = true;
+        assert_eq!(rollup(&[w2.clone()], &[]).items["w2"], 100.0);
+        assert_eq!(
+            rollup(&[w2.clone()], &[("w2".into(), 25.0)]).items["w2"],
+            25.0
+        );
+        w2.progress_override = Some(70);
+        assert_eq!(rollup(&[w2], &[("w2".into(), 25.0)]).items["w2"], 70.0);
         // 起始值等於目標值、超出範圍會被限制
         assert_eq!(kr_value(&kr("a", 5.0, 5.0, 5.0, true)), 100.0);
         assert_eq!(kr_value(&kr("a", 0.0, 10.0, 20.0, true)), 100.0);
@@ -813,7 +860,7 @@ mod tests {
 
     #[test]
     fn view_json_shape() {
-        let mut i = item("a", PlanLevel::Day);
+        let mut i = item("a", PlanLevel::Week);
         i.visibility = Visibility::Team("t1".into());
         let v = serde_json::to_value(&i).unwrap();
         assert_eq!(v["owner"], me().to_string());
@@ -821,7 +868,7 @@ mod tests {
             v["visibility"],
             serde_json::json!({"kind": "team", "team": "t1"})
         );
-        assert_eq!(v["level"], "day");
+        assert_eq!(v["level"], "week");
         let p: PlanInput = serde_json::from_value(serde_json::json!({
             "level": "week", "period": "2026-W45", "title": "x",
             "visibility": {"kind": "private"}
@@ -836,7 +883,7 @@ mod tests {
         a.parent_id = Some("b".into());
         let mut b = item("b", PlanLevel::Week);
         b.parent_id = Some("a".into());
-        let r = rollup(&[a, b]);
+        let r = rollup(&[a, b], &[]);
         assert!(r.items.contains_key("a") && r.items.contains_key("b"));
     }
 }

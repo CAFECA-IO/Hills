@@ -22,6 +22,7 @@ async fn tasks_profiles_offices_and_presence_sync() {
         .create_task(
             DEFAULT_TEAM,
             TaskInput {
+                plan_item_id: None,
                 title: "Windows 驗收".into(),
                 assignee: Some(a),
                 status: None,

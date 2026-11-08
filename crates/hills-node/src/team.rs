@@ -1,6 +1,7 @@
 //! team 文件的任務與角色外觀（technical-design §16.8 v0.11、D40），以及首頁的焦點規則。
 //!
 //! 任務放在根物件的 `task:<ULID>`，外觀放在 `profile:<memberId>`（JSON 字串，驗證層限本人寫入）。
+//! 私人任務（v0.19，D46）以相同結構放在 `member/<id>/tasks`，介面以 `team = "private"` 表示。
 
 use std::collections::BTreeMap;
 
@@ -13,6 +14,8 @@ use crate::node::{Node, now_ms};
 use crate::org::{get_int, get_obj, get_str};
 
 const TASK_PREFIX: &str = "task:";
+/// 私人任務在介面與命令中的「小組」值（technical-design §16.8 v0.19）
+pub const PRIVATE_TEAM: &str = "private";
 const PROFILE_PREFIX: &str = "profile:";
 const FOCUS_FILE: &str = "focus";
 const MAX_STEPS: usize = 30;
@@ -69,6 +72,8 @@ pub struct Task {
     pub status: TaskStatus,
     pub due_at: Option<Timestamp>,
     pub steps: Vec<TaskStep>,
+    /// 所屬週目標（D46）
+    pub plan_item_id: Option<String>,
     pub created_by: Option<MemberId>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
@@ -78,6 +83,23 @@ impl Task {
     /// 第一個未完成的步驟。
     pub fn next_step(&self) -> Option<&TaskStep> {
         self.steps.iter().find(|s| !s.done)
+    }
+
+    pub fn is_private(&self) -> bool {
+        self.team == PRIVATE_TEAM
+    }
+
+    /// 任務進度 0–100：完成步驟比例；沒有步驟時完成 = 100、未完成 = 0（§16.8 v0.19）。
+    pub fn progress(&self) -> f64 {
+        if self.steps.is_empty() {
+            return if self.status == TaskStatus::Done {
+                100.0
+            } else {
+                0.0
+            };
+        }
+        let done = self.steps.iter().filter(|s| s.done).count();
+        done as f64 * 100.0 / self.steps.len() as f64
     }
 }
 
@@ -90,6 +112,9 @@ pub struct TaskInput {
     pub status: Option<TaskStatus>,
     pub due_at: Option<Timestamp>,
     pub steps: Vec<StepInput>,
+    /// 所屬週目標（D46）；由 node 檢查存在且為週層級
+    #[serde(default)]
+    pub plan_item_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -157,6 +182,7 @@ pub fn read_tasks(doc: &AutoCommit, team: &str) -> Vec<Task> {
                 status: TaskStatus::parse(&get_str(doc, &t, "status").unwrap_or_default()),
                 due_at: get_int(doc, &t, "dueAt"),
                 steps: read_steps(doc, &t),
+                plan_item_id: get_str(doc, &t, "planItemId").filter(|s| !s.is_empty()),
                 created_by: member(doc, &t, "createdBy"),
                 created_at: get_int(doc, &t, "createdAt").unwrap_or(0),
                 updated_at: get_int(doc, &t, "updatedAt").unwrap_or(0),
@@ -241,6 +267,14 @@ pub fn write_task(
         None => {
             if doc.get(&t, "dueAt")?.is_some() {
                 doc.delete(&t, "dueAt")?;
+            }
+        }
+    }
+    match input.plan_item_id.as_deref().filter(|s| !s.is_empty()) {
+        Some(p) => doc.put(&t, "planItemId", p)?,
+        None => {
+            if doc.get(&t, "planItemId")?.is_some() {
+                doc.delete(&t, "planItemId")?;
             }
         }
     }
@@ -397,34 +431,74 @@ fn team_doc(team: &str) -> String {
     format!("team/{team}")
 }
 
+fn private_tasks_doc(owner: &MemberId) -> String {
+    format!("member/{owner}/tasks")
+}
+
 impl Node {
     fn my_teams(&self) -> Vec<String> {
         self.org().teams_of(&self.member_id())
     }
 
     fn ensure_my_team(&self, team: &str) -> Result<()> {
+        if team == PRIVATE_TEAM {
+            return Ok(());
+        }
         if !self.my_teams().iter().any(|t| t == team) {
             bail!("你不是這個小組的成員");
         }
         Ok(())
     }
 
-    /// 我所屬各小組的任務。
+    /// 任務所在的文件：小組任務 `team/<id>`，私人任務 `member/<me>/tasks`。
+    fn task_doc(&self, team: &str) -> String {
+        if team == PRIVATE_TEAM {
+            private_tasks_doc(&self.member_id())
+        } else {
+            team_doc(team)
+        }
+    }
+
+    /// 我所屬各小組的任務，加上我的私人任務。
     pub fn tasks(&self) -> Result<Vec<Task>> {
         let mut out = Vec::new();
         for team in self.my_teams() {
             out.extend(self.read_doc(&team_doc(&team), |d| read_tasks(d, &team))?);
         }
+        out.extend(self.read_doc(&self.task_doc(PRIVATE_TEAM), |d| {
+            read_tasks(d, PRIVATE_TEAM)
+        })?);
         out.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.cmp(&b.id)));
         Ok(out)
     }
 
+    /// 檢查並整理輸入：週目標須存在於我可讀的計劃且為週層級；私人任務負責人固定為我、步驟無負責人。
+    fn prepare_task(&self, team: &str, mut input: TaskInput) -> Result<TaskInput> {
+        if let Some(p) = input.plan_item_id.as_deref().filter(|s| !s.is_empty()) {
+            let ok = self
+                .plans(crate::plans::PlanQuery::Visible)?
+                .iter()
+                .any(|i| i.id == p && i.level == crate::plans::PlanLevel::Week);
+            if !ok {
+                bail!("找不到這個週目標");
+            }
+        }
+        if team == PRIVATE_TEAM {
+            input.assignee = Some(self.member_id());
+            for s in &mut input.steps {
+                s.assignee = None;
+            }
+        }
+        Ok(input)
+    }
+
     pub async fn create_task(&self, team: &str, input: TaskInput) -> Result<String> {
         self.ensure_my_team(team)?;
+        let input = self.prepare_task(team, input)?;
         let now = now_ms();
         let id = crate::conv::ulid(now)?;
         let me = self.member_id();
-        self.change(&team_doc(team), |doc| {
+        self.change(&self.task_doc(team), |doc| {
             write_task(doc, &id, &input, &me, now, &mut || crate::conv::ulid(now))
         })
         .await?;
@@ -433,7 +507,8 @@ impl Node {
 
     pub async fn update_task(&self, team: &str, task: &str, input: TaskInput) -> Result<()> {
         self.ensure_my_team(team)?;
-        let exists = self.read_doc(&team_doc(team), |d| {
+        let input = self.prepare_task(team, input)?;
+        let exists = self.read_doc(&self.task_doc(team), |d| {
             d.get(ROOT, format!("{TASK_PREFIX}{task}").as_str())
                 .ok()
                 .flatten()
@@ -444,7 +519,7 @@ impl Node {
         }
         let now = now_ms();
         let me = self.member_id();
-        self.change(&team_doc(team), |doc| {
+        self.change(&self.task_doc(team), |doc| {
             write_task(doc, task, &input, &me, now, &mut || crate::conv::ulid(now))
         })
         .await
@@ -459,7 +534,7 @@ impl Node {
     ) -> Result<()> {
         self.ensure_my_team(team)?;
         let now = now_ms();
-        self.change(&team_doc(team), |doc| {
+        self.change(&self.task_doc(team), |doc| {
             set_step_done(doc, task, step, done, now)
         })
         .await
@@ -467,7 +542,7 @@ impl Node {
 
     pub async fn delete_task(&self, team: &str, task: &str) -> Result<()> {
         self.ensure_my_team(team)?;
-        self.change(&team_doc(team), |doc| Ok(delete_task(doc, task)?))
+        self.change(&self.task_doc(team), |doc| Ok(delete_task(doc, task)?))
             .await
     }
 
@@ -567,9 +642,44 @@ mod tests {
     }
 
     #[test]
+    fn plan_link_and_progress() {
+        // D46：任務連結週目標，可清除；進度依步驟比例
+        let mut doc = AutoCommit::new();
+        let mut input = TaskInput {
+            plan_item_id: Some("w1".into()),
+            title: "壓力測試".into(),
+            ..Default::default()
+        };
+        write_task(&mut doc, "t", &input, &A, 1, &mut ids()).unwrap();
+        let t = &read_tasks(&doc, PRIVATE_TEAM)[0];
+        assert_eq!(t.plan_item_id.as_deref(), Some("w1"));
+        assert!(t.is_private());
+        assert_eq!(t.progress(), 0.0);
+        input.plan_item_id = None;
+        input.status = Some(TaskStatus::Done);
+        write_task(&mut doc, "t", &input, &A, 2, &mut ids()).unwrap();
+        let t = &read_tasks(&doc, "g")[0];
+        assert_eq!(t.plan_item_id, None);
+        assert_eq!(t.progress(), 100.0, "沒有步驟：完成 = 100");
+        let t = task(
+            "x",
+            None,
+            None,
+            vec![
+                s("a", None, true),
+                s("b", None, false),
+                s("c", None, false),
+                s("d", None, true),
+            ],
+        );
+        assert_eq!(t.progress(), 50.0);
+    }
+
+    #[test]
     fn task_roundtrip_and_steps() {
         let mut doc = AutoCommit::new();
         let input = TaskInput {
+            plan_item_id: None,
             title: " Windows 驗收 ".into(),
             assignee: Some(B),
             status: None,
@@ -596,6 +706,7 @@ mod tests {
 
         // 編輯：保留既有步驟的完成時間，新增一步
         let mut edit = TaskInput {
+            plan_item_id: None,
             title: "Windows 驗收".into(),
             assignee: Some(B),
             status: Some(TaskStatus::Doing),
@@ -633,6 +744,7 @@ mod tests {
     fn concurrent_step_ticks_merge() {
         let mut a = AutoCommit::new();
         let input = TaskInput {
+            plan_item_id: None,
             title: "x".into(),
             steps: vec![step("1", None), step("2", None)],
             ..Default::default()
@@ -649,11 +761,13 @@ mod tests {
     fn validation() {
         let mut doc = AutoCommit::new();
         let bad = TaskInput {
+            plan_item_id: None,
             title: "  ".into(),
             ..Default::default()
         };
         assert!(write_task(&mut doc, "t", &bad, &A, 1, &mut ids()).is_err());
         let too_many = TaskInput {
+            plan_item_id: None,
             title: "x".into(),
             steps: (0..31).map(|i| step(&i.to_string(), None)).collect(),
             ..Default::default()
@@ -670,6 +784,7 @@ mod tests {
             status: TaskStatus::Todo,
             due_at: due,
             steps,
+            plan_item_id: None,
             created_by: None,
             created_at: 0,
             updated_at: 0,

@@ -316,6 +316,7 @@ async fn conversation_task_link() {
     let (_d, _admin, alice, bob) = trio(&mb).await;
     let team = alice.org().teams_of(&alice.member_id())[0].clone();
     let input = |title: &str| hills_node::team::TaskInput {
+        plan_item_id: None,
         title: title.into(),
         assignee: None,
         status: None,

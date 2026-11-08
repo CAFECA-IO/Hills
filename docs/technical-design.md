@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.14 草案 · 2026-11-08 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.15 草案 · 2026-11-08 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -158,7 +158,7 @@ CAFECA 帳戶（chainId + 身分合約地址 account，由使用者的 Passkey /
 |------|--------|--------|------|------|
 | `org` | 管理者 | 全員 | `GK` | 設定、品牌、成員憑證與 CAFECA 帳戶、小組、假日曆、假別、工作規則、核准規則 |
 | `team/<teamId>` | 小組成員 | 小組成員 | `TK_team` | 任務、小組目標 |
-| `member/<id>/plans/{private,team,org}` | 本人 | 依可見度 | `PK` / `TK` / `GK` | 五層計劃（見 §4.3） |
+| `member/<id>/plans/private`、`plans/team/<teamId>`、`plans/org` | 本人 | 本人 / 該小組成員 / 全員 | `PK` / `TK_team` / `GK` | 五層計劃（見 §4.3、§16.10） |
 | `member/<id>/scrum/<yyyy-mm>` | 本人 | 小組成員 | `TK_team` | 每日 Scrum |
 | `member/<id>/attendance/<yyyy-mm>` | 本人 | 本人、負責人、管理者 | `AK_member` | 打卡紀錄 |
 | `member/<id>/requests` | 本人 | 本人、核准者 | `AK_member` | 請假、加班、補打卡申請 |
@@ -180,7 +180,9 @@ CAFECA 帳戶（chainId + 身分合約地址 account，由使用者的 Passkey /
 
 ### 4.3 計劃的可見度
 
-可見度有「私人 / 小組 / 全組織」三種，分別以 `PK_member`、`TK_team`、`GK` 加密，因此計劃拆為三份文件。改變可見度 = 將項目搬到另一份文件並保留同一 `planItemId`。上下層連結以 `planItemId` 參照，跨文件仍可組成目標樹；讀者看不到的上層項目顯示為「私人項目」。
+可見度有「私人 / 小組 / 全組織」三種，分別以 `PK_member`、`TK_team`、`GK` 加密，因此計劃拆為多份文件。改變可見度 = 將項目搬到另一份文件並保留同一 `planItemId`。上下層連結以 `planItemId` 參照，跨文件仍可組成目標樹；讀者看不到的上層項目顯示為「私人項目」。
+
+> v0.15：成員可能屬於多個小組，「小組」可見度改為**每個小組一份**：`member/<id>/plans/team/<teamId>`，以該小組的 `TK_team` 加密，只有該小組成員能讀；設定可見度時選擇一個所屬小組。離開小組後，留在該小組文件中的項目仍可被該小組讀到（與任務相同），介面提示改可見度。文件結構與進度彙總見 §16.10。
 
 ### 4.4 加密 Change Bundle
 
@@ -790,6 +792,34 @@ team/<teamId> = {                                         // v0.11（D40）
 - **焦點**（feature-plan §5.4）：候選為指派給我、或下一個未完成步驟指派給我的未完成任務；依「期限最近 → 卡住別人（下一步負責人不是我但我負責的步驟未完成）→ 指派給我 → 建立時間」排序。手動選擇的焦點只存在本機（secret 檔 `focus`），任務完成或刪除時回到自動。
 
 `Directory`（§4.2）由 org 文件投影提供。M0 建立組織時自動建立一個預設小組。
+
+### 16.10 計劃文件（v0.15，D8、D43「階梯」）
+
+```
+member/<id>/plans/{private | team/<teamId> | org} = {
+  "item:<planItemId ULID>": {
+    level: year|quarter|month|week|day,
+    period: "2026" | "2026-Q4" | "2026-11" | "2026-W45" | "2026-11-08",
+    title, parentId?, krRef?: "<上層 planItemId>/<krId>",
+    done: boolean,                 // 月 / 週 / 日
+    progressOverride?: 0..100,
+    keyResults: [ { id, title, start, target, current, unit, manual } ],   // 年 / 季，0–5 個
+    createdAt, updatedAt
+  }
+}
+```
+
+- 只有本人可寫（§4.1）；`keyResults` 整筆替換（與任務步驟相同），`done` 單獨修改。
+- `period` 依**組織時區**（org `timezone`）計算，週為 ISO 週（週一開始，跨年週屬於含週四的那一年）；寫入時檢查格式與 `level` 相符。
+- 改變可見度：在新文件寫入同一 id，再從舊文件刪除；同一 id 同時出現在兩份文件時取 `updatedAt` 較新者。
+- `alignedTeamGoalId`（對齊小組目標）隨小組目標功能加入，M1 第一版不使用。
+
+**進度彙總**（0–100，由投影層計算，不存入文件）：
+
+- 待辦（月 / 週 / 日）：有子項目 → 子項目平均；否則完成 = 100、未完成 = 0。
+- 關鍵結果：`manual` 為真 → `(current − start) / (target − start)`（限制在 0–100）；否則有以 `krRef` 連結的待辦 → 其平均；都沒有 → 以 `current` 計算。
+- 年 / 季目標：有關鍵結果 → 關鍵結果平均；否則子項目平均；都沒有 → 0。
+- `progressOverride` 優先於自動計算；讀者看不到的子項目不列入計算。
 
 ### 16.9 部署（M0）
 

@@ -9,6 +9,10 @@ import {
   isPrivateTask,
   PRIVATE_TEAM,
   type Direction,
+  type DirectionRules,
+  type DirectionWeek,
+  type MemberView,
+  type SuggestionView,
   type PlanLevel,
   type PlanView,
   type Task,
@@ -20,6 +24,10 @@ import type { GoalsProps } from './goals-ladder';
 import { periodsAt, weekRange, splitPeriod, type Periods } from './goals-utils';
 import { BreakdownWizard, GuidedEditor, PlanWizard, TeamGoalWizard } from './goals-wizard';
 import { useLoad } from './hooks';
+import { DEFAULT_RULES, assess, quarterElapsed, sideOf } from './drift-utils';
+import { DirectionCompass } from './compass';
+import { MySentence, StatePill, TeamTab } from './team-direction';
+import { lookOf } from './summit';
 import { t, type MessageKey } from './i18n';
 import { PageHead } from './layout';
 import {
@@ -27,7 +35,6 @@ import {
   Card,
   Checkbox,
   Chip,
-  ConfirmButton,
   EmptyState,
   ErrorText,
   IconButton,
@@ -121,6 +128,9 @@ export function GuidedGoals({
 }: GoalsProps & { toggle: ReactNode; onAdvanced: () => void }) {
   const plans = useLoad(() => api.plans(true), ['doc', 'org', 'roster']);
   const dirs = useLoad(api.directions, ['doc', 'org', 'roster']);
+  const summaries = useLoad(api.directionSummaries, ['doc', 'org', 'roster']);
+  const rules = useLoad(api.directionRules, ['org']);
+  const suggestions = useLoad(api.mySuggestions, ['doc', 'org', 'roster']);
   const [tab, setTab] = useState<'mine' | 'team'>('mine');
   const [view, setView] = useState<GuidedView>({ kind: 'home' });
   const [editing, setEditing] = useState<PlanView | null>(null);
@@ -222,11 +232,15 @@ export function GuidedGoals({
           directions={directions}
           teamGoals={teamGoals}
           teams={teams}
+          members={members}
+          summaries={summaries.data ?? []}
+          rules={rules.data ?? DEFAULT_RULES}
           me={meId}
           isAdmin={me?.isAdmin ?? false}
-          year={periods.year}
+          periods={periods}
+          now={now}
           onEditGoal={(team, goal) => setView({ kind: 'teamGoal', team, goal })}
-          onDeleted={reload}
+          onChanged={reload}
         />
       ) : view.kind === 'week' ? (
         <WeekView
@@ -253,6 +267,27 @@ export function GuidedGoals({
           onWeek={() => setView({ kind: 'week' })}
           onEdit={setEditing}
           onAll={onAdvanced}
+          direction={
+            <YourDirection
+              weeks={summaries.data?.find((m) => m.member === meId)?.weeks ?? []}
+              rules={rules.data ?? DEFAULT_RULES}
+              periods={periods}
+              now={now}
+              me={me ?? null}
+              teamName={myTeams[0]?.name ?? ''}
+            />
+          }
+          suggestion={
+            <SuggestionCard
+              suggestions={suggestions.data ?? []}
+              items={items}
+              members={members}
+              teamGoals={teamGoals}
+              directions={directions}
+              notify={notify}
+              onApplied={reload}
+            />
+          }
         />
       )}
       {editing && (
@@ -301,7 +336,11 @@ function Home({
   onWeek,
   onEdit,
   onAll,
+  direction,
+  suggestion,
 }: {
+  direction: ReactNode;
+  suggestion: ReactNode;
   periods: Periods;
   items: PlanView[];
   tasks: Task[];
@@ -333,6 +372,7 @@ function Home({
   return (
     <div className="flex min-h-0 flex-1 gap-3 wide:gap-4">
       <section className="flex min-w-0 flex-1 flex-col gap-3">
+        {suggestion}
         {prompt && (
           <PromptCard
             prompt={prompt}
@@ -423,7 +463,8 @@ function Home({
         </Card>
       </section>
       <Card className="flex w-70 shrink-0 flex-col gap-2.5 wide:w-85">
-        <div className="flex items-center">
+        {direction}
+        <div className="flex items-center border-t border-line pt-3">
           <h2 className="text-base font-bold">{t('guide.week.title')}</h2>
           <LinkButton className="ml-auto text-sm" onClick={onWeek}>
             {t('guide.week.all')}
@@ -439,12 +480,186 @@ function Home({
             weekTasks.map((x) => <CheckRow key={x.id} task={x} compact />)
           )}
         </div>
-        <div className="flex flex-col gap-1.5 rounded-control bg-bg px-3.5 py-3">
-          <span className="text-sm font-bold">{t('guide.tip.title')}</span>
-          <span className="text-sm leading-normal text-muted">{t('guide.tip.body')}</span>
-        </div>
       </Card>
     </div>
+  );
+}
+
+// ── 你的方向（D6）與收到的建議 ─────────────────────────────────
+
+const SUGGEST_DISMISS_KEY = 'hills.goals.suggestDismissed';
+
+function readList(key: string): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(key) ?? '[]') as unknown;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeList(key: string, list: string[]) {
+  try {
+    localStorage.setItem(key, JSON.stringify(list.slice(-100)));
+  } catch {
+    // 忽略
+  }
+}
+
+function YourDirection({
+  weeks,
+  rules,
+  periods,
+  now,
+  me,
+  teamName,
+}: {
+  weeks: DirectionWeek[];
+  rules: DirectionRules;
+  periods: Periods;
+  now: number;
+  me: MemberView | null;
+  teamName: string;
+}) {
+  const a = assess(weeks, rules, periods, now);
+  const today = quarterElapsed(periods) * 100;
+  const checks: [boolean, string][] = [
+    [!a.unaligned, a.unaligned ? t('drift.reason.unaligned') : t('drift.check.aligned')],
+    [!a.elsewhere, a.elsewhere ? t('drift.reason.elsewhere') : t('drift.check.focused')],
+    [!a.behind, a.behind ? t('drift.reason.behind') : t('drift.check.onPace')],
+    [!a.stale, a.stale ? t('drift.reason.stale') : t('drift.check.fresh')],
+  ];
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2">
+        <h2 className="text-base font-bold">{t('drift.mine.yours')}</h2>
+        <StatePill state={a.state} />
+      </div>
+      {a.week && me ? (
+        <>
+          <div className="flex justify-center">
+            <DirectionCompass
+              mode="me"
+              width={240}
+              height={150}
+              radius={92}
+              today={today}
+              teamLabel={teamName}
+              people={[
+                {
+                  id: me.id,
+                  name: me.name,
+                  look: lookOf(me),
+                  angle: a.angle,
+                  progress: a.progress,
+                  state: a.state === 'unknown' ? 'stale' : a.state,
+                  unaligned: a.unaligned,
+                  isMe: true,
+                  side: sideOf(me.id),
+                },
+              ]}
+              label={t('drift.compass.mine')}
+            />
+          </div>
+          <MySentence a={a} today={today} />
+          <ul className="flex flex-col gap-0.5 text-xs">
+            {checks.map(([ok, text]) => (
+              <li key={text} className="flex gap-2">
+                <span
+                  aria-hidden="true"
+                  className={ok ? 'font-bold text-st-online-text' : 'text-warning'}
+                >
+                  {ok ? '✓' : '▲'}
+                </span>
+                {text}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p className="text-xs text-muted">{t('drift.mine.empty')}</p>
+      )}
+    </div>
+  );
+}
+
+function SuggestionCard({
+  suggestions,
+  items,
+  members,
+  teamGoals,
+  directions,
+  notify,
+  onApplied,
+}: {
+  suggestions: SuggestionView[];
+  items: PlanView[];
+  members: MemberView[];
+  teamGoals: TeamGoal[];
+  directions: Direction[];
+  notify: (s: ToastState) => void;
+  onApplied: () => void;
+}) {
+  const [dismissed, setDismissed] = useState(() => readList(SUGGEST_DISMISS_KEY));
+  const { busy, error, attempt } = useAction();
+  const s = suggestions.find((x) => {
+    if (dismissed.includes(x.id)) return false;
+    const item = items.find((i) => i.id === x.planItemId && i.mine);
+    return item && item.alignedGoalId !== x.goalId;
+  });
+  if (!s) return null;
+  const item = items.find((i) => i.id === s.planItemId);
+  const goal =
+    teamGoals.find((g) => g.id === s.goalId) ?? directions.find((d) => d.id === s.goalId);
+  if (!item || !goal) return null;
+  const from = members.find((m) => m.id === s.from)?.name ?? '';
+  const dismiss = () => {
+    const next = [...dismissed, s.id];
+    writeList(SUGGEST_DISMISS_KEY, next);
+    setDismissed(next);
+  };
+  const save = (alignedGoalId: string | null) =>
+    api.savePlan({
+      id: item.id,
+      level: item.level,
+      period: item.period,
+      title: item.title,
+      parentId: item.parentId,
+      krRef: item.krRef,
+      done: item.done,
+      progressOverride: item.progressOverride,
+      keyResults: item.keyResults,
+      alignedGoalId,
+      criteria: item.criteria,
+      helps: item.helps,
+      visibility: item.visibility,
+    });
+  return (
+    <Card className="flex items-center gap-4 border border-warning shadow-none">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="text-base font-bold">
+          {t('drift.suggest.received', { name: from, plan: item.title, goal: goal.title })}
+        </span>
+        <span className="text-sm text-muted">{t('drift.suggest.receivedHint')}</span>
+        <ErrorText message={error} />
+      </div>
+      <Button
+        busy={busy}
+        onClick={async () => {
+          const prev = item.alignedGoalId;
+          if (await attempt(() => save(s.goalId))) {
+            dismiss();
+            onApplied();
+            notify({ message: t('drift.suggest.applied'), undo: () => save(prev) });
+          }
+        }}
+      >
+        {t('drift.suggest.apply')}
+      </Button>
+      <Button variant="ghost" onClick={dismiss}>
+        {t('drift.suggest.dismiss')}
+      </Button>
+    </Card>
   );
 }
 
@@ -805,163 +1020,6 @@ function AddTask({
         <span className="ml-auto text-xs text-muted">{t('guide.week.addHint')}</span>
       </div>
       <ErrorText message={error} />
-    </div>
-  );
-}
-
-// ── 團隊（第 1 批：方向清單） ─────────────────────────────────
-
-function TeamTab({
-  directions,
-  teamGoals,
-  teams,
-  me,
-  isAdmin,
-  year,
-  onEditGoal,
-  onDeleted,
-}: {
-  directions: Direction[];
-  teamGoals: TeamGoal[];
-  teams: GoalsProps['teams'];
-  me: string;
-  isAdmin: boolean;
-  year: string;
-  onEditGoal: (team: string, goal: TeamGoal | null) => void;
-  onDeleted: () => void;
-}) {
-  const years = [year, String(Number(year) + 1)];
-  const [y, setY] = useState(year);
-  const dirs = directions.filter((d) => d.year === y);
-  const { error, attempt } = useAction();
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="flex items-center gap-3">
-        <SegmentedControl
-          label={t('guide.team.year')}
-          options={years.map((v) => ({ value: v, label: v }))}
-          value={y}
-          onChange={setY}
-        />
-        <span className="text-xs text-muted">{t('guide.team.hint')}</span>
-      </div>
-      {dirs.length === 0 ? (
-        <Card>
-          <EmptyState>
-            {isAdmin ? t('guide.team.noDirectionAdmin') : t('guide.team.noDirection')}
-          </EmptyState>
-        </Card>
-      ) : (
-        <div className="flex gap-3.5">
-          {dirs.map((d, i) => {
-            const n = teamGoals.filter((g) => g.directionId === d.id).length;
-            return (
-              <Card key={d.id} className="flex min-w-0 flex-1 flex-col gap-2">
-                <span className="text-xs font-bold text-level-year">
-                  {t('guide.team.direction', { n: i + 1 })}
-                </span>
-                <span className="text-base font-bold">{d.title}</span>
-                <div className="flex items-center gap-2.5">
-                  <ProgressBar
-                    value={d.progress / 100}
-                    size="sm"
-                    className="flex-1"
-                    barClassName="bg-level-year"
-                    label={d.title}
-                  />
-                  <span className="w-9 text-right text-sm font-bold">
-                    {Math.round(d.progress)}%
-                  </span>
-                </div>
-                <span className="text-xs text-muted">{t('guide.team.pushing', { n })}</span>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-      <Card padding="none" className="flex min-h-0 flex-1 flex-col">
-        <div className="flex items-baseline gap-2.5 px-5 pt-4 pb-2">
-          <h2 className="text-base font-bold">{t('guide.team.teams')}</h2>
-          <span className="text-xs text-muted">{t('guide.team.later')}</span>
-        </div>
-        <div className="scroll-panel min-h-0 flex-1">
-          {teams.map((tm) => {
-            const goals = teamGoals.filter((g) => g.team === tm.id && g.year === y);
-            const canEdit = isAdmin || tm.leads.includes(me);
-            return (
-              <div
-                key={tm.id}
-                className="grid grid-cols-[120px_minmax(0,1fr)_auto] items-center gap-4 border-t border-line px-5 py-3"
-              >
-                <div className="flex flex-col gap-0.5">
-                  <span className="font-bold">{tm.name}</span>
-                  <span className="text-xs text-muted">
-                    {t('guide.team.people', { n: new Set([...tm.members, ...tm.leads]).size })}
-                  </span>
-                </div>
-                <div className="flex min-w-0 flex-col gap-2">
-                  {goals.length === 0 && (
-                    <span className="text-muted">{t('guide.team.noGoal')}</span>
-                  )}
-                  {goals.map((g) => {
-                    const d = directions.find((x) => x.id === g.directionId);
-                    return (
-                      <div key={g.id} className="flex items-center gap-3">
-                        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                          <span className="truncate text-base font-semibold">{g.title}</span>
-                          <span className="truncate text-xs text-muted">
-                            {d
-                              ? t('guide.forTitle', { title: d.title })
-                              : t('guide.team.unaligned')}
-                          </span>
-                        </div>
-                        <ProgressBar
-                          value={g.progress / 100}
-                          size="sm"
-                          className="w-28"
-                          label={g.title}
-                        />
-                        <span className="w-9 text-right text-sm font-bold">
-                          {Math.round(g.progress)}%
-                        </span>
-                        {canEdit && (
-                          <>
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => onEditGoal(tm.id, g)}
-                            >
-                              {t('guide.team.edit')}
-                            </Button>
-                            <ConfirmButton
-                              label={t('guide.team.delete')}
-                              message={t('guide.team.deleteConfirm', { title: g.title })}
-                              onConfirm={() =>
-                                void attempt(() => api.deleteTeamGoal(tm.id, g.id)).then(onDeleted)
-                              }
-                            />
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                {canEdit ? (
-                  <Button variant="soft" size="sm" onClick={() => onEditGoal(tm.id, null)}>
-                    {t('guide.team.setGoal')}
-                  </Button>
-                ) : (
-                  <span />
-                )}
-              </div>
-            );
-          })}
-        </div>
-        <ErrorText message={error} />
-        <p className="border-t border-line px-5 py-3 text-xs text-muted">
-          {t('guide.team.footer')}
-        </p>
-      </Card>
     </div>
   );
 }

@@ -17,6 +17,7 @@ const TZ = 'Asia/Taipei';
 const MON = Date.UTC(2026, 10, 9, 2);
 
 const task = (id: string, extra: Partial<Task> = {}): Task => ({
+  doneAt: null,
   id,
   team: 'g',
   planItemId: null,

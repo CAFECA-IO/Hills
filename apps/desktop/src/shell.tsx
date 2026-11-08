@@ -15,7 +15,8 @@ import {
 } from './api';
 import { Chat } from './chat';
 import { Portrait, StatusBadge, stateLabel } from './figures';
-import { DirectionsCard } from './directions-settings';
+import { DirectionsCard, DriftRulesCard } from './directions-settings';
+import { useDirectionPublisher } from './drift-publisher';
 import { Goals } from './goals';
 import { Home } from './home';
 import { Knowledge } from './kb';
@@ -158,6 +159,7 @@ export function Shell({ info }: { info: AppInfo }) {
   useCommandShortcut(() => setPalette(true));
   useScrumReminder(overview.data?.timezone ?? null);
   useWeeklyReportReminder(overview.data?.timezone ?? null);
+  useDirectionPublisher(me?.id ?? null, tasks.data, overview.data?.timezone ?? '');
   const go = (p: Page) => {
     setPage(p);
     if (p !== 'chat') setOpenConv(null);
@@ -970,6 +972,7 @@ function OrgTab({
       {info.isAdmin && overview && <OfficesCard overview={overview} />}
       {info.isAdmin && <OrgScrumReminderCard />}
       {info.isAdmin && <DirectionsCard />}
+      {info.isAdmin && <DriftRulesCard />}
       {info.hasOrgRoot && (
         <Card className="flex flex-col gap-3">
           <h2 className="font-medium">{t('settings.backup')}</h2>

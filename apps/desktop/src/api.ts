@@ -81,6 +81,8 @@ export interface Task {
   assignee: string | null;
   status: TaskStatus;
   dueAt: number | null;
+  /** 改成完成的時間（D47 方向摘要） */
+  doneAt: number | null;
   steps: TaskStep[];
   /** 所屬週目標（D46） */
   planItemId: string | null;
@@ -363,6 +365,49 @@ export interface DirectionsView {
   teamGoals: TeamGoal[];
 }
 
+// ── 方向摘要與偏離（technical-design §16.14 v0.21，D47 第 2 批）──
+
+export interface GoalBrief {
+  id: string;
+  title: string;
+  progress: number;
+  alignedGoalId: string | null;
+}
+
+export interface DirectionWeek {
+  v?: number;
+  week: string;
+  units: number;
+  alignedUnits: number;
+  quarterProgress: number | null;
+  goals: GoalBrief[];
+  privateGoals: number;
+  lastActivity: number;
+  openTasks: number;
+  dueThisWeek: number;
+  updatedAt: number;
+}
+
+export interface MemberDirection {
+  member: string;
+  /** 由新到舊 */
+  weeks: DirectionWeek[];
+}
+
+export interface SuggestionView {
+  id: string;
+  from: string;
+  planItemId: string;
+  goalId: string;
+  createdAt: number;
+}
+
+export interface DirectionRules {
+  minAlignedShare: number;
+  behindPoints: number;
+  staleDays: number;
+}
+
 export interface DirectionInput {
   id?: string | null;
   year: string;
@@ -589,6 +634,13 @@ export const api = {
   deleteDirection: (id: string) => call<void>('delete_direction', { id }),
   saveTeamGoal: (input: TeamGoalInput) => call<string>('save_team_goal', { input }),
   deleteTeamGoal: (team: string, id: string) => call<void>('delete_team_goal', { team, id }),
+  directionSummaries: () => call<MemberDirection[]>('direction_summaries'),
+  mySuggestions: () => call<SuggestionView[]>('my_suggestions'),
+  publishDirection: (week: DirectionWeek) => call<void>('publish_direction', { week }),
+  suggestAlign: (to: string, planItemId: string, goalId: string) =>
+    call<void>('suggest_align', { to, planItemId, goalId }),
+  directionRules: () => call<DirectionRules>('direction_rules'),
+  setDirectionRules: (rules: DirectionRules) => call<void>('set_direction_rules', { rules }),
   kb: () => call<KbSnapshot>('kb'),
   kbSave: (input: KbInput) => call<string>('kb_save', { input }),
   kbDelete: (key: string) => call<void>('kb_delete', { key }),

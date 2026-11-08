@@ -17,6 +17,11 @@ import type {
   KbTopic,
   Direction,
   DirectionInput,
+  DirectionRules,
+  DirectionWeek,
+  GoalBrief,
+  MemberDirection,
+  SuggestionView,
   PlanInput,
   PlanView,
   TeamGoal,
@@ -101,6 +106,7 @@ interface MockTask {
   assignee: string | null;
   status: string;
   dueAt: number | null;
+  doneAt?: number | null;
   steps: MockStep[];
   planItemId: string | null;
   createdBy: string | null;
@@ -294,6 +300,50 @@ function directionsView() {
     teamGoals: goals,
   };
 }
+// 示範方向摘要（虛構，與設計稿 D 方案相同的分布，D47 第 2 批）
+const DAY = 86_400_000;
+const brief = (id: string, title: string, progress: number, aligned: boolean): GoalBrief => ({
+  id,
+  title,
+  progress,
+  alignedGoalId: aligned ? 'tg-1' : null,
+});
+const dw = (
+  units: number,
+  aligned: number,
+  progress: number,
+  goal: GoalBrief,
+  idleDays = 0,
+  week = P.week,
+): DirectionWeek => ({
+  v: 1,
+  week,
+  units,
+  alignedUnits: aligned,
+  quarterProgress: progress,
+  goals: [goal],
+  privateGoals: 0,
+  lastActivity: now0 - idleDays * DAY,
+  openTasks: 3,
+  dueThisWeek: 1,
+  updatedAt: now0,
+});
+let summaries: MemberDirection[] = [
+  { member: 'mem-a', weeks: [dw(6, 6, 70, brief('qa', '檔案分享上線', 70, true), 1)] },
+  { member: 'mem-b', weeks: [dw(5, 1, 50, brief('qb', '研究 Rust GUI 框架', 50, false))] },
+  {
+    member: 'mem-c',
+    weeks: [dw(2, 2, 8, brief('qc', '假勤模組上線', 8, true), 16, `${P.year}-W01`)],
+  },
+  { member: 'mem-d', weeks: [dw(5, 4, 48, brief('qd', 'Windows 安裝檔驗收', 48, true))] },
+  { member: 'mem-e', weeks: [dw(5, 4, 45, brief('qe', '聊天功能完成', 45, true), 2)] },
+  { member: 'mem-f', weeks: [dw(10, 7, 40, brief('qf', '效能壓力測試', 40, true))] },
+  { member: 'mem-g', weeks: [dw(10, 9, 55, brief('qg', 'iroh 連線穩定', 55, true), 1)] },
+];
+const suggestionsToMe: SuggestionView[] = [
+  { id: 'sg-1', from: 'mem-a', planItemId: 'q2', goalId: 'tg-1', createdAt: now0 - 3600_000 },
+];
+let driftRules: DirectionRules = { minAlignedShare: 50, behindPoints: 25, staleDays: 14 };
 const taskProgress = (t: MockTask) =>
   t.steps.length === 0
     ? t.status === 'done'
@@ -436,7 +486,11 @@ let manualFocus: string | null = null;
 let myLook = look(0, 5, 2);
 const syncStatus = (t: MockTask) => {
   if (t.steps.length && t.steps.every((x) => x.done)) t.status = 'done';
-  else if (t.steps.some((x) => x.done)) t.status = 'doing';
+  else if (t.steps.some((x) => x.done)) t.status = t.status === 'review' ? 'review' : 'doing';
+  else if (t.steps.length && t.status === 'done') t.status = 'todo';
+  // 任務完成時間（technical-design §16.8 v0.21）
+  if (t.status === 'done') t.doneAt = t.doneAt ?? Date.now();
+  else t.doneAt = null;
 };
 const touch = (name = 'doc') => emit('hills://node', name);
 let joins: JoinRequestView[] = [
@@ -819,6 +873,25 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     return id;
   },
   directions: () => directionsView(),
+  direction_summaries: () => summaries,
+  my_suggestions: () => suggestionsToMe,
+  publish_direction: (a) => {
+    const week = a.week as DirectionWeek;
+    summaries = [
+      ...summaries.filter((m) => m.member !== state.me),
+      { member: state.me, weeks: [{ ...week, updatedAt: Date.now() }] },
+    ];
+    touch();
+  },
+  suggest_align: (a) => {
+    if (a.to === state.me) throw new Error('不能建議自己');
+    touch();
+  },
+  direction_rules: () => driftRules,
+  set_direction_rules: (a) => {
+    driftRules = a.rules as DirectionRules;
+    touch('org');
+  },
   save_direction: (a) => {
     const input = a.input as DirectionInput;
     const id = input.id || 'dir-' + Math.random().toString(16).slice(2, 8);
@@ -908,9 +981,14 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
         ? {
             ...x,
             ...input,
-            status: x.status,
+            status: input.status ?? x.status,
+            doneAt: x.doneAt ?? null,
             planItemId: input.planItemId ?? null,
-            steps: input.steps.map((y, i) => ({ ...y, id: y.id ?? `${x.id}-n${i}`, doneAt: null })),
+            steps: input.steps.map((y, i) => ({
+              ...y,
+              id: y.id ?? `${x.id}-n${i}`,
+              doneAt: y.done ? (x.steps.find((o) => o.id === y.id)?.doneAt ?? Date.now()) : null,
+            })),
           }
         : x,
     );

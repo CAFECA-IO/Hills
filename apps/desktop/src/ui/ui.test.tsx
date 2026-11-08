@@ -21,6 +21,7 @@ import {
   Tabs,
   TextInput,
   Toast,
+  Tooltip,
 } from '.';
 
 const html = (el: React.ReactElement) => renderToStaticMarkup(el);
@@ -89,6 +90,24 @@ describe('ui 元件（docs/components.md）', () => {
     expect(h).toMatch(/aria-current="step"[^>]*>二/);
     expect(h.match(/aria-current/g)).toHaveLength(1);
     expect(h).toContain('✓');
+  });
+
+  it('Tooltip 以 aria-describedby 連到 role=tooltip 的卡片', () => {
+    const h = html(
+      <Tooltip content="摘要">
+        <Button>小華</Button>
+      </Tooltip>,
+    );
+    const id = /aria-describedby="([^"]+)"/.exec(h)?.[1];
+    expect(id).toBeTruthy();
+    expect(h).toMatch(new RegExp(`id="${id}" role="tooltip" class="[^"]*hidden`));
+    expect(
+      html(
+        <Tooltip content="摘要" open>
+          <Button>小華</Button>
+        </Tooltip>,
+      ),
+    ).not.toMatch(/role="tooltip" class="[^"]*hidden/);
   });
 
   it('Toast 是 role=status，附復原按鈕', () => {

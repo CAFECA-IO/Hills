@@ -30,6 +30,7 @@ const TZ = 'Asia/Taipei';
 const at = (date: string, h = 12) => Date.parse(`${date}T${String(h - 8).padStart(2, '0')}:00:00Z`);
 
 const task = (id: string, extra: Partial<Task> = {}): Task => ({
+  doneAt: null,
   id,
   team: 'g',
   planItemId: null,

@@ -1,6 +1,7 @@
 /** 設定 → 組織 →「公司方向」（ui-spec「目標 → 團隊」，D47；technical-design §16.14），只有管理者。 */
 import { useState } from 'react';
-import { api, type Direction } from './api';
+import { api, type Direction, type DirectionRules } from './api';
+import { DEFAULT_RULES } from './drift-utils';
 import { useLoad } from './hooks';
 import { t } from './i18n';
 import {
@@ -148,5 +149,56 @@ function DirectionDialog({
         </Button>
       </div>
     </Dialog>
+  );
+}
+
+/** 設定 → 組織 →「偏離門檻」（ui-spec「目標 → 團隊」v0.20），只有管理者。 */
+export function DriftRulesCard() {
+  const data = useLoad(api.directionRules, ['org']);
+  const [draft, setDraft] = useState<DirectionRules | null>(null);
+  const { busy, error, attempt } = useAction();
+  const v = draft ?? data.data ?? DEFAULT_RULES;
+  const field = (key: keyof DirectionRules, label: string, max: number) => (
+    <Field label={label}>
+      <TextInput
+        type="number"
+        min={key === 'staleDays' ? 1 : 0}
+        max={max}
+        className="w-28"
+        value={String(v[key])}
+        onChange={(e) =>
+          setDraft({ ...v, [key]: Math.max(0, Math.min(max, Number(e.target.value) || 0)) })
+        }
+      />
+    </Field>
+  );
+  return (
+    <Card className="flex flex-col gap-3">
+      <h2 className="font-medium">{t('settings.drift.title')}</h2>
+      <p className="text-sm text-muted">{t('settings.drift.hint')}</p>
+      <div className="flex flex-wrap gap-4">
+        {field('minAlignedShare', t('settings.drift.share'), 100)}
+        {field('behindPoints', t('settings.drift.behind'), 100)}
+        {field('staleDays', t('settings.drift.stale'), 365)}
+      </div>
+      <ErrorText message={error ?? data.error} />
+      <div className="flex gap-2">
+        <Button
+          busy={busy}
+          disabled={!draft}
+          onClick={async () => {
+            if (draft && (await attempt(() => api.setDirectionRules(draft)))) {
+              setDraft(null);
+              data.reload();
+            }
+          }}
+        >
+          {t('common.save')}
+        </Button>
+        <Button variant="secondary" onClick={() => setDraft(DEFAULT_RULES)}>
+          {t('settings.drift.reset')}
+        </Button>
+      </div>
+    </Card>
   );
 }

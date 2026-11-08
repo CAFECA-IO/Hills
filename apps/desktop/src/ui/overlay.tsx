@@ -1,11 +1,14 @@
-/** 浮層元件（docs/components.md「浮層」）：Dialog、Popover、Menu。 */
+/** 浮層元件（docs/components.md「浮層」）：Dialog、Popover、Tooltip、Menu。 */
 import {
+  cloneElement,
   useEffect,
+  useId,
   useRef,
   useState,
   type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
+  type ReactElement,
   type ReactNode,
   type RefObject,
 } from 'react';
@@ -285,5 +288,48 @@ export function MenuItem({
         {children}
       </button>
     </li>
+  );
+}
+
+/**
+ * 滑過或聚焦觸發元素時顯示的說明卡（components.md v0.4「Tooltip」）。
+ * 觸發元素加上 aria-describedby；離開、失焦或 Esc 時隱藏，卡片本身滑過時保持顯示。
+ */
+export function Tooltip({
+  content,
+  children,
+  side = 'right',
+  open,
+  className = '',
+}: {
+  content: ReactNode;
+  children: ReactElement<{ 'aria-describedby'?: string }>;
+  side?: 'left' | 'right';
+  open?: boolean;
+  className?: string;
+}) {
+  const [show, setShow] = useState(false);
+  const id = useId();
+  const visible = open === true || show;
+  return (
+    <span
+      className={`relative inline-flex ${className}`}
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+      onFocus={() => setShow(true)}
+      onBlur={() => setShow(false)}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') setShow(false);
+      }}
+    >
+      {cloneElement(children, { 'aria-describedby': id })}
+      <span
+        id={id}
+        role="tooltip"
+        className={`absolute bottom-full z-30 mb-2.5 flex w-66 flex-col gap-1.5 rounded-card bg-surface p-3.5 text-left text-xs text-fg shadow-lg ${side === 'left' ? 'right-0' : 'left-0'} ${visible ? '' : 'hidden'}`}
+      >
+        {content}
+      </span>
+    </span>
   );
 }

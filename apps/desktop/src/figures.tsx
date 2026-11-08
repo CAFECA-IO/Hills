@@ -2,6 +2,7 @@
  * 焦點山的插畫元件（ui-spec「視覺語言」，D40）：原創簡筆角色、狀態徽章、名牌、雲、小屋。
  * 只用 tokens.css 的變數上色；狀態同時以顏色、徽章形狀、姿勢與文字表達。
  */
+import { useId } from 'react';
 import type { Look, PresenceState } from './api';
 import { t, type MessageKey } from './i18n';
 import { moonLitPath, moonPhase } from './summit';
@@ -442,6 +443,115 @@ export function Portrait({
   return (
     <svg width={size} height={size} viewBox="-40 -96 80 104" role="img" aria-label={label}>
       <Figure x={0} y={0} state={state ?? 'Offline'} look={look} />
+    </svg>
+  );
+}
+
+/**
+ * 頭肩像（方向羅盤的人像，design-system §9「方向羅盤」）：圓形底、外框顏色表示狀態，
+ * 右上角徽章 ✓ / ▲ / 時鐘。`ring` 為 token 名稱（例如 `primary`、`warning`）。
+ */
+export function Bust({
+  look,
+  size,
+  ring,
+  badge,
+  faded = false,
+}: {
+  look: Look;
+  size: number;
+  ring: string;
+  badge?: 'ok' | 'warn' | 'stale';
+  faded?: boolean;
+}) {
+  const clip = useId();
+  const sk = v(`skin-${look.skin}`);
+  const ink = v('ink');
+  return (
+    <svg
+      width={size}
+      height={size + 6}
+      viewBox="-22 -22 44 50"
+      aria-hidden="true"
+      opacity={faded ? 0.6 : 1}
+    >
+      <defs>
+        <clipPath id={clip}>
+          <circle r={18} />
+        </clipPath>
+      </defs>
+      <path d="M-5 21L0 28L5 21z" fill={v(ring)} />
+      <circle r={20.5} fill={v(ring)} />
+      <circle r={18} fill={v('bg')} />
+      <g clipPath={`url(#${clip})`}>
+        <path d="M-17 20Q-16 7 0 7Q16 7 17 20Z" fill={v(`shirt-${look.shirt}`)} />
+        <rect x={-3} y={2} width={6} height={7} fill={sk} />
+        <circle cy={-3} r={9} fill={sk} />
+        <path
+          d="M-9.6 -3.5a9.6 9.6 0 0 1 19.2 0q-4.5 -4.6 -9.6 -3.8q-5.2 .7 -9.6 3.8z"
+          fill={v(`hair-${look.hair}`)}
+        />
+        <circle cx={-3.2} cy={-2} r={1.2} fill={ink} />
+        <circle cx={3.2} cy={-2} r={1.2} fill={ink} />
+        <path
+          d="M-2.3 2.2q2.3 1.8 4.6 0"
+          stroke={ink}
+          strokeWidth={1.1}
+          fill="none"
+          strokeLinecap="round"
+        />
+      </g>
+      {badge === 'warn' && (
+        <>
+          <path
+            d="M15 -21L23 -7H7z"
+            fill={v('warning')}
+            stroke={v('surface')}
+            strokeWidth={1.5}
+            strokeLinejoin="round"
+          />
+          <path d="M15 -16v4" stroke={v('surface')} strokeWidth={1.6} strokeLinecap="round" />
+        </>
+      )}
+      {badge === 'stale' && (
+        <>
+          <circle
+            cx={15}
+            cy={-14}
+            r={7}
+            fill={v('muted')}
+            stroke={v('surface')}
+            strokeWidth={1.5}
+          />
+          <path
+            d="M15 -18v4l2.5 1.5"
+            stroke={v('surface')}
+            strokeWidth={1.4}
+            fill="none"
+            strokeLinecap="round"
+          />
+        </>
+      )}
+      {badge === 'ok' && (
+        <>
+          <circle
+            cx={15}
+            cy={-14}
+            r={6.5}
+            fill={v('st-online')}
+            stroke={v('surface')}
+            strokeWidth={1.5}
+          />
+          <path
+            d="M12.2 -14l2 2l3.6 -3.8"
+            stroke={v('surface')}
+            strokeWidth={1.5}
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </>
+      )}
     </svg>
   );
 }

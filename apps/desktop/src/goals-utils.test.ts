@@ -115,6 +115,7 @@ describe('selection', () => {
 
 describe('taskColumn（D46）', () => {
   const task = (id: string, dueAt: number | null, extra: Partial<Task> = {}): Task => ({
+    doneAt: null,
     id,
     team: 'g',
     planItemId: null,

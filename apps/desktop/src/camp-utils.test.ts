@@ -20,6 +20,7 @@ const msg = (
 });
 
 const task = (steps: Task['steps']): Task => ({
+  doneAt: null,
   id: 't1',
   team: 'g',
   planItemId: null,

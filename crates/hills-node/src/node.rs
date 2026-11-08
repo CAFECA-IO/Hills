@@ -108,6 +108,12 @@ pub enum Event {
     },
     /// 加入或還原申請被拒絕
     Rejected,
+    /// 收到含阻礙、且通知對象包含本人的 Scrum（§16.12）
+    ScrumBlocker {
+        member: MemberId,
+        date: String,
+        text: String,
+    },
     /// 收到別人的新訊息（§14.2 通知）
     Message {
         conv: String,
@@ -186,6 +192,8 @@ pub(crate) struct Inner {
     pub rejected: std::sync::atomic::AtomicBool,
     /// 見 [`NodeOptions::allow_dev_login`]
     pub allow_dev_login: bool,
+    /// 已通知過的 Scrum 阻礙（`<member>/<date>/<updatedAt>`，§16.12）
+    pub scrum_seen: Mutex<std::collections::HashSet<String>>,
 }
 
 /// Hills 節點：一台裝置上的一個成員身分。
@@ -416,6 +424,15 @@ impl Inner {
             for (_, sc, _) in &fresh {
                 local.record(sc);
             }
+            let scrum_owner = crate::scrum::scrum_owner(doc_id).filter(|o| *o != me);
+            let scrum_keys: Vec<String> = if scrum_owner.is_some() {
+                fresh
+                    .iter()
+                    .flat_map(|(c, _, _)| conv::added_keys(c))
+                    .collect()
+            } else {
+                vec![]
+            };
             let added: Vec<String> = if is_log {
                 fresh
                     .iter()
@@ -431,6 +448,23 @@ impl Inner {
                 .map_err(|e| anyhow!("套用失敗：{e}"))?;
             if let Some((conv_id, _)) = conv::parse_doc(doc_id) {
                 new_messages = conv::read_keys(&conv_id, &local.doc, &added);
+            }
+            if let Some(owner) = scrum_owner {
+                let mine = me.to_string();
+                for r in crate::scrum::read_keys(&local.doc, owner, &scrum_keys) {
+                    let Some(b) = r.blockers.iter().find(|b| b.notified.contains(&mine)) else {
+                        continue;
+                    };
+                    // 同一份 Scrum 會出現在多個小組文件，只通知一次
+                    let tag = format!("{owner}/{}/{}", r.date, r.updated_at);
+                    if lock(&self.scrum_seen).insert(tag) {
+                        self.emit(Event::ScrumBlocker {
+                            member: owner,
+                            date: r.date.clone(),
+                            text: b.text.clone(),
+                        });
+                    }
+                }
             }
             self.save_doc(docs, doc_id)?;
             let meta_changed = self.note_conv_doc(&mut st, doc_id);
@@ -814,6 +848,7 @@ impl Node {
             known_eks: Mutex::new(known_eks),
             rejected: std::sync::atomic::AtomicBool::new(false),
             allow_dev_login,
+            scrum_seen: Mutex::new(Default::default()),
         });
         {
             let mut st = lock(&inner.st);

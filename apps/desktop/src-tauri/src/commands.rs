@@ -86,7 +86,11 @@ fn forward_events(app: &AppHandle, node: &Node) {
                         Event::JoinsChanged => "joins",
                         Event::DeviceAdded { .. } => "device-added",
                         Event::Rejected => "rejected",
+                        Event::ScrumBlocker { .. } => "doc",
                     };
+                    if let Event::ScrumBlocker { member, text, .. } = &ev {
+                        notify_scrum_blocker(&app, &node, member, text);
+                    }
                     if let Event::DeviceAdded { name, .. } = &ev {
                         notify_device_added(&app, &node, name);
                     }
@@ -146,6 +150,29 @@ fn notify_message(app: &AppHandle, node: &Node, conv: &str, author: &MemberId, p
         .builder()
         .title(title)
         .body(preview)
+        .show();
+}
+
+/// 小組成員回報阻礙（technical-design §16.12）：通知負責人。
+fn notify_scrum_blocker(app: &AppHandle, node: &Node, member: &MemberId, text: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    let zh = !node.org().locale.starts_with("en");
+    let name = node
+        .org()
+        .members
+        .get(member)
+        .map(|m| m.name.clone())
+        .unwrap_or_default();
+    let title = if zh {
+        format!("{name} 回報了阻礙")
+    } else {
+        format!("{name} reported a blocker")
+    };
+    let _ = app
+        .notification()
+        .builder()
+        .title(title)
+        .body(text.chars().take(120).collect::<String>())
         .show();
 }
 
@@ -938,6 +965,116 @@ pub async fn kb_from_message(
         .kb_from_message(&conv, &message_key, &topic, &title, attachment)
         .await
         .map_err(e))
+}
+
+// ── 每日 Scrum（technical-design §16.12）──────────────────────
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrumMine {
+    report: Option<hills_node::scrum::ScrumReport>,
+    /// 本機草稿（前端定義的 JSON 字串）
+    draft: Option<String>,
+    /// 阻礙會通知的對象
+    notify: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn scrum_mine(state: State<'_, AppState>, date: String) -> CmdResult<ScrumMine> {
+    with_node!(state, n => {
+        let me = n.member_id();
+        let org = n.org();
+        let admins: Vec<MemberId> =
+            n.member_roles().into_iter().filter(|(_, a)| *a).map(|(m, _)| m).collect();
+        let notify = hills_node::scrum::notify_targets(&org, &me, &org.teams_of(&me), &admins)
+            .iter()
+            .map(|m| m.to_string())
+            .collect();
+        Ok(ScrumMine {
+            report: n.my_scrum(&date).map_err(e)?,
+            draft: n.scrum_local().drafts.get(&date).cloned(),
+            notify,
+        })
+    })
+}
+
+#[tauri::command]
+pub async fn scrum_submit(
+    state: State<'_, AppState>,
+    input: hills_node::scrum::ScrumInput,
+) -> CmdResult<hills_node::scrum::ScrumReport> {
+    with_node!(state, n => {
+        let date = input.date.clone();
+        let r = n.scrum_submit(input).await.map_err(e)?;
+        n.set_scrum_draft(&date, None).map_err(e)?;
+        Ok(r)
+    })
+}
+
+#[tauri::command]
+pub async fn scrum_team(
+    state: State<'_, AppState>,
+    team: String,
+    from: String,
+    to: String,
+) -> CmdResult<Vec<hills_node::scrum::ScrumReport>> {
+    with_node!(state, n => n.scrum_reports(&team, &from, &to).map_err(e))
+}
+
+#[tauri::command]
+pub async fn scrum_draft_set(
+    state: State<'_, AppState>,
+    date: String,
+    draft: Option<String>,
+) -> CmdResult<()> {
+    with_node!(state, n => n.set_scrum_draft(&date, draft).map_err(e))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrumReminder {
+    /// 組織預設
+    org: String,
+    /// 個人覆寫（None = 組織預設）
+    mine: Option<String>,
+}
+
+#[tauri::command]
+pub async fn scrum_reminder(state: State<'_, AppState>) -> CmdResult<ScrumReminder> {
+    with_node!(state, n => Ok(ScrumReminder { org: n.scrum_reminder(), mine: n.scrum_local().reminder }))
+}
+
+#[tauri::command]
+pub async fn set_my_scrum_reminder(
+    state: State<'_, AppState>,
+    hhmm: Option<String>,
+) -> CmdResult<()> {
+    let hhmm = hhmm.filter(|h| !h.trim().is_empty());
+    with_node!(state, n => n.set_my_scrum_reminder(hhmm).map_err(e))
+}
+
+#[tauri::command]
+pub async fn set_org_scrum_reminder(state: State<'_, AppState>, hhmm: String) -> CmdResult<()> {
+    with_node!(state, n => n.set_scrum_reminder(&hhmm).await.map_err(e))
+}
+
+/// 前端在提醒時間（組織時區、工作日、尚未送出）呼叫；每天最多通知一次。
+#[tauri::command]
+pub async fn scrum_remind(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    date: String,
+    title: String,
+    body: String,
+) -> CmdResult<bool> {
+    use tauri_plugin_notification::NotificationExt;
+    with_node!(state, n => {
+        if n.my_scrum(&date).map_err(e)?.is_some() || !n.mark_scrum_reminded(&date).map_err(e)? {
+            return Ok(false);
+        }
+        let _ = app.notification().builder().title(title).body(body).show();
+        Ok(true)
+    })
 }
 
 #[tauri::command]

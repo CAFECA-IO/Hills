@@ -18,6 +18,7 @@ import { Portrait, StatusBadge, stateLabel } from './figures';
 import { Goals } from './goals';
 import { Home } from './home';
 import { Knowledge } from './kb';
+import { Scrum, useScrumReminder } from './scrum';
 import { useIdleAway, useLoad, useSyncStatus } from './hooks';
 import {
   formatClock,
@@ -43,7 +44,7 @@ import { LOOK_PALETTE, lookOf } from './summit';
 import { Tasks } from './tasks';
 import { Button, Card, CodeBox, ConfirmButton, ErrorText, Field, useAction } from './ui';
 
-type Page = 'home' | 'goals' | 'team' | 'tasks' | 'chat' | 'kb' | 'settings';
+type Page = 'home' | 'goals' | 'team' | 'tasks' | 'scrum' | 'chat' | 'kb' | 'settings';
 
 const SYNC_ICON: Record<SyncStatus, string> = {
   Synced: '●',
@@ -75,6 +76,7 @@ const NAV_ICON: Record<Page, string> = {
   goals: 'M3 17h4v-4h4V9h4V5h2M3 17v-1',
   team: 'M7 7m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M2 16c.8-3 3-4.5 5-4.5s4.2 1.5 5 4.5M14 8m-2.4 0a2.4 2.4 0 1 0 4.8 0a2.4 2.4 0 1 0 -4.8 0M12 15.5c.5-2 1.7-3 3-3s2.6 1 3 3',
   tasks: 'M4 5h2M4 10h2M4 15h2M9 5h7M9 10h7M9 15h7',
+  scrum: 'M4 3.5h12v13H4zM7 7.5l1.5 1.5L11 6.5M7 12.5h6',
   chat: 'M3 4.5h14v9H8l-4 3v-3H3z',
   kb: 'M10 2.5l2 4.6 5 .5-3.8 3.3 1.1 4.9L10 13.3l-4.3 2.5 1.1-4.9L3 7.6l5-.5z',
   settings:
@@ -86,13 +88,14 @@ const PAGE_TITLE: Record<Page, MessageKey> = {
   goals: 'nav.goals',
   team: 'team.title',
   tasks: 'nav.tasks',
+  scrum: 'nav.scrum',
   chat: 'chat.title',
   kb: 'nav.kb',
   settings: 'settings.title',
 };
 
 /** 導覽列順序（D43）。 */
-const NAV: Page[] = ['home', 'goals', 'tasks', 'chat', 'kb', 'team', 'settings'];
+const NAV: Page[] = ['home', 'goals', 'tasks', 'scrum', 'chat', 'kb', 'team', 'settings'];
 
 const noJoins = () => Promise.resolve<JoinRequestView[]>([]);
 
@@ -124,6 +127,7 @@ export function Shell({ info }: { info: AppInfo }) {
     return () => clearInterval(id);
   }, []);
   useCommandShortcut(() => setPalette(true));
+  useScrumReminder(overview.data?.timezone ?? null);
   const go = (p: Page) => {
     setPage(p);
     if (p !== 'chat') setOpenConv(null);
@@ -212,7 +216,7 @@ export function Shell({ info }: { info: AppInfo }) {
             <SyncIndicator />
           </header>
           <main className="min-h-0 flex-1 px-4 pb-4 wide:px-6 wide:pb-6">
-            {page !== 'home' && page !== 'goals' && page !== 'kb' && (
+            {page !== 'home' && page !== 'goals' && page !== 'kb' && page !== 'scrum' && (
               <PageHead
                 title={t(PAGE_TITLE[page])}
                 subtitle={page === 'tasks' ? undefined : orgName}
@@ -238,6 +242,15 @@ export function Shell({ info }: { info: AppInfo }) {
                 focusId={focus.data?.task?.id ?? null}
                 timezone={overview.data.timezone}
                 onOpenTasks={() => go('tasks')}
+              />
+            )}
+            {page === 'scrum' && overview.data && (
+              <Scrum
+                members={overview.data.members}
+                teams={overview.data.teams}
+                tasks={tasks.data ?? []}
+                focusId={focus.data?.task?.id ?? null}
+                timezone={overview.data.timezone}
               />
             )}
             {page === 'kb' && overview.data && (
@@ -781,6 +794,7 @@ function PersonalTab({ me }: { me: MemberView | undefined }) {
           ))}
         </select>
       </Card>
+      <ScrumReminderCard />
       {account.data && (
         <Card className="flex flex-col gap-2">
           <h2 className="font-medium">{t('settings.cafeca')}</h2>
@@ -817,6 +831,82 @@ function PersonalTab({ me }: { me: MemberView | undefined }) {
         <ErrorText message={error ?? devices.error ?? account.error} />
       </Card>
     </>
+  );
+}
+
+/** 設定 › 個人「Scrum 提醒時間」（只存本機，technical-design §16.12）。 */
+function ScrumReminderCard() {
+  const r = useLoad(api.scrumReminder, ['org']);
+  const [value, setValue] = useState<string | null>(null);
+  const { busy, error, attempt } = useAction();
+  const current = value ?? r.data?.mine ?? '';
+  return (
+    <Card className="flex flex-col gap-2">
+      <label htmlFor="scrum-reminder" className="text-sm font-medium">
+        {t('settings.scrumReminder')}
+      </label>
+      <div className="flex items-center gap-2">
+        <input
+          id="scrum-reminder"
+          type="time"
+          value={current}
+          onChange={(e) => setValue(e.target.value)}
+          className="rounded-control border border-line bg-surface px-3 py-2 text-sm"
+        />
+        <Button
+          variant="secondary"
+          disabled={busy || value === null}
+          onClick={async () => {
+            if (await attempt(() => api.setMyScrumReminder(current || null))) {
+              setValue(null);
+              r.reload();
+            }
+          }}
+        >
+          {t('common.save')}
+        </Button>
+      </div>
+      <p className="text-xs text-muted">
+        {t('settings.scrumReminder.hint', { time: r.data?.org ?? '17:30' })}
+      </p>
+      <ErrorText message={error ?? r.error} />
+    </Card>
+  );
+}
+
+/** 設定 › 組織「Scrum 預設提醒時間」（管理者）。 */
+function OrgScrumReminderCard() {
+  const r = useLoad(api.scrumReminder, ['org']);
+  const [value, setValue] = useState<string | null>(null);
+  const { busy, error, attempt } = useAction();
+  const current = value ?? r.data?.org ?? '17:30';
+  return (
+    <Card className="flex flex-col gap-2">
+      <label htmlFor="org-scrum-reminder" className="text-sm font-medium">
+        {t('settings.orgScrumReminder')}
+      </label>
+      <div className="flex items-center gap-2">
+        <input
+          id="org-scrum-reminder"
+          type="time"
+          required
+          value={current}
+          onChange={(e) => setValue(e.target.value)}
+          className="rounded-control border border-line bg-surface px-3 py-2 text-sm"
+        />
+        <Button
+          variant="secondary"
+          disabled={busy || value === null || !current}
+          onClick={async () => {
+            if (await attempt(() => api.setOrgScrumReminder(current))) setValue(null);
+          }}
+        >
+          {t('common.save')}
+        </Button>
+      </div>
+      <p className="text-xs text-muted">{t('settings.orgScrumReminder.hint')}</p>
+      <ErrorText message={error ?? r.error} />
+    </Card>
   );
 }
 
@@ -867,6 +957,7 @@ function OrgTab({
         )}
       </Card>
       {info.isAdmin && overview && <OfficesCard overview={overview} />}
+      {info.isAdmin && <OrgScrumReminderCard />}
       {info.hasOrgRoot && (
         <Card className="flex flex-col gap-3">
           <h2 className="font-medium">{t('settings.backup')}</h2>

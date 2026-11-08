@@ -214,6 +214,48 @@ export interface KbInput {
   source?: KbSource | null;
 }
 
+// ── 每日 Scrum（technical-design §16.12）──
+
+export type ScrumRef =
+  | { kind: 'task'; teamId: string; taskId: string; title: string }
+  | { kind: 'plan'; planId: string; title: string }
+  | { kind: 'text'; title: string };
+
+export interface ScrumBlocker {
+  text: string;
+  notified: string[];
+}
+
+export interface ScrumReport {
+  member: string;
+  date: string;
+  done: ScrumRef[];
+  today: ScrumRef[];
+  blockers: ScrumBlocker[];
+  submittedAt: number;
+  updatedAt: number;
+}
+
+export interface ScrumInput {
+  date: string;
+  done: ScrumRef[];
+  today: ScrumRef[];
+  blockers: string[];
+}
+
+export interface ScrumMine {
+  report: ScrumReport | null;
+  /** 本機草稿（ScrumInput 的 JSON） */
+  draft: string | null;
+  /** 阻礙會通知的成員 */
+  notify: string[];
+}
+
+export interface ScrumReminder {
+  org: string;
+  mine: string | null;
+}
+
 export interface PlanInput {
   id?: string | null;
   level: PlanLevel;
@@ -448,6 +490,17 @@ export const api = {
     title: string,
     attachment: number | null,
   ) => call<string>('kb_from_message', { conv, messageKey, topic, title, attachment }),
+  scrumMine: (date: string) => call<ScrumMine>('scrum_mine', { date }),
+  scrumSubmit: (input: ScrumInput) => call<ScrumReport>('scrum_submit', { input }),
+  scrumTeam: (team: string, from: string, to: string) =>
+    call<ScrumReport[]>('scrum_team', { team, from, to }),
+  scrumDraftSet: (date: string, draft: string | null) =>
+    call<void>('scrum_draft_set', { date, draft }),
+  scrumReminder: () => call<ScrumReminder>('scrum_reminder'),
+  setMyScrumReminder: (hhmm: string | null) => call<void>('set_my_scrum_reminder', { hhmm }),
+  setOrgScrumReminder: (hhmm: string) => call<void>('set_org_scrum_reminder', { hhmm }),
+  scrumRemind: (date: string, title: string, body: string) =>
+    call<boolean>('scrum_remind', { date, title, body }),
   focus: () => call<FocusView>('focus'),
   setFocus: (team: string | null, task: string | null) => call<void>('set_focus', { team, task }),
   setProfile: (look: Look) => call<void>('set_profile', { look }),

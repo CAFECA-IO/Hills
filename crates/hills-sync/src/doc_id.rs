@@ -30,7 +30,11 @@ pub enum DocKind {
 pub enum MemberSection {
     /// 計劃（technical-design §4.3 v0.15）
     Plans(PlanScope),
-    Scrum(String),
+    /// 每日 Scrum：`scrum/<teamId>/<yyyy-mm>`（technical-design §16.12）
+    Scrum {
+        team: String,
+        month: String,
+    },
     Attendance(String),
     Requests,
     Reports,
@@ -104,7 +108,10 @@ impl DocKind {
                     ["plans", "team", t] if is_segment(t) => {
                         MemberSection::Plans(PlanScope::Team((*t).into()))
                     }
-                    ["scrum", ym] if is_month(ym) => MemberSection::Scrum((*ym).into()),
+                    ["scrum", t, ym] if is_segment(t) && is_month(ym) => MemberSection::Scrum {
+                        team: (*t).into(),
+                        month: (*ym).into(),
+                    },
                     ["attendance", ym] if is_month(ym) => MemberSection::Attendance((*ym).into()),
                     ["requests"] => MemberSection::Requests,
                     ["reports"] => MemberSection::Reports,
@@ -151,6 +158,16 @@ mod tests {
                 })
             );
         }
+        assert_eq!(
+            DocKind::parse(&format!("member/{m}/scrum/t-1/2026-11")),
+            Some(DocKind::Member {
+                owner: m,
+                section: MemberSection::Scrum {
+                    team: "t-1".into(),
+                    month: "2026-11".into()
+                }
+            })
+        );
         assert_eq!(DocKind::parse("kb/meta"), Some(DocKind::KbMeta));
         assert_eq!(
             DocKind::parse("kb/items/2026-11"),
@@ -182,6 +199,8 @@ mod tests {
             format!("member/{m}/plans/team/a.b"),
             "member/notbase32/requests".into(),
             "conv/c1/log/202611".into(),
+            format!("member/{m}/scrum/2026-11"),
+            format!("member/{m}/scrum/t/2026-1"),
             "kb".into(),
             "kb/items".into(),
             "kb/items/2026-1".into(),

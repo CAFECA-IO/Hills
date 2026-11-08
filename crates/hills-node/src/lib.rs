@@ -17,6 +17,7 @@ pub mod onboarding;
 pub mod org;
 pub mod plans;
 mod policy;
+pub mod scrum;
 mod storage;
 mod syncproto;
 pub mod team;

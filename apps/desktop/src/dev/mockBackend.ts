@@ -17,6 +17,8 @@ import type {
   KbTopic,
   PlanInput,
   PlanView,
+  ScrumInput,
+  ScrumReport,
   PresenceState,
 } from '../api';
 import { periodsAt } from '../goals-utils';
@@ -286,6 +288,33 @@ let kbItems: KbItem[] = [
   ki(18, 't-vis', '星空夜色', 1, [17]),
   ki(19, 't-vis', '狀態徽章', 14, [17]),
 ];
+// 示範 Scrum（虛構）
+const TODAY = periodsAt(Date.now(), 'Asia/Taipei').day;
+let scrumReports: ScrumReport[] = [
+  {
+    member: 'mem-a',
+    date: TODAY,
+    done: [{ kind: 'text', title: '邀請碼流程' }],
+    today: [
+      { kind: 'text', title: '檢查 SAS' },
+      { kind: 'text', title: '寫測試' },
+    ],
+    blockers: [{ text: '需要 relay 測試主機', notified: ['mem-me'] }],
+    submittedAt: now0 - 3600_000,
+    updatedAt: now0 - 3600_000,
+  },
+  {
+    member: 'mem-d',
+    date: TODAY,
+    done: [{ kind: 'text', title: 'Mac 驗收' }],
+    today: [{ kind: 'text', title: '通知測試' }],
+    blockers: [],
+    submittedAt: now0 - 7200_000,
+    updatedAt: now0 - 7200_000,
+  },
+];
+const scrumDrafts: Record<string, string> = {};
+let scrumReminder = { org: '17:30', mine: null as string | null };
 let manualFocus: string | null = null;
 let myLook = look(0, 5, 2);
 const syncStatus = (t: MockTask) => {
@@ -572,6 +601,42 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     touch();
     return key;
   },
+  scrum_mine: (a) => ({
+    report: scrumReports.find((r) => r.member === state.me && r.date === a.date) ?? null,
+    draft: scrumDrafts[String(a.date)] ?? null,
+    notify: ['mem-me'].filter((x) => x !== state.me).concat(state.isAdmin ? [] : ['mem-me']),
+  }),
+  scrum_submit: (a) => {
+    const input = a.input as ScrumInput;
+    const old = scrumReports.find((r) => r.member === state.me && r.date === input.date);
+    const r: ScrumReport = {
+      member: state.me,
+      date: input.date,
+      done: input.done,
+      today: input.today,
+      blockers: input.blockers.map((text) => ({ text, notified: [] })),
+      submittedAt: old?.submittedAt ?? Date.now(),
+      updatedAt: Date.now(),
+    };
+    scrumReports = [...scrumReports.filter((x) => x !== old), r];
+    delete scrumDrafts[input.date];
+    touch();
+    return r;
+  },
+  scrum_team: (a) => scrumReports.filter((r) => r.date >= String(a.from) && r.date <= String(a.to)),
+  scrum_draft_set: (a) => {
+    if (a.draft === null) delete scrumDrafts[String(a.date)];
+    else scrumDrafts[String(a.date)] = String(a.draft);
+  },
+  scrum_reminder: () => scrumReminder,
+  set_my_scrum_reminder: (a) => {
+    scrumReminder = { ...scrumReminder, mine: (a.hhmm as string | null) ?? null };
+  },
+  set_org_scrum_reminder: (a) => {
+    scrumReminder = { ...scrumReminder, org: String(a.hhmm) };
+    touch('org');
+  },
+  scrum_remind: () => false,
   plans: (a) => (a.mineOnly ? plans.filter((x) => x.mine) : plans),
   save_plan: (a) => {
     const input = a.input as PlanInput;

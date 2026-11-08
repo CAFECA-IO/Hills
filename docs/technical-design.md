@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.17 草案 · 2026-11-08 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.18 草案 · 2026-11-08 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -164,7 +164,7 @@ CAFECA 帳戶（chainId + 身分合約地址 account，由使用者的 Passkey /
 | `member/<id>/requests` | 本人 | 本人、核准者 | `AK_member` | 請假、加班、補打卡申請 |
 | `member/<id>/secrets` | 本人 | 本人 | `PK_member` | 本人的私密設定 |
 | `approvals/<approverId>` | 核准者本人 | 申請者、管理者 | 申請者的 `AK_member` | 核准 / 退回決定 |
-| `member/<id>/reports` | 本人 | 依發佈範圍 | `TK_team` | 日 / 週報 |
+| `member/<id>/reports/<teamId>/<yyyy>` | 本人 | 該小組成員 | `TK_team` | 日 / 週報（發佈到哪些小組就寫入哪些小組，§16.13） |
 | `kb/meta` | 全體成員 | 全員 | `GK` | 知識庫的分類與主題（§16.11） |
 | `kb/items/<yyyy-mm>` | 全體成員（每則只限作者與管理者） | 全員 | `GK` | 知識（§16.11） |
 
@@ -377,7 +377,7 @@ LeaveRequest    { id, typeId, start, end, hours, delegateId?, reason, proof?, ru
 OvertimeRequest { id, start, end, hours, reason, compensation: pay|compTime, ruleId, createdAt }
 CorrectionRequest { id, date, kind: in|out, time, reason, ruleId, createdAt }
 Report      { id, scope: member|team, period, sections: { progress, okr, attendance, next },
-              publishedTo: teamId[], generatedAt, editedAt? }
+              publishedTo: teamId[], generatedAt, editedAt? }   // M1 個人日 / 週報見 §16.13；小組彙整為即時合併，不另存
 
 // approvals 文件
 ApprovalDecision { requestId, requesterId, step, decision: approve|reject, comment?, at }
@@ -866,6 +866,28 @@ Blocker = { text, notified: MemberId[] }
 - 草稿只存在本機（不同步）；按「送出」才寫入文件。送出後可再修改，覆寫同一天並更新 `updatedAt`。
 - **阻礙通知**：送出時 `notified` = 各所屬小組的負責人（`leadIds`）；小組沒有負責人時為全體管理者。負責人的裝置收到 `notified` 含自己、且有阻礙的新 Scrum 時發桌機通知（本機判斷，伺服器不參與）。
 - **提醒**：組織預設時間存在 org 文件 `scrumReminder: "HH:MM"`（管理者可改，預設 `17:30`），個人可在本機覆寫（本機設定檔，不同步）。工作日依 §7.1；**M1 第一版在假日曆（backlog #6）與請假（#14）尚未實作前，只排除週六與週日**。當天已送出就不提醒，每天最多提醒一次。
+
+### 16.13 日 / 週報（v0.18，feature-plan §5.5、D32、D16）
+
+```
+member/<id>/reports/<teamId>/<yyyy> = {
+  "report:<daily|weekly>:<period>": "<JSON 字串>"     // period = 2026-11-09 或 2026-W45
+}
+Report JSON = { v: 1, kind, period,
+                sections: { progress, okr, attendance, next },   // 皆為 Markdown
+                publishedTo: teamId[], generatedAt, publishedAt, editedAt? }
+```
+
+- `<yyyy>` 為期間所屬年份（ISO 週以週的年份）。發佈到哪些小組就寫入那些小組的文件（`TK_team`，只有該小組成員能讀；預設為全部所屬小組，D16）；這次取消的小組，從該小組文件刪除。只有本人可寫。
+- 草稿只存在本機；按「發佈」才寫入文件，之後可修改再發佈（覆寫）。各欄最多 32 KB。
+- **產生規則**（前端依組織時區計算，產生後可自由編輯）：
+  - 完成 / 進行中 / 阻礙：期間內我送出的 Scrum 的完成項與阻礙，加上期間內我完成的任務 / 步驟；進行中 = 指派給我、狀態為進行中或審核的任務。
+  - OKR 進度：我的年 / 季目標與關鍵結果目前的進度（§16.10 彙總）；週報另列本週完成的週 / 日目標。
+  - 工時與出勤摘要：假勤上線前為固定說明文字（backlog #7、#9）。
+  - 下期計劃：日報 = 下一個工作日的日目標，加上當天 Scrum「今天計劃」中尚未完成者；週報 = 下週的週目標與下週到期的任務。
+- **小組彙整**：把同一小組成員同期間已發佈的報表依欄位合併顯示，不另存。
+- 週五（組織時區）到 Scrum 提醒時間時，若本週週報尚未發佈，提醒一次；開啟報表頁時若沒有草稿也沒有已發佈的週報，自動產生草稿。
+- 月報、年報在 M5；AI 摘要在 M3；發佈到小組頻道在 M2（頻道上線後）。
 
 ### 16.9 部署（M0）
 

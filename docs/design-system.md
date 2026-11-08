@@ -1,6 +1,6 @@
 # Hills 設計系統
 
-> 版本：v0.2 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.15（D22、D40、D43、D45）
+> 版本：v0.3 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.17（D22、D40、D43、D45）
 > 本文件定義視覺基礎：原則、token、字級、間距、圓角、陰影、層級、動態、無障礙、圖示與列印。通用元件的規格見 [components.md](./components.md)；畫面結構與流程見 [ui-spec.md](./ui-spec.md)。
 > 實作來源：`apps/desktop/src/styles/tokens.css`（token）、`apps/desktop/src/ui/`（元件）。三者不一致時以本文件為準，並修正程式碼。
 
@@ -121,6 +121,17 @@ SVG 插畫用 `var(--hills-*)` 指定 `fill` / `stroke`（`figures.tsx`、`home.
 - 圖示為自繪內嵌 SVG（`viewBox="0 0 20 20"`、線寬 1.6、圓端點），顏色用 `currentColor`；尺寸 14 / 16 / 18 / 20。不引入圖示字型或第三方圖示套件。
 - 插畫（角色、山景、星空、月相）只用 §2.2 token；角色為原創簡筆圖形（D40）。
 - 文字型符號（`×`、`◀`、`▶`、`✓`、`⚑`）可作為圖示，但必須放在 `IconButton` 或有文字說明的元素內。
+
+### App 圖示（v0.3）
+
+圖案為「山丘」（D22）：綠色天空漸層（`#3AA07E` → `#2A8063`）、白色主山與淡綠後山（`--hills-hill-mid`）。依各作業系統規範有兩份來源，放在 `apps/desktop/src-tauri/icons/source/`：
+
+| 來源 | 平台 | 規格 |
+|---|---|---|
+| `app-icon-macos.svg` | macOS（`icon.icns`） | Apple 圖示格線：1024 畫布，主體 824 × 824 置中（四周透明留 100），圓角 185（約 22.5%），下方陰影（y 10、模糊 12、黑 28%）。不可滿版，否則在 Dock 與 Launchpad 中比其他 App 大且沒有圓角 |
+| `app-icon.svg` | Windows（`icon.ico`、`Square*Logo.png`、`StoreLogo.png`）、Linux（`*.png`） | 1024 畫布，主體四周留 64，圓角 176，不加陰影（由系統處理） |
+
+重新產生：`pnpm --filter @hills/desktop tauri icon src-tauri/icons/source/app-icon.svg -o <暫存>` 後把頂層檔案（不含 android、ios）複製到 `icons/`，再以 `app-icon-macos.svg` 產生一次並只取 `icon.icns` 覆蓋。修改圖案時兩份來源一起改。
 
 ## 10. 列印
 

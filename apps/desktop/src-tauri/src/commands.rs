@@ -706,6 +706,7 @@ pub struct TaskView {
     assignee: Option<String>,
     status: TaskStatus,
     due_at: Option<i64>,
+    done_at: Option<i64>,
     steps: Vec<StepView>,
     plan_item_id: Option<String>,
     created_by: Option<String>,
@@ -722,6 +723,7 @@ impl From<Task> for TaskView {
             assignee: t.assignee.map(|m| m.to_string()),
             status: t.status,
             due_at: t.due_at,
+            done_at: t.done_at,
             steps: t
                 .steps
                 .into_iter()
@@ -998,6 +1000,56 @@ pub async fn delete_team_goal(
     id: String,
 ) -> CmdResult<()> {
     with_node!(state, n => n.delete_team_goal(&team, &id).await.map_err(e))
+}
+
+// ── 方向摘要與偏離（technical-design §16.14 v0.21，D47 第 2 批）──
+
+#[tauri::command]
+pub async fn direction_summaries(
+    state: State<'_, AppState>,
+) -> CmdResult<Vec<hills_node::drift::MemberDirection>> {
+    with_node!(state, n => n.direction_summaries().map_err(e))
+}
+
+#[tauri::command]
+pub async fn my_suggestions(
+    state: State<'_, AppState>,
+) -> CmdResult<Vec<hills_node::drift::SuggestionView>> {
+    with_node!(state, n => n.my_suggestions().map_err(e))
+}
+
+#[tauri::command]
+pub async fn publish_direction(
+    state: State<'_, AppState>,
+    week: hills_node::drift::DirectionWeek,
+) -> CmdResult<()> {
+    with_node!(state, n => n.publish_direction(week).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn suggest_align(
+    state: State<'_, AppState>,
+    to: String,
+    plan_item_id: String,
+    goal_id: String,
+) -> CmdResult<()> {
+    let to = MemberId::parse(&to).map_err(e)?;
+    with_node!(state, n => n.suggest_align(to, &plan_item_id, &goal_id).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn direction_rules(
+    state: State<'_, AppState>,
+) -> CmdResult<hills_node::drift::DirectionRules> {
+    with_node!(state, n => n.direction_rules().map_err(e))
+}
+
+#[tauri::command]
+pub async fn set_direction_rules(
+    state: State<'_, AppState>,
+    rules: hills_node::drift::DirectionRules,
+) -> CmdResult<()> {
+    with_node!(state, n => n.set_direction_rules(rules).await.map_err(e))
 }
 
 // ── 知識庫（technical-design §16.11）─────────────────────────

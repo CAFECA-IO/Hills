@@ -71,6 +71,8 @@ pub struct Task {
     pub assignee: Option<MemberId>,
     pub status: TaskStatus,
     pub due_at: Option<Timestamp>,
+    /// 改成完成的時間（v0.21，D47 方向摘要）
+    pub done_at: Option<Timestamp>,
     pub steps: Vec<TaskStep>,
     /// 所屬週目標（D46）
     pub plan_item_id: Option<String>,
@@ -181,6 +183,7 @@ pub fn read_tasks(doc: &AutoCommit, team: &str) -> Vec<Task> {
                 assignee: member(doc, &t, "assignee"),
                 status: TaskStatus::parse(&get_str(doc, &t, "status").unwrap_or_default()),
                 due_at: get_int(doc, &t, "dueAt"),
+                done_at: get_int(doc, &t, "doneAt"),
                 steps: read_steps(doc, &t),
                 plan_item_id: get_str(doc, &t, "planItemId").filter(|s| !s.is_empty()),
                 created_by: member(doc, &t, "createdBy"),
@@ -189,6 +192,19 @@ pub fn read_tasks(doc: &AutoCommit, team: &str) -> Vec<Task> {
             })
         })
         .collect()
+}
+
+/// 任務改成完成時寫入 `doneAt`（已有則保留），離開完成時刪除（technical-design §16.8 v0.21）。
+fn put_done_at(doc: &mut AutoCommit, t: &ObjId, status: TaskStatus, now: Timestamp) -> R<()> {
+    let has = doc.get(t, "doneAt")?.is_some();
+    if status == TaskStatus::Done {
+        if !has {
+            doc.put(t, "doneAt", now)?;
+        }
+    } else if has {
+        doc.delete(t, "doneAt")?;
+    }
+    Ok(())
 }
 
 fn put_opt_member(doc: &mut AutoCommit, obj: &ObjId, key: &str, m: Option<&MemberId>) -> R<()> {
@@ -262,6 +278,7 @@ pub fn write_task(
     put_opt_member(doc, &t, "assignee", input.assignee.as_ref())?;
     let status = derive_status(input.status.unwrap_or_default(), &input.steps);
     doc.put(&t, "status", status.as_str())?;
+    put_done_at(doc, &t, status, now)?;
     match input.due_at {
         Some(d) => doc.put(&t, "dueAt", d)?,
         None => {
@@ -341,6 +358,7 @@ pub fn set_step_done(
         }
     };
     doc.put(&t, "status", status.as_str())?;
+    put_done_at(doc, &t, status, now)?;
     doc.put(&t, "updatedAt", now)?;
     Ok(())
 }
@@ -676,6 +694,34 @@ mod tests {
     }
 
     #[test]
+    fn task_done_at() {
+        let mut doc = AutoCommit::new();
+        let mut input = TaskInput {
+            title: "寫週報".into(),
+            ..Default::default()
+        };
+        write_task(&mut doc, "t", &input, &A, 10, &mut ids()).unwrap();
+        assert_eq!(read_tasks(&doc, "g")[0].done_at, None);
+        input.status = Some(TaskStatus::Done);
+        write_task(&mut doc, "t", &input, &A, 20, &mut ids()).unwrap();
+        assert_eq!(read_tasks(&doc, "g")[0].done_at, Some(20));
+        // 再次儲存仍是完成：保留原本的完成時間
+        input.title = "寫週報（改）".into();
+        write_task(&mut doc, "t", &input, &A, 30, &mut ids()).unwrap();
+        assert_eq!(read_tasks(&doc, "g")[0].done_at, Some(20));
+        input.status = Some(TaskStatus::Todo);
+        write_task(&mut doc, "t", &input, &A, 40, &mut ids()).unwrap();
+        assert_eq!(read_tasks(&doc, "g")[0].done_at, None);
+        // 步驟全部勾完 → 任務完成時間 = 最後一步
+        input.steps = vec![step("a", None)];
+        write_task(&mut doc, "t", &input, &A, 50, &mut ids()).unwrap();
+        set_step_done(&mut doc, "t", "s1", true, 60).unwrap();
+        assert_eq!(read_tasks(&doc, "g")[0].done_at, Some(60));
+        set_step_done(&mut doc, "t", "s1", false, 70).unwrap();
+        assert_eq!(read_tasks(&doc, "g")[0].done_at, None);
+    }
+
+    #[test]
     fn task_roundtrip_and_steps() {
         let mut doc = AutoCommit::new();
         let input = TaskInput {
@@ -701,6 +747,7 @@ mod tests {
         set_step_done(&mut doc, "t1", "s1", true, 20).unwrap();
         let t = &read_tasks(&doc, "general")[0];
         assert!(t.steps[0].done && t.steps[0].done_at == Some(20));
+        assert_eq!(t.done_at, None);
         assert_eq!(t.status, TaskStatus::Doing);
         assert_eq!(t.next_step().unwrap().id, "s2");
 
@@ -783,6 +830,7 @@ mod tests {
             assignee,
             status: TaskStatus::Todo,
             due_at: due,
+            done_at: None,
             steps,
             plan_item_id: None,
             created_by: None,

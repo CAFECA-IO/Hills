@@ -17,6 +17,11 @@ pub fn key_family(doc_id: &str) -> Option<KeyFamily> {
             owner,
             section: MemberSection::Secrets | MemberSection::Tasks,
         } => Some(KeyFamily::MemberPrivate(owner)),
+        // 方向摘要（§16.14 v0.21）：全員可讀
+        DocKind::Member {
+            section: MemberSection::Direction,
+            ..
+        } => Some(KeyFamily::Org),
         // 每日 Scrum（§16.12）
         DocKind::Member {
             section: MemberSection::Scrum { team, .. } | MemberSection::Reports { team, .. },
@@ -44,6 +49,10 @@ pub fn can_read(doc_id: &str, who: &Verified, dir: &crate::org::OrgSnapshot) -> 
             owner,
             section: MemberSection::Secrets | MemberSection::Tasks,
         }) => owner == who.member_id,
+        Some(DocKind::Member {
+            section: MemberSection::Direction,
+            ..
+        }) => true,
         Some(DocKind::Member {
             section: MemberSection::Scrum { team, .. } | MemberSection::Reports { team, .. },
             ..

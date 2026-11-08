@@ -48,6 +48,8 @@ pub enum MemberSection {
     Secrets,
     /// 私人任務：`tasks`（technical-design §16.8 v0.19，D46）
     Tasks,
+    /// 方向摘要與對齊建議：`direction`（technical-design §16.14 v0.21，D47），全員可讀
+    Direction,
 }
 
 /// 計劃文件的可見度：`plans/private`、`plans/team/<teamId>`、`plans/org`（technical-design §4.3 v0.15）。
@@ -135,6 +137,7 @@ impl DocKind {
                     }
                     ["secrets"] => MemberSection::Secrets,
                     ["tasks"] => MemberSection::Tasks,
+                    ["direction"] => MemberSection::Direction,
                     _ => return None,
                 };
                 DocKind::Member { owner, section }
@@ -161,6 +164,13 @@ mod tests {
             Some(DocKind::TeamGoals("t-1".into()))
         );
         assert_eq!(DocKind::parse("team-goals/a/b"), None);
+        assert!(matches!(
+            DocKind::parse(&format!("member/{m}/direction")),
+            Some(DocKind::Member {
+                section: MemberSection::Direction,
+                ..
+            })
+        ));
         assert_eq!(
             DocKind::parse(&format!("member/{m}/attendance/2026-11")),
             Some(DocKind::Member {

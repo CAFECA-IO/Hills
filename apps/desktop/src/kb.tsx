@@ -897,106 +897,121 @@ function KbEditor({
   const [tags, setTags] = useState(initial.tags.join(', '));
   const [preview, setPreview] = useState(false);
   const [refQ, setRefQ] = useState('');
+  const [missing, setMissing] = useState<{ title?: boolean; topic?: boolean }>({});
+  const titleRef = useRef<HTMLInputElement>(null);
   const { busy, error, attempt } = useAction();
   const set = (p: Partial<KbInput>) => setV((x) => ({ ...x, ...p }));
   const candidates = data.items.filter((i) => i.key !== v.key && matches(i, refQ)).slice(0, 30);
+  const dirty = JSON.stringify(v) !== JSON.stringify(initial) || tags !== initial.tags.join(', ');
   return (
-    <Dialog label={v.key ? t('kb.edit') : t('kb.newTitle')} onClose={onClose} width="lg">
-      <form
-        className="flex flex-col gap-3"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          let key = '';
-          const ok = await attempt(async () => {
-            key = await api.kbSave({
-              ...v,
-              title: v.title.trim(),
-              tags: tags
-                .split(/[,，]/)
-                .map((s) => s.trim())
-                .filter(Boolean),
-            });
+    <Dialog
+      title={v.key ? t('kb.edit') : t('kb.newTitle')}
+      onClose={onClose}
+      width="lg"
+      dirty={dirty}
+      onSubmit={async () => {
+        const m = { title: !v.title.trim(), topic: !v.topicId };
+        setMissing(m);
+        if (m.title) titleRef.current?.focus();
+        if (m.title || m.topic) return;
+        let key = '';
+        const ok = await attempt(async () => {
+          key = await api.kbSave({
+            ...v,
+            title: v.title.trim(),
+            tags: tags
+              .split(/[,，]/)
+              .map((s) => s.trim())
+              .filter(Boolean),
           });
-          if (ok) onSaved(key);
-        }}
+        });
+        if (ok) onSaved(key);
+      }}
+    >
+      <Field
+        label={t('kb.field.title')}
+        required
+        error={missing.title && !v.title.trim() ? t('field.required') : null}
       >
-        <h2 className="text-lg font-bold">{v.key ? t('kb.edit') : t('kb.newTitle')}</h2>
-        <Field label={t('kb.field.title')}>
-          <TextInput
-            autoFocus
-            required
-            maxLength={200}
-            value={v.title}
-            onChange={(e) => set({ title: e.target.value })}
+        <TextInput
+          ref={titleRef}
+          autoFocus
+          maxLength={200}
+          value={v.title}
+          onChange={(e) => set({ title: e.target.value })}
+        />
+      </Field>
+      <TopicPicker data={data} topicId={v.topicId} onChange={(topicId) => set({ topicId })} />
+      {missing.topic && !v.topicId && (
+        <p role="alert" className="-mt-2 text-xs text-danger">
+          {t('kb.topic.required')}
+        </p>
+      )}
+      <div className="flex flex-col gap-1 text-sm">
+        <span className="flex items-center justify-between text-xs text-muted">
+          {t('kb.field.body')}
+          <LinkButton onClick={() => setPreview((p) => !p)}>
+            {preview ? t('kb.field.write') : t('kb.field.preview')}
+          </LinkButton>
+        </span>
+        {preview ? (
+          <div className="prose-hills min-h-32 rounded-control border border-line p-3 text-sm">
+            <Markdown skipHtml components={{ img: () => null }}>
+              {v.body}
+            </Markdown>
+          </div>
+        ) : (
+          <TextArea
+            rows={7}
+            value={v.body}
+            aria-label={t('kb.field.body')}
+            onChange={(e) => set({ body: e.target.value })}
           />
-        </Field>
-        <TopicPicker data={data} topicId={v.topicId} onChange={(topicId) => set({ topicId })} />
-        <div className="flex flex-col gap-1 text-sm">
-          <span className="flex items-center justify-between text-xs text-muted">
-            {t('kb.field.body')}
-            <LinkButton onClick={() => setPreview((p) => !p)}>
-              {preview ? t('kb.field.write') : t('kb.field.preview')}
-            </LinkButton>
-          </span>
-          {preview ? (
-            <div className="prose-hills min-h-32 rounded-control border border-line p-3 text-sm">
-              <Markdown skipHtml components={{ img: () => null }}>
-                {v.body}
-              </Markdown>
-            </div>
-          ) : (
-            <TextArea
-              rows={7}
-              value={v.body}
-              aria-label={t('kb.field.body')}
-              onChange={(e) => set({ body: e.target.value })}
-            />
-          )}
-        </div>
-        <Field label={t('kb.field.tags')}>
-          <TextInput value={tags} onChange={(e) => setTags(e.target.value)} />
-        </Field>
-        <fieldset className="flex flex-col gap-1 text-sm">
-          <legend className="mb-1 text-xs text-muted">
-            {t('kb.field.refs')} · {v.refs.length}
-          </legend>
-          <TextInput
-            type="search"
-            value={refQ}
-            placeholder={t('kb.search')}
-            aria-label={t('kb.field.refs')}
-            onChange={(e) => setRefQ(e.target.value)}
-          />
-          <ul className="scroll-panel max-h-32 rounded-control border border-line p-1">
-            {candidates.map((i) => (
-              <li key={i.key}>
-                <label className="flex items-center gap-2 px-1 py-0.5">
-                  <Checkbox
-                    checked={v.refs.includes(i.key)}
-                    onChange={(e) =>
-                      set({
-                        refs: e.target.checked
-                          ? [...v.refs, i.key]
-                          : v.refs.filter((r) => r !== i.key),
-                      })
-                    }
-                  />
-                  <span className="truncate">{i.title}</span>
-                </label>
-              </li>
-            ))}
-          </ul>
-        </fieldset>
-        <ErrorText message={error} />
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button type="submit" disabled={busy || !v.title.trim() || !v.topicId}>
-            {t('kb.save')}
-          </Button>
-        </div>
-      </form>
+        )}
+      </div>
+      <Field label={t('kb.field.tags')}>
+        <TextInput value={tags} onChange={(e) => setTags(e.target.value)} />
+      </Field>
+      <fieldset className="flex flex-col gap-1 text-sm">
+        <legend className="mb-1 text-xs text-muted">
+          {t('kb.field.refs')} · {v.refs.length}
+        </legend>
+        <TextInput
+          type="search"
+          value={refQ}
+          placeholder={t('kb.search')}
+          aria-label={t('kb.field.refs')}
+          onChange={(e) => setRefQ(e.target.value)}
+        />
+        <ul className="scroll-panel max-h-32 rounded-control border border-line p-1">
+          {candidates.map((i) => (
+            <li key={i.key}>
+              <label className="flex items-center gap-2 px-1 py-0.5">
+                <Checkbox
+                  checked={v.refs.includes(i.key)}
+                  onChange={(e) =>
+                    set({
+                      refs: e.target.checked
+                        ? [...v.refs, i.key]
+                        : v.refs.filter((r) => r !== i.key),
+                    })
+                  }
+                />
+                <span className="truncate">{i.title}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      </fieldset>
+      <ErrorText message={error} />
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="secondary" onClick={onClose}>
+          {t('common.cancel')}
+        </Button>
+        <Button type="submit" busy={busy}>
+          {t('kb.save')}
+        </Button>
+      </div>
     </Dialog>
   );
 }

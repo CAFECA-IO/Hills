@@ -2,6 +2,7 @@
 import {
   useEffect,
   useRef,
+  useState,
   type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
@@ -9,7 +10,7 @@ import {
   type RefObject,
 } from 'react';
 import { t } from '../i18n';
-import { IconButton } from './button';
+import { Button, IconButton } from './button';
 
 export type DialogWidth = 'sm' | 'md' | 'lg';
 const WIDTH: Record<DialogWidth, string> = { sm: 'w-120', md: 'w-140', lg: 'w-150' };
@@ -58,6 +59,7 @@ export function Dialog({
   placement = 'center',
   padded = true,
   closeButton = false,
+  dirty = false,
   children,
 }: {
   title?: ReactNode;
@@ -69,22 +71,51 @@ export function Dialog({
   placement?: 'center' | 'top';
   padded?: boolean;
   closeButton?: boolean;
+  /** 有未儲存的修改：Esc、點遮罩、× 先詢問是否放棄 */
+  dirty?: boolean;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLElement | null>(null);
+  const [asking, setAsking] = useState(false);
   useFocusInside(ref);
+  const keepEditing = () => {
+    setAsking(false);
+    ref.current?.focus();
+  };
+  const requestClose = () => {
+    if (dirty) setAsking(true);
+    else onClose();
+  };
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.stopPropagation();
-      onClose();
+      if (asking) keepEditing();
+      else requestClose();
     }
   };
+  const discard = asking && (
+    <div
+      role="alertdialog"
+      aria-label={t('dialog.discard.message')}
+      className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-warning px-3 py-2 text-sm"
+    >
+      <span>{t('dialog.discard.message')}</span>
+      <span className="flex gap-2">
+        <Button variant="danger" size="sm" onClick={onClose}>
+          {t('dialog.discard.confirm')}
+        </Button>
+        <Button variant="secondary" size="sm" autoFocus onClick={keepEditing}>
+          {t('dialog.discard.keep')}
+        </Button>
+      </span>
+    </div>
+  );
   const cls = `flex max-w-[calc(100vw-2rem)] flex-col rounded-card bg-surface shadow-lg outline-none ${placement === 'top' ? 'max-h-[60vh]' : 'max-h-[90vh]'} ${padded ? 'scroll-panel gap-3 p-5' : 'overflow-hidden'} ${WIDTH[width]}`;
   const head = (title || closeButton) && (
     <div className="flex items-start justify-between gap-3">
       {title && <h2 className="text-lg font-bold">{title}</h2>}
       {closeButton && (
-        <IconButton label={t('common.close')} size="sm" onClick={onClose}>
+        <IconButton label={t('common.close')} size="sm" onClick={requestClose}>
           ×
         </IconButton>
       )}
@@ -100,7 +131,7 @@ export function Dialog({
   return (
     <div
       className={`fixed inset-0 z-40 flex justify-center bg-fg/20 ${placement === 'top' ? 'items-start pt-[12vh]' : 'items-center'}`}
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+      onMouseDown={(e) => e.target === e.currentTarget && requestClose()}
     >
       {onSubmit ? (
         <form
@@ -116,6 +147,7 @@ export function Dialog({
         >
           {head}
           {children}
+          {discard}
         </form>
       ) : (
         <div
@@ -127,6 +159,7 @@ export function Dialog({
         >
           {head}
           {children}
+          {discard}
         </div>
       )}
     </div>

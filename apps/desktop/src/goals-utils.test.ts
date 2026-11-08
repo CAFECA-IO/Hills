@@ -4,12 +4,18 @@ import {
   columnItems,
   containsPeriod,
   isoWeek,
+  joinPeriod,
   parentOptions,
   periodLabel,
   periodsAt,
+  periodsFromAny,
   periodsOfYmd,
   select,
+  splitPeriod,
   todayTasks,
+  weekRange,
+  weeksInYear,
+  yearOptions,
 } from './goals-utils';
 
 const plan = (
@@ -125,5 +131,54 @@ describe('todayTasks', () => {
       task('d', today, 'done'),
     ];
     expect(todayTasks(list, 'c', '2026-11-08', 'UTC').map((t) => t.id)).toEqual(['a', 'c']);
+  });
+});
+
+describe('期間選擇器（ui-spec「目標」v0.17）', () => {
+  it('yearOptions：前 1 年到後 2 年，含目前值', () => {
+    expect(yearOptions(2026)).toEqual([2025, 2026, 2027, 2028]);
+    expect(yearOptions(2026, 2020)).toEqual([2020, 2025, 2026, 2027, 2028]);
+    expect(yearOptions(2026, 2027)).toEqual([2025, 2026, 2027, 2028]);
+  });
+  it('weeksInYear：53 週的年份', () => {
+    expect(weeksInYear(2020)).toBe(53);
+    expect(weeksInYear(2026)).toBe(53);
+    expect(weeksInYear(2025)).toBe(52);
+    expect(weeksInYear(2027)).toBe(52);
+  });
+  it('weekRange：週一到週日，可跨年', () => {
+    expect(weekRange(2026, 45)).toEqual({
+      start: { y: 2026, m: 11, d: 2 },
+      end: { y: 2026, m: 11, d: 8 },
+    });
+    expect(weekRange(2026, 1).start).toEqual({ y: 2025, m: 12, d: 29 });
+    expect(weekRange(2026, 53).end).toEqual({ y: 2027, m: 1, d: 3 });
+  });
+  it('splitPeriod / joinPeriod 互為反函式', () => {
+    const cases: [PlanView['level'], string][] = [
+      ['year', '2026'],
+      ['quarter', '2026-Q4'],
+      ['month', '2026-03'],
+      ['week', '2026-W05'],
+    ];
+    for (const [level, p] of cases) {
+      const { year, n } = splitPeriod(level, p);
+      expect(joinPeriod(level, year, n)).toBe(p);
+    }
+  });
+  it('joinPeriod：週次超過該年週數時夾到最後一週', () => {
+    expect(joinPeriod('week', 2027, 53)).toBe('2027-W52');
+  });
+  it('periodsFromAny：換層級時取原期間的第一天', () => {
+    expect(periodsFromAny('2026-Q4', 'quarter').month).toBe('2026-10');
+    expect(periodsFromAny('2026-W01', 'week').day).toBe('2025-12-29');
+    expect(periodsFromAny('2026-11-09', 'day').week).toBe('2026-W46');
+    expect(periodsFromAny('2026', 'year').quarter).toBe('2026-Q1');
+  });
+  it('periodsFromAny：原期間包含錨點日時用錨點日所在的期間', () => {
+    const anchor = periodsOfYmd(2026, 11, 9);
+    expect(periodsFromAny('2026', 'year', anchor).quarter).toBe('2026-Q4');
+    expect(periodsFromAny('2026-Q4', 'quarter', anchor).week).toBe('2026-W46');
+    expect(periodsFromAny('2026-Q1', 'quarter', anchor).month).toBe('2026-01');
   });
 });

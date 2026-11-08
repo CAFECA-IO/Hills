@@ -1,4 +1,5 @@
 /** 表單元件（docs/components.md「表單」）。 */
+import { t } from '../i18n';
 import {
   createContext,
   forwardRef,
@@ -12,12 +13,17 @@ import {
 
 export type ControlSize = 'sm' | 'md';
 
-type FieldCtx = { id: string; describedBy?: string; invalid: boolean };
+type FieldCtx = { id: string; describedBy?: string; invalid: boolean; required: boolean };
 const FieldContext = createContext<FieldCtx | null>(null);
 
 const CONTROL =
   'rounded-control border bg-surface text-fg placeholder:text-muted focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50';
+/** 固定高度（不靠上下內距：WebKit 會忽略原生 select 的內距），docs/components.md。 */
 const CONTROL_SIZE: Record<ControlSize, string> = {
+  sm: 'h-7 px-2 py-0 text-sm',
+  md: 'h-9 px-3 py-0 text-sm',
+};
+const AREA_SIZE: Record<ControlSize, string> = {
   sm: 'px-2 py-1 text-sm',
   md: 'px-3 py-2 text-sm',
 };
@@ -29,6 +35,7 @@ function useControl(id: string | undefined, invalid: boolean | undefined) {
     id: id ?? f?.id,
     'aria-describedby': f?.describedBy,
     'aria-invalid': bad || undefined,
+    'aria-required': f?.required || undefined,
     border: bad ? 'border-danger' : 'border-line',
   };
 }
@@ -64,23 +71,44 @@ export const TextArea = forwardRef<
   ref,
 ) {
   const { border, ...a } = useControl(id, invalid);
-  const look = appearance === 'bare' ? BARE : `${CONTROL} ${CONTROL_SIZE[size]} ${border}`;
+  const look = appearance === 'bare' ? BARE : `${CONTROL} ${AREA_SIZE[size]} ${border}`;
   return <textarea ref={ref} className={`${look} ${className}`} {...a} {...rest} />;
 });
 
-/** 下拉選單（原生 select，保留系統鍵盤與螢幕閱讀器行為）。 */
+/**
+ * 下拉選單：原生 select（保留系統鍵盤與螢幕閱讀器行為），但取消系統外觀並畫自己的箭頭，
+ * 讓 Mac（WebKit）與 Windows 的高度、圓角一致。`className` 套在外層（版面）。
+ */
 export const Select = forwardRef<
   HTMLSelectElement,
   Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size'> & Omit<Common, 'appearance'>
 >(function Select({ size = 'md', invalid, className = '', id, ...rest }, ref) {
   const { border, ...a } = useControl(id, invalid);
   return (
-    <select
-      ref={ref}
-      className={`${CONTROL} ${CONTROL_SIZE[size]} ${border} ${className}`}
-      {...a}
-      {...rest}
-    />
+    <span className={`relative inline-flex ${className}`}>
+      <select
+        ref={ref}
+        className={`w-full min-w-0 appearance-none ${CONTROL} ${CONTROL_SIZE[size]} ${size === 'sm' ? 'pr-7' : 'pr-9'} ${border}`}
+        {...a}
+        {...rest}
+      />
+      <svg
+        aria-hidden
+        width={12}
+        height={12}
+        viewBox="0 0 12 12"
+        className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-muted ${size === 'sm' ? 'right-2' : 'right-3'}`}
+      >
+        <path
+          d="M3 4.5l3 3 3-3"
+          stroke="currentColor"
+          strokeWidth={1.6}
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </span>
   );
 });
 
@@ -110,6 +138,8 @@ type FieldProps = {
   label: ReactNode;
   hint?: ReactNode;
   error?: string | null;
+  /** 標示必填（驗證在送出時進行） */
+  required?: boolean;
   className?: string;
 } & (
   | { children: ReactNode; value?: undefined }
@@ -130,7 +160,7 @@ type FieldProps = {
  * 也可不傳 children，以 value / onChange 直接產生文字輸入（簡易寫法）。
  */
 export function Field(props: FieldProps) {
-  const { label, hint, error, className = '' } = props;
+  const { label, hint, error, required = false, className = '' } = props;
   const id = useId();
   const hintId = `${id}-hint`;
   const errId = `${id}-err`;
@@ -165,10 +195,11 @@ export function Field(props: FieldProps) {
     );
   }
   return (
-    <FieldContext.Provider value={{ id, describedBy, invalid: !!error }}>
+    <FieldContext.Provider value={{ id, describedBy, invalid: !!error, required }}>
       <div className={`flex flex-col gap-1 ${className}`}>
         <label htmlFor={id} className="text-xs font-medium text-muted">
           {label}
+          {required && <span className="font-normal">{t('field.requiredMark')}</span>}
         </label>
         {control}
         {hint && (

@@ -17,9 +17,15 @@ import {
   nextLevel,
   parentOptions,
   periodLabel,
+  joinPeriod,
   periodsAt,
+  periodsFromAny,
   select,
+  splitPeriod,
   todayTasks,
+  weekRange,
+  weeksInYear,
+  yearOptions,
   type Periods,
   type Selection,
 } from './goals-utils';
@@ -32,6 +38,7 @@ import {
   Checkbox,
   ConfirmButton,
   Dialog,
+  EmptyState,
   ErrorText,
   Field,
   LinkButton,
@@ -206,6 +213,7 @@ export function Goals({ members, teams, tasks, focusId, timezone, onOpenTasks }:
           initial={editing}
           items={items}
           teams={myTeams}
+          anchor={periods}
           onClose={() => setEditing(null)}
           onSaved={(id, level) => {
             setEditing(null);
@@ -588,25 +596,36 @@ function GoalEditor({
   initial,
   items,
   teams,
+  anchor,
   onClose,
   onSaved,
 }: {
   initial: PlanInput;
   items: PlanView[];
   teams: TeamView[];
+  /** 目前檢視日期的五個期間：換層級時的錨點、年份選項的基準 */
+  anchor: Periods;
   onClose: () => void;
   onSaved: (id: string, level: PlanLevel) => void;
 }) {
   const [v, setV] = useState<PlanInput>(initial);
+  const [titleError, setTitleError] = useState<string | null>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
   const { busy, error, attempt } = useAction();
   const set = (patch: Partial<PlanInput>) => setV((x) => ({ ...x, ...patch }));
   const okr = v.level === 'year' || v.level === 'quarter';
   const parents = parentOptions(items, v.level, v.period).filter((p) => p.id !== v.id);
   const parent = parents.find((p) => p.id === v.parentId);
   const visValue = v.visibility.kind === 'team' ? `team:${v.visibility.team}` : v.visibility.kind;
+  const dirty = JSON.stringify(v) !== JSON.stringify(initial);
   const setKr = (i: number, patch: Partial<KeyResult>) =>
     set({ keyResults: v.keyResults.map((k, j) => (j === i ? { ...k, ...patch } : k)) });
   const save = async () => {
+    if (!v.title.trim()) {
+      setTitleError(t('field.required'));
+      titleRef.current?.focus();
+      return;
+    }
     let id = '';
     const ok = await attempt(async () => {
       id = await api.savePlan({
@@ -621,27 +640,23 @@ function GoalEditor({
   const num = (s: string) => (s.trim() === '' ? 0 : Number(s));
   return (
     <Dialog
-      title={v.id ? t('goals.edit') : t('goals.new')}
+      title={v.id ? t('goals.edit') : t('goals.new.title')}
       onClose={onClose}
       onSubmit={() => void save()}
+      dirty={dirty}
     >
-      <Field label={t('goals.field.title')}>
-        <TextInput
-          autoFocus
-          required
-          maxLength={200}
-          value={v.title}
-          onChange={(e) => set({ title: e.target.value })}
-        />
-      </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-3">
         <Field label={t('goals.field.level')}>
           <Select
             value={v.level}
             disabled={Boolean(v.id)}
             onChange={(e) => {
               const level = e.target.value as PlanLevel;
-              set({ level, period: periodsFromAny(v.period, v.level)[level], parentId: null });
+              set({
+                level,
+                period: periodsFromAny(v.period, v.level, anchor)[level],
+                parentId: null,
+              });
             }}
           >
             {LEVELS.map((l) => (
@@ -651,14 +666,12 @@ function GoalEditor({
             ))}
           </Select>
         </Field>
-        <Field label={t('goals.field.period')}>
-          <TextInput
-            value={v.period}
-            onChange={(e) => set({ period: e.target.value.trim(), parentId: null })}
-            placeholder={PERIOD_HINT[v.level]}
-            className="font-mono"
-          />
-        </Field>
+        <PeriodPicker
+          level={v.level}
+          value={v.period}
+          baseYear={Number(anchor.year)}
+          onChange={(period) => set({ period, parentId: null, krRef: null })}
+        />
       </div>
       {v.level !== 'year' && (
         <Field label={t('goals.field.parent')}>
@@ -675,6 +688,18 @@ function GoalEditor({
           </Select>
         </Field>
       )}
+      <Field label={t('goals.field.title')} required error={titleError}>
+        <TextInput
+          ref={titleRef}
+          autoFocus
+          maxLength={200}
+          value={v.title}
+          onChange={(e) => {
+            set({ title: e.target.value });
+            if (e.target.value.trim()) setTitleError(null);
+          }}
+        />
+      </Field>
       {!okr && parent && parent.keyResults.length > 0 && (
         <Field label={t('goals.field.kr')}>
           <Select value={v.krRef ?? ''} onChange={(e) => set({ krRef: e.target.value || null })}>
@@ -687,7 +712,10 @@ function GoalEditor({
           </Select>
         </Field>
       )}
-      <Field label={t('goals.field.visibility')}>
+      <Field
+        label={t('goals.field.visibility')}
+        hint={t(`goals.vis.hint.${v.visibility.kind}` as MessageKey)}
+      >
         <Select
           value={visValue}
           onChange={(e) => {
@@ -710,13 +738,17 @@ function GoalEditor({
       </Field>
       {okr && (
         <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1 text-xs text-muted">{t('goals.krs')}</legend>
+          <legend className="text-xs font-medium text-muted">{t('goals.krs')}</legend>
+          <p className="text-xs text-muted">{t('goals.krs.hint')}</p>
+          {v.keyResults.length === 0 && (
+            <EmptyState className="text-xs">{t('goals.krs.none')}</EmptyState>
+          )}
           {v.keyResults.map((k, i) => (
             <div
               key={k.id || i}
-              className="flex flex-col gap-1 rounded-control border border-line p-2"
+              className="flex flex-col gap-2 rounded-control border border-line p-2"
             >
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
                 <TextInput
                   size="sm"
                   required
@@ -735,16 +767,14 @@ function GoalEditor({
                   {t('goals.kr.remove')}
                 </LinkButton>
               </div>
-              <div className="grid grid-cols-4 gap-2 text-xs">
+              <div className="grid grid-cols-4 gap-2">
                 {(['start', 'target', 'current'] as const).map((f) => (
-                  <label key={f} className="flex flex-col gap-0.5">
-                    <span className="text-muted">
-                      {t(
-                        (f === 'current'
-                          ? 'goals.kr.current.label'
-                          : `goals.kr.${f}`) as MessageKey,
-                      )}
-                    </span>
+                  <Field
+                    key={f}
+                    label={t(
+                      (f === 'current' ? 'goals.kr.current.label' : `goals.kr.${f}`) as MessageKey,
+                    )}
+                  >
                     <TextInput
                       size="sm"
                       type="number"
@@ -757,7 +787,7 @@ function GoalEditor({
                         })
                       }
                     />
-                  </label>
+                  </Field>
                 ))}
                 <Field label={t('goals.kr.unit')}>
                   <TextInput
@@ -768,13 +798,12 @@ function GoalEditor({
                   />
                 </Field>
               </div>
-              <label className="flex items-center gap-2 text-xs">
-                <Checkbox
-                  checked={!k.manual}
-                  onChange={(e) => setKr(i, { manual: !e.target.checked })}
-                />
-                {t('goals.kr.auto')}
-              </label>
+              <Checkbox
+                className="text-xs"
+                label={t('goals.kr.auto')}
+                checked={!k.manual}
+                onChange={(e) => setKr(i, { manual: !e.target.checked })}
+              />
             </div>
           ))}
           {v.keyResults.length < MAX_KRS && (
@@ -805,35 +834,38 @@ function GoalEditor({
           )}
         </fieldset>
       )}
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox
-          checked={v.progressOverride !== null}
-          onChange={(e) => set({ progressOverride: e.target.checked ? 0 : null })}
-        />
-        {t('goals.field.override')}
-        {v.progressOverride !== null && (
-          <TextInput
-            size="sm"
-            type="number"
-            min={0}
-            max={100}
-            value={v.progressOverride}
-            aria-label={t('goals.field.override')}
-            onChange={(e) =>
-              set({
-                progressOverride: Math.max(0, Math.min(100, Math.round(num(e.target.value)))),
-              })
-            }
-            className="w-20"
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <Checkbox
+            label={t('goals.field.override')}
+            checked={v.progressOverride !== null}
+            onChange={(e) => set({ progressOverride: e.target.checked ? 0 : null })}
           />
-        )}
-      </label>
+          {v.progressOverride !== null && (
+            <TextInput
+              size="sm"
+              type="number"
+              min={0}
+              max={100}
+              value={v.progressOverride}
+              aria-label={t('goals.field.override')}
+              onChange={(e) =>
+                set({
+                  progressOverride: Math.max(0, Math.min(100, Math.round(num(e.target.value)))),
+                })
+              }
+              className="w-20"
+            />
+          )}
+        </div>
+        <p className="text-xs text-muted">{t('goals.override.hint')}</p>
+      </div>
       <ErrorText message={error} />
       <div className="flex justify-end gap-2">
         <Button type="button" variant="secondary" onClick={onClose}>
           {t('common.cancel')}
         </Button>
-        <Button type="submit" disabled={busy || !v.title.trim()}>
+        <Button type="submit" busy={busy}>
           {t('goals.save')}
         </Button>
       </div>
@@ -841,28 +873,75 @@ function GoalEditor({
   );
 }
 
-const PERIOD_HINT: Record<PlanLevel, string> = {
-  year: '2026',
-  quarter: '2026-Q4',
-  month: '2026-11',
-  week: '2026-W45',
-  day: '2026-11-08',
-};
-
-/** 換層級時依原期間推算新層級的期間（取原期間的第一天）。 */
-function periodsFromAny(period: string, level: PlanLevel): Periods {
-  const p = period.split('-');
-  const y = Number(p[0]) || new Date().getFullYear();
-  let m = 1;
-  let d = 1;
-  if (level === 'quarter') m = (Number(p[1]?.slice(1)) - 1) * 3 + 1 || 1;
-  if (level === 'month' || level === 'day') m = Number(p[1]) || 1;
-  if (level === 'day') d = Number(p[2]) || 1;
-  if (level === 'week') {
-    const w = Number(p[1]?.slice(1)) || 1;
-    const jan4 = new Date(Date.UTC(y, 0, 4));
-    const mon = new Date(Date.UTC(y, 0, 4 - ((jan4.getUTCDay() || 7) - 1) + (w - 1) * 7));
-    return periodsAt(mon.getTime() + 12 * 3_600_000, 'UTC');
+/** 期間選擇器：依層級組合年份、季、月、週下拉或日期（ui-spec「目標」v0.17）。 */
+function PeriodPicker({
+  level,
+  value,
+  baseYear,
+  onChange,
+}: {
+  level: PlanLevel;
+  value: string;
+  baseYear: number;
+  onChange: (period: string) => void;
+}) {
+  if (level === 'day') {
+    return (
+      <Field label={t('goals.field.period')}>
+        <TextInput
+          type="date"
+          value={value}
+          required
+          onChange={(e) => e.target.value && onChange(e.target.value)}
+        />
+      </Field>
+    );
   }
-  return periodsAt(Date.UTC(y, m - 1, d, 12), 'UTC');
+  const { year, n } = splitPeriod(level, value);
+  const years = yearOptions(baseYear, year);
+  const count =
+    level === 'quarter' ? 4 : level === 'month' ? 12 : level === 'week' ? weeksInYear(year) : 0;
+  const label = (i: number) => {
+    if (level === 'quarter') return `Q${i}`;
+    if (level === 'month') return t('goals.period.monthN', { n: i });
+    const r = weekRange(year, i);
+    return t('goals.period.weekN', {
+      n: String(i).padStart(2, '0'),
+      from: `${r.start.m}/${r.start.d}`,
+      to: `${r.end.m}/${r.end.d}`,
+    });
+  };
+  return (
+    <fieldset className="flex min-w-0 flex-col gap-1">
+      <legend className="mb-1 text-xs font-medium text-muted">{t('goals.field.period')}</legend>
+      <div className="flex gap-2">
+        <Select
+          aria-label={t('goals.period.year')}
+          className={count ? 'w-28 shrink-0' : 'flex-1'}
+          value={year}
+          onChange={(e) => onChange(joinPeriod(level, Number(e.target.value), n))}
+        >
+          {years.map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </Select>
+        {count > 0 && (
+          <Select
+            aria-label={t(`goals.period.${level}` as MessageKey)}
+            className="min-w-0 flex-1"
+            value={Math.min(n, count)}
+            onChange={(e) => onChange(joinPeriod(level, year, Number(e.target.value)))}
+          >
+            {Array.from({ length: count }, (_, k) => k + 1).map((i) => (
+              <option key={i} value={i}>
+                {label(i)}
+              </option>
+            ))}
+          </Select>
+        )}
+      </div>
+    </fieldset>
+  );
 }

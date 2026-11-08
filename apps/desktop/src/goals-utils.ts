@@ -171,3 +171,80 @@ function representativeYmd(
     }
   }
 }
+
+// ── 編輯對話框的期間選擇器（ui-spec「目標」v0.17） ─────────────
+
+/** 年份選項：基準年的前 1 年到後 2 年，另含目前值（排序、去重）。 */
+export function yearOptions(base: number, current?: number): number[] {
+  const set = new Set([base - 1, base, base + 1, base + 2]);
+  if (current && Number.isFinite(current)) set.add(current);
+  return [...set].sort((a, b) => a - b);
+}
+
+/** ISO 年的週數（52 或 53）：12 月 28 日所在的週。 */
+export function weeksInYear(y: number): number {
+  return isoWeek(y, 12, 28).week;
+}
+
+/** ISO 週的週一與週日（年月日）。 */
+export function weekRange(
+  y: number,
+  w: number,
+): { start: { y: number; m: number; d: number }; end: { y: number; m: number; d: number } } {
+  const jan4 = new Date(Date.UTC(y, 0, 4));
+  const mon = new Date(Date.UTC(y, 0, 4 - ((jan4.getUTCDay() || 7) - 1) + (w - 1) * 7));
+  const sun = new Date(mon.getTime() + 6 * 86_400_000);
+  const ymd = (d: Date) => ({ y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate() });
+  return { start: ymd(mon), end: ymd(sun) };
+}
+
+/** 期間拆成選擇器的欄位：年、以及季 / 月 / 週的序號（年層級為 0）。日層級回傳原字串。 */
+export function splitPeriod(level: PlanLevel, period: string): { year: number; n: number } {
+  const p = period.split('-');
+  const year = Number(p[0]) || 0;
+  switch (level) {
+    case 'quarter':
+    case 'week':
+      return { year, n: Number(p[1]?.slice(1)) || 1 };
+    case 'month':
+      return { year, n: Number(p[1]) || 1 };
+    default:
+      return { year, n: 0 };
+  }
+}
+
+/** 由年與序號組回期間字串（季 / 月 / 週；年層級忽略序號）。 */
+export function joinPeriod(level: PlanLevel, year: number, n: number): string {
+  switch (level) {
+    case 'year':
+      return String(year);
+    case 'quarter':
+      return `${year}-Q${n}`;
+    case 'month':
+      return `${year}-${pad(n)}`;
+    case 'week':
+      return `${year}-W${pad(Math.min(n, weeksInYear(year)))}`;
+    case 'day':
+      return '';
+  }
+}
+
+/**
+ * 換層級時推算新層級的期間：原期間包含錨點日（目前檢視的日期）時用錨點日所在的期間，
+ * 否則取原期間的第一天（週取週一）。
+ */
+export function periodsFromAny(period: string, level: PlanLevel, anchor?: Periods): Periods {
+  if (anchor && containsPeriod(period, level, anchor.day, 'day')) return anchor;
+  const p = period.split('-');
+  const y = Number(p[0]) || new Date().getFullYear();
+  if (level === 'week') {
+    const s = weekRange(y, Number(p[1]?.slice(1)) || 1).start;
+    return periodsOfYmd(s.y, s.m, s.d);
+  }
+  let m = 1;
+  let d = 1;
+  if (level === 'quarter') m = (Number(p[1]?.slice(1)) - 1) * 3 + 1 || 1;
+  if (level === 'month' || level === 'day') m = Number(p[1]) || 1;
+  if (level === 'day') d = Number(p[2]) || 1;
+  return periodsOfYmd(y, m, d);
+}

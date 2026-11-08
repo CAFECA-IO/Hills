@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { t } from '../i18n';
 import {
   Badge,
   Button,
@@ -13,6 +14,7 @@ import {
   Menu,
   MenuItem,
   ProgressBar,
+  Select,
   SegmentedControl,
   Tabs,
   TextInput,
@@ -132,5 +134,32 @@ describe('ui 元件（docs/components.md）', () => {
     expect(html(<EmptyState action={<Button>新增</Button>}>沒有資料</EmptyState>)).toContain(
       '沒有資料',
     );
+  });
+
+  it('TextInput 與 Select 固定同高，Select 取消系統外觀並有自己的箭頭', () => {
+    const input = html(<TextInput value="" onChange={noop} />);
+    const sel = html(
+      <Select value="a" onChange={noop}>
+        <option value="a">A</option>
+      </Select>,
+    );
+    expect(input).toContain('h-9');
+    expect(sel).toMatch(/<select[^>]*class="[^"]*appearance-none[^"]*h-9/);
+    expect(sel).toContain('<svg');
+    expect(html(<TextInput size="sm" value="" onChange={noop} />)).toContain('h-7');
+  });
+
+  it('Field required 顯示必填標記並設定 aria-required', () => {
+    const h = html(
+      <Field label="標題" required>
+        <TextInput value="" onChange={noop} />
+      </Field>,
+    );
+    expect(h).toContain(t('field.requiredMark'));
+    expect(h).toContain('aria-required="true"');
+  });
+
+  it('停用的主按鈕改用 line 底色', () => {
+    expect(html(<Button disabled>存</Button>)).toContain('disabled:bg-line');
   });
 });

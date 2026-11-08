@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 use crate::node::{Node, now_ms};
 use crate::org::{get_int, get_obj, get_str};
 use crate::plans::{
-    KeyResult, PlanItem, PlanLevel, kr_value, put_opt_str, read_krs, validate_krs, write_krs,
+    Criterion, KeyResult, PlanItem, PlanLevel, kr_value, put_opt_str, read_criteria, read_krs,
+    validate_criteria, validate_krs, write_criteria, write_krs,
 };
 
 const DIRECTION_PREFIX: &str = "direction:";
@@ -50,6 +51,8 @@ pub struct TeamGoal {
     pub title: String,
     pub direction_id: Option<String>,
     pub key_results: Vec<KeyResult>,
+    /// 做到的標準（純文字，不影響進度；同計劃的 criteria）
+    pub criteria: Vec<Criterion>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
@@ -79,6 +82,8 @@ pub struct TeamGoalInput {
     pub direction_id: Option<String>,
     #[serde(default)]
     pub key_results: Vec<KeyResult>,
+    #[serde(default)]
+    pub criteria: Vec<Criterion>,
 }
 
 fn valid_year(y: &str) -> bool {
@@ -138,6 +143,7 @@ pub fn read_team_goals(doc: &AutoCommit, team: &str) -> Vec<TeamGoal> {
             title: get_str(doc, o, "title").unwrap_or_default(),
             direction_id: get_str(doc, o, "directionId"),
             key_results: read_krs(doc, o),
+            criteria: read_criteria(doc, o),
             created_at: get_int(doc, o, "createdAt").unwrap_or(0),
             updated_at: get_int(doc, o, "updatedAt").unwrap_or(0),
         })
@@ -210,16 +216,20 @@ pub fn write_team_goal(
     kr_id: &mut dyn FnMut() -> Result<String>,
 ) -> Result<()> {
     validate(&input.year, &input.title, &input.key_results)?;
+    validate_criteria(&input.criteria)?;
+    let key = format!("{GOAL_PREFIX}{id}");
     write_entry(
         doc,
-        &format!("{GOAL_PREFIX}{id}"),
+        &key,
         &input.year,
         &input.title,
         input.direction_id.as_deref(),
         &input.key_results,
         now,
         kr_id,
-    )
+    )?;
+    let o = get_obj(doc, &ROOT, &key).ok_or_else(|| anyhow!("寫入失敗"))?;
+    write_criteria(doc, &o, &input.criteria, kr_id)
 }
 
 fn delete_key(doc: &mut AutoCommit, key: &str) -> Result<()> {
@@ -445,11 +455,17 @@ mod tests {
             title: "M2 手機版".into(),
             direction_id: Some("d1".into()),
             key_results: vec![],
+            criteria: vec![Criterion {
+                id: String::new(),
+                text: "全員試用".into(),
+            }],
         };
         write_team_goal(&mut g, "g1", &input, 7, &mut ids()).unwrap();
         let goals = read_team_goals(&g, "t1");
         assert_eq!(goals[0].direction_id.as_deref(), Some("d1"));
         assert_eq!(goals[0].team, "t1");
+        assert_eq!(goals[0].criteria[0].text, "全員試用");
+        assert!(!goals[0].criteria[0].id.is_empty());
         // 取消對齊
         let input = TeamGoalInput {
             direction_id: None,
@@ -523,6 +539,7 @@ mod tests {
             title: id.into(),
             direction_id: dir.map(Into::into),
             key_results: vec![],
+            criteria: vec![],
             created_at: 0,
             updated_at: 0,
         };

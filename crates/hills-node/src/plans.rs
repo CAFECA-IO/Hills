@@ -243,7 +243,7 @@ pub(crate) fn read_krs(doc: &AutoCommit, item: &ObjId) -> Vec<KeyResult> {
         .collect()
 }
 
-fn read_criteria(doc: &AutoCommit, item: &ObjId) -> Vec<Criterion> {
+pub(crate) fn read_criteria(doc: &AutoCommit, item: &ObjId) -> Vec<Criterion> {
     let Some(list) = get_obj(doc, item, "criteria") else {
         return vec![];
     };
@@ -345,15 +345,7 @@ fn validate(input: &PlanInput) -> Result<()> {
         bail!("進度需為 0–100");
     }
     validate_krs(&input.key_results)?;
-    if input.criteria.len() > MAX_CRITERIA {
-        bail!("做到的標準最多 {MAX_CRITERIA} 個");
-    }
-    for c in &input.criteria {
-        let n = c.text.trim().chars().count();
-        if n == 0 || n > MAX_CRITERION {
-            bail!("做到的標準需為 1–{MAX_CRITERION} 字");
-        }
-    }
+    validate_criteria(&input.criteria)?;
     if input.helps.len() > MAX_CRITERIA {
         bail!("幫助達成的標準最多 {MAX_CRITERIA} 個");
     }
@@ -440,19 +432,7 @@ pub fn write_item(
         "alignedGoalId",
         input.aligned_goal_id.as_deref().filter(|_| okr),
     )?;
-    let list = doc.put_object(&o, "criteria", ObjType::List)?;
-    if okr {
-        for (i, c) in input.criteria.iter().enumerate() {
-            let cid = if c.id.is_empty() {
-                kr_id()?
-            } else {
-                c.id.clone()
-            };
-            let m = doc.insert_object(&list, i, ObjType::Map)?;
-            doc.put(&m, "id", cid.as_str())?;
-            doc.put(&m, "text", c.text.trim())?;
-        }
-    }
+    write_criteria(doc, &o, if okr { &input.criteria } else { &[] }, kr_id)?;
     let list = doc.put_object(&o, "helps", ObjType::List)?;
     if input.level == PlanLevel::Quarter {
         for (i, h) in input.helps.iter().enumerate() {
@@ -460,6 +440,41 @@ pub fn write_item(
         }
     }
     doc.put(&o, "updatedAt", now)?;
+    Ok(())
+}
+
+/// 整筆替換「做到的標準」（計劃與 [`crate::direction`] 的小組目標共用）。
+pub(crate) fn write_criteria(
+    doc: &mut AutoCommit,
+    obj: &ObjId,
+    criteria: &[Criterion],
+    new_id: &mut dyn FnMut() -> Result<String>,
+) -> Result<()> {
+    let list = doc.put_object(obj, "criteria", ObjType::List)?;
+    for (i, c) in criteria.iter().enumerate() {
+        let cid = if c.id.is_empty() {
+            new_id()?
+        } else {
+            c.id.clone()
+        };
+        let m = doc.insert_object(&list, i, ObjType::Map)?;
+        doc.put(&m, "id", cid.as_str())?;
+        doc.put(&m, "text", c.text.trim())?;
+    }
+    Ok(())
+}
+
+/// 標準的數量與字數（計劃與小組目標共用）。
+pub(crate) fn validate_criteria(criteria: &[Criterion]) -> Result<()> {
+    if criteria.len() > MAX_CRITERIA {
+        bail!("做到的標準最多 {MAX_CRITERIA} 個");
+    }
+    for c in criteria {
+        let n = c.text.trim().chars().count();
+        if n == 0 || n > MAX_CRITERION {
+            bail!("做到的標準需為 1–{MAX_CRITERION} 字");
+        }
+    }
     Ok(())
 }
 

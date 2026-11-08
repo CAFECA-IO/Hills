@@ -54,6 +54,7 @@ async fn directions_team_goals_and_alignment() {
         title: "M2 手機版與全員導入".into(),
         direction_id: Some(dir.clone()),
         key_results: vec![],
+        criteria: vec![],
     };
     assert!(alice.save_team_goal(goal_input.clone()).await.is_err());
     // 不是負責人也不能繞過 Node 直接寫入文件（本機驗證層拒絕）

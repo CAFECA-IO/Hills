@@ -382,7 +382,7 @@ Report      { id, scope: member|team, period, sections: { progress, okr, attenda
 
 // org 文件 / team-goals 文件（v0.20，D47，§16.14）
 Direction   { id, year, title, keyResults: KeyResult[], createdAt, updatedAt }
-TeamGoal    { id, teamId, year, title, directionId?, keyResults: KeyResult[], createdAt, updatedAt }
+TeamGoal    { id, teamId, year, title, directionId?, keyResults: KeyResult[], criteria: Criterion[], createdAt, updatedAt }
 
 // approvals 文件
 ApprovalDecision { requestId, requesterId, step, decision: approve|reject, comment?, at }
@@ -910,13 +910,13 @@ org = { …,
   "direction:<ULID>": { year: "2027", title, keyResults: [ KeyResult ], createdAt, updatedAt }
 }
 team-goals/<teamId> = {
-  "goal:<ULID>": { year: "2027", title, directionId?, keyResults: [ KeyResult ], createdAt, updatedAt }
+  "goal:<ULID>": { year: "2027", title, directionId?, keyResults: [ KeyResult ], criteria: [ { id, text } ], createdAt, updatedAt }
 }
 ```
 
 - **公司方向**存在 org 文件，只有管理者可寫（org 文件規則），每年建議 1–3 個（介面限制 5 個）。
 - **小組目標**存在 `team-goals/<teamId>`，以 `GK` 加密，全員可讀（D47 全員透明）。寫入者是該小組的負責人（org `teams.<id>.leadIds`）或管理者，由驗證層檢查（`DocKind::TeamGoals`，`Directory::is_team_lead`）。`directionId` 指向同一年的公司方向（選填）。
-- 標題 1–80 字；`keyResults` 結構與計劃相同（§16.10），最多 5 個。
+- 標題 1–80 字；`keyResults` 結構與計劃相同（§16.10），最多 5 個；小組目標的 `criteria`（做到的標準）同計劃，純文字、不影響進度。
 - **對齊**：個人的年 / 季目標以 `alignedGoalId` 指向公司方向或小組目標（§16.10）。一個目標只對齊一個。
 - **進度**（投影層計算，0–100）：
   - 有關鍵結果 → 關鍵結果平均（規則同 §16.10）；

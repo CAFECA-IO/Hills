@@ -228,12 +228,17 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     isAdmin: state.isAdmin,
     sync: state.phase === 'welcome' ? null : state.phase === 'pending' ? 'Pending' : 'Synced',
     hasOrgRoot: state.isAdmin,
+    devLogin: true,
   }),
   reset_local_data: () => {
     state.phase = 'welcome';
   },
   onboard_begin: (a) => {
     onboard = { args: a.args as OnboardArgs, started: Date.now() };
+    if (onboard.args.devAccount) {
+      onboard.started -= 4000;
+      return { qrSvg: '', code: 'K7QD-M2XA', expiresAt: Math.floor(Date.now() / 1000) + 600 };
+    }
     return {
       ...code('https://wallet.example/dl/auth?v=1&req=...'),
       code: 'K7QD-M2XA',

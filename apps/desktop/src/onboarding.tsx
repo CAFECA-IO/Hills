@@ -65,9 +65,12 @@ export type Finished = 'created' | 'approval' | 'linked';
 export function CreateOrgForm({
   onBack,
   onDone,
+  devLogin = false,
 }: {
   onBack: () => void;
   onDone: (f: Finished) => void;
+  /** debug 建置顯示測試帳號欄位（D44） */
+  devLogin?: boolean;
 }) {
   // 自架組織可在建置時設定預設值（ui-spec「初次啟動與加入」；repo 不內建，D20）
   const [mailboxCode, setMailbox] = useState(
@@ -77,6 +80,7 @@ export function CreateOrgForm({
   const [myName, setMe] = useState('');
   const [deviceName, setDevice] = useState(defaultDeviceName());
   const [teamName, setTeam] = useState(t('field.teamName.default'));
+  const [devAccount, setDevAccount] = useState('');
   const [touched, setTouched] = useState(false);
   const [args, setArgs] = useState<OnboardArgs | null>(null);
   if (args) {
@@ -94,6 +98,7 @@ export function CreateOrgForm({
       teamName,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       locale: getLocale(),
+      devAccount: devAccount.trim() || undefined,
     });
   };
   return (
@@ -132,10 +137,11 @@ export function CreateOrgForm({
           onChange={setDevice}
           error={touched ? required(deviceName) : null}
         />
+        {devLogin && <DevAccountField value={devAccount} onChange={setDevAccount} />}
       </Card>
       <Actions
         onBack={onBack}
-        submit={t('signin.continue')}
+        submit={t(devAccount.trim() ? 'dev.continue' : 'signin.continue')}
         busy={false}
         busyLabel={t('common.loading')}
         onSubmit={submit}
@@ -147,11 +153,15 @@ export function CreateOrgForm({
 export function JoinForm({
   onBack,
   onDone,
+  devLogin = false,
 }: {
   onBack: () => void;
   onDone: (f: Finished) => void;
+  /** debug 建置顯示測試帳號欄位（D44） */
+  devLogin?: boolean;
 }) {
   const [code, setCode] = useState('');
+  const [devAccount, setDevAccount] = useState('');
   const [name, setName] = useState('');
   const [device, setDevice] = useState(defaultDeviceName());
   const [touched, setTouched] = useState(false);
@@ -162,7 +172,13 @@ export function JoinForm({
   const submit = () => {
     setTouched(true);
     if ([code, device].some((v) => !v.trim())) return;
-    setArgs({ kind: 'join', code, myName: name, deviceName: device });
+    setArgs({
+      kind: 'join',
+      code,
+      myName: name,
+      deviceName: device,
+      devAccount: devAccount.trim() || undefined,
+    });
   };
   return (
     <Centered title={t('join.title')}>
@@ -188,15 +204,23 @@ export function JoinForm({
           onChange={setDevice}
           error={touched ? required(device) : null}
         />
+        {devLogin && <DevAccountField value={devAccount} onChange={setDevAccount} />}
       </Card>
       <Actions
         onBack={onBack}
-        submit={t('signin.continue')}
+        submit={t(devAccount.trim() ? 'dev.continue' : 'signin.continue')}
         busy={false}
         busyLabel={t('common.loading')}
         onSubmit={submit}
       />
     </Centered>
+  );
+}
+
+/** 開發測試模式的測試帳號欄位（ui-spec「開發測試模式」，D44）。 */
+function DevAccountField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <Field label={t('dev.account')} hint={t('dev.accountHint')} value={value} onChange={onChange} />
   );
 }
 
@@ -301,7 +325,12 @@ export function SignInFlow({
   if (recover === 'go') {
     return (
       <SignInFlow
-        args={{ kind: 'recover', code: args.code, deviceName: args.deviceName }}
+        args={{
+          kind: 'recover',
+          code: args.code,
+          deviceName: args.deviceName,
+          devAccount: args.devAccount,
+        }}
         onBack={() => setRecover(null)}
         onDone={onDone}
       />
@@ -342,7 +371,14 @@ export function SignInFlow({
   return (
     <Centered title={title}>
       {state.s === 'starting' && <p className="text-muted">{t('common.loading')}</p>}
-      {state.s === 'signin' && <SignInCard info={state.info} now={now} />}
+      {state.s === 'signin' &&
+        (args.devAccount ? (
+          <Card>
+            <p aria-live="polite">{t('dev.signingIn', { name: args.devAccount })}</p>
+          </Card>
+        ) : (
+          <SignInCard info={state.info} now={now} />
+        ))}
       {(state.s === 'denied' || state.s === 'expired' || state.s === 'error') && (
         <Card className="flex flex-col gap-3">
           <p role="alert">

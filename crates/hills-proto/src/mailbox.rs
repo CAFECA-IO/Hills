@@ -129,6 +129,8 @@ pub enum JoinState {
 pub struct ServerConfig {
     /// CAFECA 錢包網址（`HILLS_CAFECA_WALLET`）；未設定時為空字串
     pub cafeca_wallet: String,
+    /// 是否接受開發測試模式的測試帳號（`HILLS_DEV_LOGIN=1`，technical-design §17.10）
+    pub dev_login: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

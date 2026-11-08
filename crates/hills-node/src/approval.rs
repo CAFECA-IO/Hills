@@ -14,7 +14,7 @@ use hills_identity::member_id_for;
 use hills_net::mailbox::MailboxClient;
 use hills_proto::cafeca::{Application, DeviceGrantPayload};
 use hills_proto::gossip::GossipMsg;
-use hills_proto::mailbox::PendingApplication;
+use hills_proto::mailbox::{PendingApplication, ServerConfig};
 use hills_proto::{FORMAT_VERSION, KeyFamily, MemberId, Pub32, Role, Signed, WrappedKey};
 use serde::Serialize;
 
@@ -55,12 +55,24 @@ pub(crate) async fn verifier(inner: &Inner, mb: &MailboxClient) -> Result<Arc<Ve
         return Ok(v.clone());
     }
     let cfg = mb.server_config().await?;
-    if cfg.cafeca_wallet.is_empty() {
-        bail!("mailbox 尚未設定 CAFECA 錢包");
-    }
-    let v = Arc::new(Verifier::Rpc(RpcVerifier::new(&cfg.cafeca_wallet, None)?));
+    let v = Arc::new(verifier_for(&cfg, inner.allow_dev_login)?);
     *g = Some(v.clone());
     Ok(v)
+}
+
+/// 依 mailbox 設定建立驗證器：雙方都允許時為開發測試模式（D44，§17.10），否則以 RPC 驗證。
+pub(crate) fn verifier_for(cfg: &ServerConfig, allow_dev_login: bool) -> Result<Verifier> {
+    let rpc = if cfg.cafeca_wallet.is_empty() {
+        None
+    } else {
+        Some(RpcVerifier::new(&cfg.cafeca_wallet, None)?)
+    };
+    if cfg.dev_login && allow_dev_login {
+        tracing::warn!("開發測試模式：接受測試帳號登入");
+        return Ok(Verifier::Dev { rpc });
+    }
+    rpc.map(Verifier::Rpc)
+        .ok_or_else(|| anyhow!("mailbox 尚未設定 CAFECA 錢包（HILLS_CAFECA_WALLET）"))
 }
 
 fn secs(ms: i64) -> u64 {

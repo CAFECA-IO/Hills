@@ -258,15 +258,24 @@ impl RpcVerifier {
     }
 }
 
-/// 驗證器：正式環境為 [`RpcVerifier`]；測試可啟用 `testing` feature 使用只做離線檢查的版本。
+/// 驗證器：正式環境為 [`RpcVerifier`]；測試伺服器可用 `Dev`（D44）；測試可啟用 `testing` feature 使用只做離線檢查的版本。
 pub enum Verifier {
     Rpc(RpcVerifier),
+    /// 開發測試模式（§17.10）：鏈 ID 0 的測試證明離線驗證，其他交給 `rpc`（未設定則拒絕）
+    Dev {
+        rpc: Option<RpcVerifier>,
+    },
     /// 只做離線檢查、不查鏈上（**僅供測試**）
     #[cfg(feature = "testing")]
     OfflineForTests,
 }
 
 impl Verifier {
+    /// 是否為開發測試模式（D44）。
+    pub fn is_dev(&self) -> bool {
+        matches!(self, Self::Dev { .. })
+    }
+
     pub async fn verify(
         &self,
         proof: &CafecaProof,
@@ -274,6 +283,11 @@ impl Verifier {
     ) -> Result<Verified, CafecaError> {
         match self {
             Self::Rpc(v) => v.verify(proof, received_at).await,
+            Self::Dev { .. } if proof.account.chain_id == crate::dev::DEV_CHAIN_ID => {
+                crate::dev::verify_dev(proof, received_at)
+            }
+            Self::Dev { rpc: Some(v) } => v.verify(proof, received_at).await,
+            Self::Dev { rpc: None } => Err(CafecaError::Invalid("鏈 ID 不符")),
             #[cfg(feature = "testing")]
             Self::OfflineForTests => {
                 check_offline(proof, received_at)?;
@@ -288,6 +302,9 @@ impl Verifier {
     pub async fn lookup_handle(&self, account: &CafecaAccount) -> Option<String> {
         match self {
             Self::Rpc(v) => v.lookup_handle(account).await,
+            Self::Dev { .. } if account.chain_id == crate::dev::DEV_CHAIN_ID => None,
+            Self::Dev { rpc: Some(v) } => v.lookup_handle(account).await,
+            Self::Dev { rpc: None } => None,
             #[cfg(feature = "testing")]
             Self::OfflineForTests => None,
         }

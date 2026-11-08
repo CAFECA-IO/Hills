@@ -279,6 +279,11 @@ export const en: Record<MessageKey, string> = {
   'files.reveal': 'Show in folder',
   'files.downloadPicked': 'Download {count} files',
   'join.nameHint': 'Leave empty when adding another computer of yours',
+  'dev.account': 'Test account (development)',
+  'dev.accountHint':
+    'Skips CAFECA verification; for testing only. Lowercase letters, digits and _, 2–32 characters. Use the same name on another computer to add a device.',
+  'dev.continue': 'Continue with test account',
+  'dev.signingIn': 'Signing in as test account “{name}”…',
   'signin.title': 'Sign in with CAFECA',
   'signin.continue': 'Sign in with CAFECA',
   'signin.qr': 'CAFECA sign-in QR code',

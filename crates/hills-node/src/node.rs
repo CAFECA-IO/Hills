@@ -50,6 +50,9 @@ pub struct NodeOptions {
     /// CAFECA 登入證明驗證器；None 時依 mailbox 的 `Config` 建立 [`hills_cafeca::RpcVerifier`]（§17.4）。
     /// 測試以 `hills_cafeca::Verifier::OfflineForTests` 取代。
     pub verifier: Option<Arc<hills_cafeca::Verifier>>,
+    /// 接受開發測試模式的測試帳號（D44，§17.10）；只有 debug 建置的 app 應設為 true，
+    /// 且 mailbox 也需回報 `dev_login`
+    pub allow_dev_login: bool,
 }
 
 impl std::fmt::Debug for NodeOptions {
@@ -59,6 +62,7 @@ impl std::fmt::Debug for NodeOptions {
             .field("presence_timeout", &self.presence_timeout)
             .field("poll_interval", &self.poll_interval)
             .field("verifier", &self.verifier.is_some())
+            .field("allow_dev_login", &self.allow_dev_login)
             .finish()
     }
 }
@@ -70,6 +74,7 @@ impl Default for NodeOptions {
             presence_timeout: Duration::from_secs(90),
             poll_interval: Duration::from_secs(15),
             verifier: None,
+            allow_dev_login: false,
         }
     }
 }
@@ -179,6 +184,8 @@ pub(crate) struct Inner {
     pub known_eks: Mutex<HashMap<MemberId, Pub32>>,
     /// 已通報被拒絕
     pub rejected: std::sync::atomic::AtomicBool,
+    /// 見 [`NodeOptions::allow_dev_login`]
+    pub allow_dev_login: bool,
 }
 
 /// Hills 節點：一台裝置上的一個成員身分。
@@ -764,6 +771,7 @@ impl Node {
             .and_then(|raw| postcard::from_bytes(&raw).ok())
             .unwrap_or_default();
         let opts_verifier = opts.verifier.clone();
+        let allow_dev_login = opts.allow_dev_login;
         let known_eks: HashMap<MemberId, Pub32> = store
             .read_secret_file(crate::approval::EKS_FILE)
             .ok()
@@ -803,6 +811,7 @@ impl Node {
             joins: Mutex::new(Vec::new()),
             known_eks: Mutex::new(known_eks),
             rejected: std::sync::atomic::AtomicBool::new(false),
+            allow_dev_login,
         });
         {
             let mut st = lock(&inner.st);

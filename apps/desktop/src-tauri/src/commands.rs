@@ -55,8 +55,14 @@ impl AppState {
     }
 }
 
+/// 只有 debug 建置（`tauri dev`、CI 測試安裝檔）接受開發測試模式的測試帳號（D44，§17.10）。
+const ALLOW_DEV_LOGIN: bool = cfg!(debug_assertions);
+
 fn opts() -> NodeOptions {
-    NodeOptions::default()
+    NodeOptions {
+        allow_dev_login: ALLOW_DEV_LOGIN,
+        ..NodeOptions::default()
+    }
 }
 
 /// 把 node 的事件轉送給前端（前端收到後重新讀取對應資料），並發出桌機通知（§14.2）。
@@ -240,6 +246,8 @@ pub struct AppInfo {
     is_admin: bool,
     sync: Option<SyncStatus>,
     has_org_root: bool,
+    /// 此建置可用測試帳號（D44）
+    dev_login: bool,
 }
 
 /// 啟動時呼叫：開啟既有節點（若有），回傳目前階段。
@@ -261,6 +269,7 @@ pub async fn app_info(app: AppHandle, state: State<'_, AppState>) -> CmdResult<A
                     is_admin: false,
                     sync: None,
                     has_org_root: false,
+                    dev_login: ALLOW_DEV_LOGIN,
                 });
             }
             Err(err) => return Err(e(err)),
@@ -274,6 +283,7 @@ pub async fn app_info(app: AppHandle, state: State<'_, AppState>) -> CmdResult<A
             is_admin: false,
             sync: None,
             has_org_root: false,
+            dev_login: ALLOW_DEV_LOGIN,
         });
     };
     let phase = if n.member_status() == MemberStatus::Pending {
@@ -293,6 +303,7 @@ pub async fn app_info(app: AppHandle, state: State<'_, AppState>) -> CmdResult<A
         is_admin: n.is_admin(),
         sync: Some(n.status()),
         has_org_root,
+        dev_login: ALLOW_DEV_LOGIN,
     })
 }
 
@@ -334,6 +345,9 @@ pub struct OnboardArgs {
     locale: String,
     #[serde(default)]
     team_name: String,
+    /// 開發測試模式的測試帳號名稱（D44）；空字串為正式 CAFECA 登入
+    #[serde(default)]
+    dev_account: String,
 }
 
 /// 登入連結（QR 與「在這台電腦開啟」）與確認碼。
@@ -373,15 +387,22 @@ pub async fn onboard_begin(state: State<'_, AppState>, args: OnboardArgs) -> Cmd
     if let Some((old, _)) = state.onboarding.lock().await.take() {
         old.cancel().await;
     }
-    let (ob, view) = Onboarding::begin(&state.dir, state.secrets.clone(), kind, opts())
-        .await
-        .map_err(e)?;
-    let qr = qrcode::QrCode::new(view.link.as_bytes()).map_err(e)?;
-    let qr_svg = qr
-        .render::<qrcode::render::svg::Color>()
-        .min_dimensions(220, 220)
-        .quiet_zone(true)
-        .build();
+    let dev_account = Some(args.dev_account.trim().to_owned()).filter(|n| !n.is_empty());
+    let (ob, view) =
+        Onboarding::begin_with(&state.dir, state.secrets.clone(), kind, opts(), dev_account)
+            .await
+            .map_err(e)?;
+    // 測試帳號沒有登入連結
+    let qr_svg = if view.link.is_empty() {
+        String::new()
+    } else {
+        qrcode::QrCode::new(view.link.as_bytes())
+            .map_err(e)?
+            .render::<qrcode::render::svg::Color>()
+            .min_dimensions(220, 220)
+            .quiet_zone(true)
+            .build()
+    };
     *state.onboarding.lock().await = Some((ob, view.link));
     Ok(SignInInfo {
         code: view.code,
@@ -400,6 +421,7 @@ pub async fn onboard_open_link(app: AppHandle, state: State<'_, AppState>) -> Cm
         .await
         .as_ref()
         .map(|(_, l)| l.clone())
+        .filter(|l| !l.is_empty())
         .ok_or("沒有進行中的登入")?;
     app.opener().open_url(link, None::<&str>).map_err(e)
 }

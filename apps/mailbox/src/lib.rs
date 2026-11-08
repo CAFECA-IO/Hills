@@ -231,6 +231,7 @@ impl Mailbox {
     }
 
     /// 設定 CAFECA 錢包網址與驗證器（`HILLS_CAFECA_WALLET`，technical-design §17.1）。
+    /// 驗證器為 `Verifier::Dev` 時，`Config` 回報 `dev_login`（§17.10）；錢包可為空字串。
     pub fn set_cafeca(&self, wallet: String, verifier: Arc<Verifier>) {
         if let Ok(mut c) = self.cafeca.lock() {
             *c = Some((wallet, verifier));
@@ -238,14 +239,15 @@ impl Mailbox {
     }
 
     fn config(&self) -> Response {
-        let wallet = self
+        let (wallet, dev_login) = self
             .cafeca
             .lock()
             .ok()
-            .and_then(|c| c.as_ref().map(|(w, _)| w.clone()))
+            .and_then(|c| c.as_ref().map(|(w, v)| (w.clone(), v.is_dev())))
             .unwrap_or_default();
         Response::Config(ServerConfig {
             cafeca_wallet: wallet,
+            dev_login,
         })
     }
 
@@ -378,7 +380,7 @@ impl Mailbox {
         else {
             return err(
                 ErrorCode::Internal,
-                "此 mailbox 尚未設定 CAFECA（HILLS_CAFECA_WALLET）",
+                "此 mailbox 尚未設定 CAFECA（HILLS_CAFECA_WALLET 或 HILLS_DEV_LOGIN）",
             );
         };
         let received_at = now_ms();

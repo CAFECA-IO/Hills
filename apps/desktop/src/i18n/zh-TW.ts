@@ -269,6 +269,11 @@ export const zhTW = {
   'files.reveal': '在資料夾中顯示',
   'files.downloadPicked': '下載 {count} 個檔案',
   'join.nameHint': '新增自己的另一台電腦時可留空',
+  'dev.account': '測試帳號（開發用）',
+  'dev.accountHint':
+    '不經 CAFECA 驗證，只能用於測試。小寫英數與 _，2–32 字；在另一台電腦輸入相同名稱即為新增裝置。',
+  'dev.continue': '以測試帳號繼續',
+  'dev.signingIn': '以測試帳號「{name}」登入中…',
   'signin.title': '以 CAFECA 登入',
   'signin.continue': '以 CAFECA 登入',
   'signin.qr': 'CAFECA 登入 QR Code',

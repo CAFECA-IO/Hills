@@ -26,6 +26,16 @@ pub fn opts() -> NodeOptions {
         presence_timeout: Duration::from_secs(3),
         poll_interval: Duration::from_secs(1),
         verifier: Some(Arc::new(Verifier::OfflineForTests)),
+        allow_dev_login: false,
+    }
+}
+
+/// 開發測試模式（D44）：驗證器依 mailbox 設定建立。
+pub fn dev_opts() -> NodeOptions {
+    NodeOptions {
+        verifier: None,
+        allow_dev_login: true,
+        ..opts()
     }
 }
 
@@ -91,12 +101,18 @@ pub struct MailboxServer {
 }
 
 pub async fn mailbox() -> MailboxServer {
+    mailbox_with("https://wallet.example", Verifier::OfflineForTests).await
+}
+
+/// `HILLS_DEV_LOGIN=1` 且未設定錢包的 mailbox。
+pub async fn dev_mailbox() -> MailboxServer {
+    mailbox_with("", Verifier::Dev { rpc: None }).await
+}
+
+pub async fn mailbox_with(wallet: &str, verifier: Verifier) -> MailboxServer {
     let dir = tempfile::tempdir().unwrap();
     let mb = Mailbox::open(dir.path(), None).unwrap();
-    mb.set_cafeca(
-        "https://wallet.example".into(),
-        Arc::new(Verifier::OfflineForTests),
-    );
+    mb.set_cafeca(wallet.into(), Arc::new(verifier));
     let ep = Endpoint::builder(presets::Minimal)
         .secret_key(SecretKey::generate())
         .relay_mode(RelayMode::Disabled)

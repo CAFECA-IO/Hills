@@ -3,6 +3,7 @@
 //! - [`request`]：產生原生 App 模式的登入請求、nonce 與確認碼（§17.2、§17.3）
 //! - [`relay`]：輪詢 CAFECA 中繼信箱並解開回應（ECDH P-256 → HKDF-SHA256 → AES-256-GCM）
 //! - [`eip712`]：`SignIn` 結構雜湊（簽章本身由鏈上合約驗證）
+//! - [`dev`]：開發測試模式的測試帳號（§17.10，D44）
 //! - [`verify`]：登入證明驗證（離線檢查 + `isValidSignature` / `isPending` 鏈上查詢）
 //!
 //! 本 crate 不保存任何金鑰；登入請求的臨時 P-256 金鑰只存在記憶體，drop 時清除。
@@ -11,6 +12,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+pub mod dev;
 pub mod eip712;
 pub mod relay;
 pub mod request;

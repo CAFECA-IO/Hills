@@ -36,6 +36,8 @@ export interface AppInfo {
   isAdmin: boolean;
   sync: SyncStatus | null;
   hasOrgRoot: boolean;
+  /** debug 建置：可用測試帳號登入（D44，technical-design §17.10） */
+  devLogin: boolean;
 }
 
 export interface MemberView {
@@ -153,6 +155,8 @@ export interface OnboardArgs {
   timezone?: string;
   locale?: string;
   teamName?: string;
+  /** 開發測試模式的測試帳號名稱（D44）；未填為正式 CAFECA 登入 */
+  devAccount?: string;
 }
 
 export interface AccountView {

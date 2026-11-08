@@ -110,9 +110,9 @@ function Main() {
     };
     switch (start) {
       case 'create':
-        return <CreateOrgForm onBack={back} onDone={finished} />;
+        return <CreateOrgForm onBack={back} onDone={finished} devLogin={info.devLogin} />;
       case 'join':
-        return <JoinForm onBack={back} onDone={finished} />;
+        return <JoinForm onBack={back} onDone={finished} devLogin={info.devLogin} />;
       default:
         return <Welcome onPick={setStart} />;
     }

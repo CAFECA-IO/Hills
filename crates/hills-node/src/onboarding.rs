@@ -7,8 +7,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow, bail};
+use hills_cafeca::dev::dev_proof;
 use hills_cafeca::request::Outcome;
-use hills_cafeca::{CafecaError, PendingSignIn, RpcVerifier, Verified, Verifier};
+use hills_cafeca::{CafecaError, PendingSignIn, Verified, Verifier, confirm_code};
 use hills_crypto::exchange::Ephemeral;
 use hills_crypto::{KeyRing, rotate};
 use hills_identity::cert::{DeviceKey, MemberPublic, OrgRootKey, org_id_for};
@@ -18,7 +19,8 @@ use hills_identity::{MemberKeys, member_id_for};
 use hills_net::mailbox::MailboxClient;
 use hills_net::to_endpoint_addr;
 use hills_proto::cafeca::{
-    Application, CafecaProof, DeviceGrantPayload, JoinApplication, SignInBinding, SignInKind,
+    Application, CafecaProof, DeviceGrantPayload, JoinApplication, MAX_SIGNIN_TTL, SignInBinding,
+    SignInKind,
 };
 use hills_proto::mailbox::JoinState;
 use hills_proto::ticket::{MailboxTicket, OrgTicket, Ticket};
@@ -26,6 +28,7 @@ use hills_proto::{FORMAT_VERSION, KeyFamily, OrgId, PeerAddr, Pub32};
 use iroh::address_lookup::MemoryLookup;
 use iroh::{Endpoint, RelayMode, SecretKey, endpoint::presets};
 
+use crate::approval::verifier_for;
 use crate::config::{MemberStatus, NodeConfig, ORG_ROOT_SECRET, Secrets};
 use crate::lifecycle::DEFAULT_TEAM;
 use crate::node::{Node, NodeOptions, lock, now_ms};
@@ -85,6 +88,8 @@ pub enum OnboardStep {
 
 enum Phase {
     SignIn(Box<PendingSignIn>),
+    /// 開發測試模式（D44）：本機組好的測試證明，下一次 poll 立即送出
+    Dev(Box<CafecaProof>),
     Device {
         eph: Ephemeral,
         account: hills_proto::cafeca::CafecaAccount,
@@ -153,7 +158,23 @@ impl Onboarding {
         kind: OnboardKind,
         opts: NodeOptions,
     ) -> Result<(Self, SignInView)> {
+        Self::begin_with(dir, secret_store, kind, opts, None).await
+    }
+
+    /// 同 [`Self::begin`]；`dev_account` 有值時改用開發測試模式的測試帳號（D44，§17.10），
+    /// 需 `opts.allow_dev_login` 且 mailbox 回報 `dev_login`。此時 `SignInView.link` 為空字串。
+    pub async fn begin_with(
+        dir: &Path,
+        secret_store: Arc<dyn SecretStore>,
+        kind: OnboardKind,
+        opts: NodeOptions,
+        dev_account: Option<String>,
+    ) -> Result<(Self, SignInView)> {
         ensure_empty(dir)?;
+        let dev_account = dev_account.filter(|n| !n.trim().is_empty());
+        if dev_account.is_some() && !opts.allow_dev_login {
+            bail!("此版本不支援測試帳號");
+        }
         let (org_root, mailbox, ok) = match &kind {
             OnboardKind::Create(c) => {
                 let mailbox = MailboxTicket::from_code(&c.mailbox_code)
@@ -174,12 +195,15 @@ impl Onboarding {
         let cfg = MailboxClient::config(&endpoint, to_endpoint_addr(&mailbox)?)
             .await
             .context("無法連線到 mailbox")?;
-        if cfg.cafeca_wallet.is_empty() {
+        if dev_account.is_some() && !cfg.dev_login {
+            bail!("此組織的 mailbox 未啟用測試帳號（HILLS_DEV_LOGIN）");
+        }
+        if dev_account.is_none() && cfg.cafeca_wallet.is_empty() {
             bail!("此組織的 mailbox 尚未設定 CAFECA 錢包（HILLS_CAFECA_WALLET）");
         }
         let verifier = match &opts.verifier {
             Some(v) => v.clone(),
-            None => Arc::new(Verifier::Rpc(RpcVerifier::new(&cfg.cafeca_wallet, None)?)),
+            None => Arc::new(verifier_for(&cfg, opts.allow_dev_login)?),
         };
         let (ik, ek) = pub_of(&keys);
         let (signin_kind, action) = match &kind {
@@ -202,11 +226,25 @@ impl Onboarding {
             key_pub: ek,
             issued_at: now_secs(),
         };
-        let pending = PendingSignIn::new(&cfg.cafeca_wallet, binding, &action)?;
-        let view = SignInView {
-            link: pending.link.clone(),
-            code: pending.code.clone(),
-            expires_at: pending.expires_at,
+        let (phase, view) = match dev_account {
+            Some(name) => {
+                let view = SignInView {
+                    link: String::new(),
+                    code: confirm_code(&binding),
+                    expires_at: binding.issued_at + MAX_SIGNIN_TTL,
+                };
+                let proof = dev_proof(binding, &name)?;
+                (Phase::Dev(Box::new(proof)), view)
+            }
+            None => {
+                let pending = PendingSignIn::new(&cfg.cafeca_wallet, binding, &action)?;
+                let view = SignInView {
+                    link: pending.link.clone(),
+                    code: pending.code.clone(),
+                    expires_at: pending.expires_at,
+                };
+                (Phase::SignIn(Box::new(pending)), view)
+            }
         };
         Ok((
             Self {
@@ -223,7 +261,7 @@ impl Onboarding {
                 endpoint,
                 http: hills_cafeca::http_client()?,
                 verifier,
-                phase: Phase::SignIn(Box::new(pending)),
+                phase,
             },
             view,
         ))
@@ -240,6 +278,11 @@ impl Onboarding {
                     Outcome::Approved(proof) => *proof,
                     Outcome::Denied => return Err(CafecaError::Denied.into()),
                 };
+                let verified = self.verifier.verify(&proof, now_secs()).await?;
+                self.after_sign_in(proof, verified).await
+            }
+            Phase::Dev(proof) => {
+                let proof = (**proof).clone();
                 let verified = self.verifier.verify(&proof, now_secs()).await?;
                 self.after_sign_in(proof, verified).await
             }
@@ -260,6 +303,7 @@ impl Onboarding {
     pub fn binding_for_tests(&self) -> Option<SignInBinding> {
         match &self.phase {
             Phase::SignIn(p) => Some(p.binding().clone()),
+            Phase::Dev(p) => Some(p.binding.clone()),
             _ => None,
         }
     }

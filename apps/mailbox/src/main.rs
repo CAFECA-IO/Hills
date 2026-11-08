@@ -13,6 +13,7 @@
 //! - `HILLS_STORAGE_CODES_DIR`（選填）：儲存節點連線碼所在資料夾，回應 `Services`（technical-design §15.6）
 //! - `HILLS_CAFECA_WALLET`：CAFECA 錢包網址（technical-design §17.1）；未設定時無法受理加入申請
 //! - `HILLS_CAFECA_RPC`（選填）：自架鏈上 RPC，取代錢包設定檔中的 `rpcUrl`
+//! - `HILLS_DEV_LOGIN`（選填）：`1` = 接受開發版 app 的測試帳號登入（§17.10，只限測試伺服器）
 
 use std::path::PathBuf;
 
@@ -121,19 +122,33 @@ async fn main() -> anyhow::Result<()> {
     {
         mailbox.set_storage_codes_dir(PathBuf::from(dir.trim()));
     }
-    match std::env::var("HILLS_CAFECA_WALLET") {
-        Ok(w) if !w.trim().is_empty() => {
-            let verifier =
-                hills_cafeca::RpcVerifier::new(&w, std::env::var("HILLS_CAFECA_RPC").ok())
-                    .context("HILLS_CAFECA_WALLET 或 HILLS_CAFECA_RPC 不是有效網址")?;
-            let wallet = verifier.wallet().to_owned();
-            tracing::info!(wallet = %wallet, "CAFECA 錢包");
-            mailbox.set_cafeca(
-                wallet,
-                std::sync::Arc::new(hills_cafeca::Verifier::Rpc(verifier)),
-            );
-        }
-        _ => tracing::warn!("未設定 HILLS_CAFECA_WALLET：無法受理加入、新裝置與還原申請"),
+    let rpc = match std::env::var("HILLS_CAFECA_WALLET") {
+        Ok(w) if !w.trim().is_empty() => Some(
+            hills_cafeca::RpcVerifier::new(&w, std::env::var("HILLS_CAFECA_RPC").ok())
+                .context("HILLS_CAFECA_WALLET 或 HILLS_CAFECA_RPC 不是有效網址")?,
+        ),
+        _ => None,
+    };
+    let dev_login = std::env::var("HILLS_DEV_LOGIN").is_ok_and(|v| v.trim() == "1");
+    let wallet = rpc
+        .as_ref()
+        .map(|v| v.wallet().to_owned())
+        .unwrap_or_default();
+    if !wallet.is_empty() {
+        tracing::info!(wallet = %wallet, "CAFECA 錢包");
+    }
+    if dev_login {
+        tracing::warn!(
+            "HILLS_DEV_LOGIN=1：接受開發版 app 的測試帳號登入（無簽章保護，只限測試伺服器）"
+        );
+        mailbox.set_cafeca(
+            wallet,
+            std::sync::Arc::new(hills_cafeca::Verifier::Dev { rpc }),
+        );
+    } else if let Some(v) = rpc {
+        mailbox.set_cafeca(wallet, std::sync::Arc::new(hills_cafeca::Verifier::Rpc(v)));
+    } else {
+        tracing::warn!("未設定 HILLS_CAFECA_WALLET：無法受理加入、新裝置與還原申請");
     }
 
     let relay = if endpoint_relay_disabled() {

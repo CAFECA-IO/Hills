@@ -19,6 +19,9 @@ fn week(title: &str) -> PlanInput {
         done: false,
         progress_override: None,
         key_results: vec![],
+        aligned_goal_id: None,
+        criteria: vec![],
+        helps: vec![],
         visibility: Visibility::Private,
     }
 }

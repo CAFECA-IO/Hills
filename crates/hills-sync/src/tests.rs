@@ -10,6 +10,7 @@ use super::*;
 
 struct Dir {
     team: HashSet<MemberId>,
+    leads: HashSet<MemberId>,
 }
 
 impl Directory for Dir {
@@ -21,6 +22,9 @@ impl Directory for Dir {
     }
     fn is_conv_admin(&self, _: &str, _: &MemberId) -> bool {
         false
+    }
+    fn is_team_lead(&self, team: &str, m: &MemberId) -> bool {
+        team == "t1" && self.leads.contains(m)
     }
 }
 
@@ -72,6 +76,7 @@ fn world() -> World {
     let bob = person(&mut trust, &ak, vec![Role::Member]);
     let dir = Dir {
         team: [alice.0.member_id(), bob.0.member_id()].into(),
+        leads: [alice.0.member_id()].into(),
     };
     World {
         trust,
@@ -157,6 +162,29 @@ fn team_members_only() {
     assert_eq!(
         v.check("team/t2", &edit(&mut doc, "team/t2", "c", 1, &w.bob.1))
             .unwrap_err(),
+        SyncError::Forbidden
+    );
+}
+
+#[test]
+fn team_goals_by_lead_or_admin() {
+    let w = world();
+    let mut doc = AutoCommit::new();
+    let v = Validator::new(&w.trust, &w.dir);
+    let id = "team-goals/t1";
+    assert!(v.check(id, &edit(&mut doc, id, "a", 1, &w.alice.1)).is_ok());
+    assert!(v.check(id, &edit(&mut doc, id, "b", 1, &w.admin.1)).is_ok());
+    assert_eq!(
+        v.check(id, &edit(&mut doc, id, "c", 1, &w.bob.1))
+            .unwrap_err(),
+        SyncError::Forbidden
+    );
+    assert_eq!(
+        v.check(
+            "team-goals/t2",
+            &edit(&mut doc, "team-goals/t2", "d", 1, &w.alice.1)
+        )
+        .unwrap_err(),
         SyncError::Forbidden
     );
 }

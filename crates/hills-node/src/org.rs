@@ -68,6 +68,9 @@ impl Directory for OrgSnapshot {
     fn is_conv_admin(&self, conv: &str, m: &MemberId) -> bool {
         crate::conv::creator_of(conv).as_ref() == Some(m)
     }
+    fn is_team_lead(&self, team: &str, m: &MemberId) -> bool {
+        self.teams.get(team).is_some_and(|t| t.leads.contains(m))
+    }
 }
 
 impl OrgSnapshot {

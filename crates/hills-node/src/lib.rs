@@ -7,6 +7,7 @@ mod approval;
 mod chat;
 pub mod config;
 pub mod conv;
+pub mod direction;
 mod gossip;
 pub mod kb;
 mod lifecycle;

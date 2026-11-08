@@ -20,6 +20,9 @@ const ITEM_PREFIX: &str = "item:";
 const MAX_TITLE: usize = 200;
 const MAX_KRS: usize = 5;
 const MAX_UNIT: usize = 16;
+/// 「做到的標準」（D47）每則字數與數量上限
+const MAX_CRITERION: usize = 80;
+const MAX_CRITERIA: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -134,6 +137,15 @@ pub struct KeyResult {
     pub manual: bool,
 }
 
+/// 年 / 季目標「做到的標準」（D47，technical-design §16.10 v0.20）：純文字，不影響進度。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Criterion {
+    #[serde(default)]
+    pub id: String,
+    pub text: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanItem {
@@ -150,6 +162,11 @@ pub struct PlanItem {
     pub done: bool,
     pub progress_override: Option<u8>,
     pub key_results: Vec<KeyResult>,
+    /// 對齊的公司方向或小組目標（年 / 季，D47）
+    pub aligned_goal_id: Option<String>,
+    pub criteria: Vec<Criterion>,
+    /// 季目標幫助達成上層的哪些標準（criterion id）
+    pub helps: Vec<String>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
@@ -177,6 +194,12 @@ pub struct PlanInput {
     pub progress_override: Option<u8>,
     #[serde(default)]
     pub key_results: Vec<KeyResult>,
+    #[serde(default)]
+    pub aligned_goal_id: Option<String>,
+    #[serde(default)]
+    pub criteria: Vec<Criterion>,
+    #[serde(default)]
+    pub helps: Vec<String>,
     pub visibility: Visibility,
 }
 
@@ -199,7 +222,7 @@ fn get_bool(doc: &AutoCommit, obj: &ObjId, key: &str) -> bool {
     )
 }
 
-fn read_krs(doc: &AutoCommit, item: &ObjId) -> Vec<KeyResult> {
+pub(crate) fn read_krs(doc: &AutoCommit, item: &ObjId) -> Vec<KeyResult> {
     let Some(list) = get_obj(doc, item, "keyResults") else {
         return vec![];
     };
@@ -216,6 +239,39 @@ fn read_krs(doc: &AutoCommit, item: &ObjId) -> Vec<KeyResult> {
             current: get_f64(doc, &k, "current"),
             unit: get_str(doc, &k, "unit").unwrap_or_default(),
             manual: get_bool(doc, &k, "manual"),
+        })
+        .collect()
+}
+
+fn read_criteria(doc: &AutoCommit, item: &ObjId) -> Vec<Criterion> {
+    let Some(list) = get_obj(doc, item, "criteria") else {
+        return vec![];
+    };
+    (0..doc.length(&list))
+        .filter_map(|i| match doc.get(&list, i).ok()?? {
+            (Value::Object(ObjType::Map), id) => Some(id),
+            _ => None,
+        })
+        .filter_map(|c| {
+            Some(Criterion {
+                id: get_str(doc, &c, "id")?,
+                text: get_str(doc, &c, "text").unwrap_or_default(),
+            })
+        })
+        .collect()
+}
+
+fn read_strs(doc: &AutoCommit, item: &ObjId, key: &str) -> Vec<String> {
+    let Some(list) = get_obj(doc, item, key) else {
+        return vec![];
+    };
+    (0..doc.length(&list))
+        .filter_map(|i| match doc.get(&list, i).ok()??.0 {
+            Value::Scalar(s) => match s.as_ref() {
+                ScalarValue::Str(t) => Some(t.to_string()),
+                _ => None,
+            },
+            _ => None,
         })
         .collect()
 }
@@ -252,6 +308,21 @@ pub fn read_items(doc: &AutoCommit, owner: &MemberId, vis: &Visibility) -> Vec<P
                 } else {
                     vec![]
                 },
+                aligned_goal_id: if level.is_okr() {
+                    get_str(doc, &o, "alignedGoalId")
+                } else {
+                    None
+                },
+                criteria: if level.is_okr() {
+                    read_criteria(doc, &o)
+                } else {
+                    vec![]
+                },
+                helps: if level == PlanLevel::Quarter {
+                    read_strs(doc, &o, "helps")
+                } else {
+                    vec![]
+                },
                 created_at: get_int(doc, &o, "createdAt").unwrap_or(0),
                 updated_at: get_int(doc, &o, "updatedAt").unwrap_or(0),
             })
@@ -270,10 +341,31 @@ fn validate(input: &PlanInput) -> Result<()> {
     if !valid_period(input.level, &input.period) {
         bail!("期間格式與層級不符");
     }
-    if input.key_results.len() > MAX_KRS {
+    if input.progress_override.is_some_and(|p| p > 100) {
+        bail!("進度需為 0–100");
+    }
+    validate_krs(&input.key_results)?;
+    if input.criteria.len() > MAX_CRITERIA {
+        bail!("做到的標準最多 {MAX_CRITERIA} 個");
+    }
+    for c in &input.criteria {
+        let n = c.text.trim().chars().count();
+        if n == 0 || n > MAX_CRITERION {
+            bail!("做到的標準需為 1–{MAX_CRITERION} 字");
+        }
+    }
+    if input.helps.len() > MAX_CRITERIA {
+        bail!("幫助達成的標準最多 {MAX_CRITERIA} 個");
+    }
+    Ok(())
+}
+
+/// 關鍵結果的數量、名稱與數值（計劃與 [`crate::direction`] 共用）。
+pub(crate) fn validate_krs(krs: &[KeyResult]) -> Result<()> {
+    if krs.len() > MAX_KRS {
         bail!("關鍵結果最多 {MAX_KRS} 個");
     }
-    for k in &input.key_results {
+    for k in krs {
         let n = k.title.trim().chars().count();
         if n == 0 || n > MAX_TITLE || k.unit.chars().count() > MAX_UNIT {
             bail!("關鍵結果名稱需為 1–{MAX_TITLE} 字，單位最多 {MAX_UNIT} 字");
@@ -282,13 +374,15 @@ fn validate(input: &PlanInput) -> Result<()> {
             bail!("關鍵結果數值無效");
         }
     }
-    if input.progress_override.is_some_and(|p| p > 100) {
-        bail!("進度需為 0–100");
-    }
     Ok(())
 }
 
-fn put_opt_str(doc: &mut AutoCommit, obj: &ObjId, key: &str, v: Option<&str>) -> Result<()> {
+pub(crate) fn put_opt_str(
+    doc: &mut AutoCommit,
+    obj: &ObjId,
+    key: &str,
+    v: Option<&str>,
+) -> Result<()> {
     match v.filter(|s| !s.is_empty()) {
         Some(s) => doc.put(obj, key, s)?,
         None => {
@@ -338,25 +432,60 @@ pub fn write_item(
             }
         }
     }
-    let list = doc.put_object(&o, "keyResults", ObjType::List)?;
-    if input.level.is_okr() {
-        for (i, k) in input.key_results.iter().enumerate() {
-            let kid = if k.id.is_empty() {
+    let okr = input.level.is_okr();
+    write_krs(doc, &o, if okr { &input.key_results } else { &[] }, kr_id)?;
+    put_opt_str(
+        doc,
+        &o,
+        "alignedGoalId",
+        input.aligned_goal_id.as_deref().filter(|_| okr),
+    )?;
+    let list = doc.put_object(&o, "criteria", ObjType::List)?;
+    if okr {
+        for (i, c) in input.criteria.iter().enumerate() {
+            let cid = if c.id.is_empty() {
                 kr_id()?
             } else {
-                k.id.clone()
+                c.id.clone()
             };
             let m = doc.insert_object(&list, i, ObjType::Map)?;
-            doc.put(&m, "id", kid.as_str())?;
-            doc.put(&m, "title", k.title.trim())?;
-            doc.put(&m, "start", k.start)?;
-            doc.put(&m, "target", k.target)?;
-            doc.put(&m, "current", k.current)?;
-            doc.put(&m, "unit", k.unit.trim())?;
-            doc.put(&m, "manual", k.manual)?;
+            doc.put(&m, "id", cid.as_str())?;
+            doc.put(&m, "text", c.text.trim())?;
+        }
+    }
+    let list = doc.put_object(&o, "helps", ObjType::List)?;
+    if input.level == PlanLevel::Quarter {
+        for (i, h) in input.helps.iter().enumerate() {
+            doc.insert(&list, i, h.as_str())?;
         }
     }
     doc.put(&o, "updatedAt", now)?;
+    Ok(())
+}
+
+/// 整筆替換關鍵結果清單（計劃與 [`crate::direction`] 共用）。
+pub(crate) fn write_krs(
+    doc: &mut AutoCommit,
+    obj: &ObjId,
+    krs: &[KeyResult],
+    kr_id: &mut dyn FnMut() -> Result<String>,
+) -> Result<()> {
+    let list = doc.put_object(obj, "keyResults", ObjType::List)?;
+    for (i, k) in krs.iter().enumerate() {
+        let kid = if k.id.is_empty() {
+            kr_id()?
+        } else {
+            k.id.clone()
+        };
+        let m = doc.insert_object(&list, i, ObjType::Map)?;
+        doc.put(&m, "id", kid.as_str())?;
+        doc.put(&m, "title", k.title.trim())?;
+        doc.put(&m, "start", k.start)?;
+        doc.put(&m, "target", k.target)?;
+        doc.put(&m, "current", k.current)?;
+        doc.put(&m, "unit", k.unit.trim())?;
+        doc.put(&m, "manual", k.manual)?;
+    }
     Ok(())
 }
 
@@ -397,7 +526,7 @@ fn pct(v: f64) -> f64 {
     v.clamp(0.0, 100.0)
 }
 
-fn kr_value(k: &KeyResult) -> f64 {
+pub(crate) fn kr_value(k: &KeyResult) -> f64 {
     let span = k.target - k.start;
     if span == 0.0 {
         if k.current >= k.target { 100.0 } else { 0.0 }
@@ -594,6 +723,12 @@ impl Node {
         {
             bail!("你不是這個小組的成員");
         }
+        if input.level.is_okr()
+            && let Some(g) = input.aligned_goal_id.as_deref().filter(|s| !s.is_empty())
+            && !self.alignable_goal_exists(g)?
+        {
+            bail!("找不到要對齊的方向或小組目標");
+        }
         let me = self.member_id();
         let now = now_ms();
         let existing = match input.id.as_deref().filter(|s| !s.is_empty()) {
@@ -664,6 +799,9 @@ mod tests {
             done: false,
             progress_override: None,
             key_results: vec![],
+            aligned_goal_id: None,
+            criteria: vec![],
+            helps: vec![],
             visibility: Visibility::Org,
         }
     }
@@ -693,6 +831,9 @@ mod tests {
             done: false,
             progress_override: None,
             key_results: vec![],
+            aligned_goal_id: None,
+            criteria: vec![],
+            helps: vec![],
             created_at: 0,
             updated_at: 0,
         }
@@ -758,6 +899,63 @@ mod tests {
         assert_eq!(d.updated_at, 12);
         delete_item(&mut doc, "d1").unwrap();
         assert_eq!(read_items(&doc, &me(), &Visibility::Org).len(), 1);
+    }
+
+    #[test]
+    fn alignment_criteria_and_helps() {
+        let mut doc = AutoCommit::new();
+        let mut n = 0;
+        let mut ids = move || {
+            n += 1;
+            Ok(format!("c{n}"))
+        };
+        let mut y = input(PlanLevel::Year, "2027");
+        y.aligned_goal_id = Some("g1".into());
+        y.criteria = vec![Criterion {
+            id: String::new(),
+            text: " 80% 同事在用 ".into(),
+        }];
+        y.helps = vec!["x".into()]; // 年目標不存 helps
+        write_item(&mut doc, "y", &y, 1, 1, &mut ids).unwrap();
+        let mut q = input(PlanLevel::Quarter, "2027-Q1");
+        q.helps = vec!["c1".into()];
+        write_item(&mut doc, "q", &q, 1, 1, &mut ids).unwrap();
+        let mut m = input(PlanLevel::Month, "2027-01");
+        m.aligned_goal_id = Some("g1".into()); // 月目標不能對齊方向
+        m.criteria = y.criteria.clone();
+        write_item(&mut doc, "m", &m, 1, 1, &mut ids).unwrap();
+        let items = read_items(&doc, &me(), &Visibility::Org);
+        let get = |id: &str| items.iter().find(|i| i.id == id).unwrap();
+        assert_eq!(get("y").aligned_goal_id.as_deref(), Some("g1"));
+        assert_eq!(get("y").criteria[0].text, "80% 同事在用");
+        assert_eq!(get("y").criteria[0].id, "c1");
+        assert!(get("y").helps.is_empty());
+        assert_eq!(get("q").helps, vec!["c1".to_string()]);
+        assert_eq!(get("m").aligned_goal_id, None);
+        assert!(get("m").criteria.is_empty());
+        // 取消對齊
+        y.aligned_goal_id = None;
+        y.criteria[0].id = "c1".into();
+        write_item(&mut doc, "y", &y, 1, 2, &mut ids).unwrap();
+        let items = read_items(&doc, &me(), &Visibility::Org);
+        assert_eq!(
+            items.iter().find(|i| i.id == "y").unwrap().aligned_goal_id,
+            None
+        );
+        // 標準的字數與數量
+        let mut bad = input(PlanLevel::Year, "2027");
+        bad.criteria = vec![Criterion {
+            id: String::new(),
+            text: " ".into(),
+        }];
+        assert!(write_item(&mut doc, "b", &bad, 1, 1, &mut ids).is_err());
+        bad.criteria = (0..6)
+            .map(|i| Criterion {
+                id: String::new(),
+                text: format!("{i}"),
+            })
+            .collect();
+        assert!(write_item(&mut doc, "b", &bad, 1, 1, &mut ids).is_err());
     }
 
     #[test]

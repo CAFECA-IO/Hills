@@ -9,6 +9,8 @@ pub enum DocKind {
     Org,
     /// `team/<teamId>`：小組成員
     Team(String),
+    /// `team-goals/<teamId>`：小組目標，該小組負責人與管理者（technical-design §16.14，D47）
+    TeamGoals(String),
     /// `member/<id>/…`：只有本人（plans、scrum、attendance、requests、reports）
     Member {
         owner: MemberId,
@@ -99,6 +101,7 @@ impl DocKind {
         Some(match parts.as_slice() {
             ["org"] => DocKind::Org,
             ["team", t] if is_segment(t) => DocKind::Team((*t).into()),
+            ["team-goals", t] if is_segment(t) => DocKind::TeamGoals((*t).into()),
             ["approvals", m] => DocKind::Approvals(MemberId::parse(m).ok()?),
             ["kb", "meta"] => DocKind::KbMeta,
             ["kb", "items", ym] if is_month(ym) => DocKind::KbItems((*ym).into()),
@@ -153,6 +156,11 @@ mod tests {
             DocKind::parse("team/t-1"),
             Some(DocKind::Team("t-1".into()))
         );
+        assert_eq!(
+            DocKind::parse("team-goals/t-1"),
+            Some(DocKind::TeamGoals("t-1".into()))
+        );
+        assert_eq!(DocKind::parse("team-goals/a/b"), None);
         assert_eq!(
             DocKind::parse(&format!("member/{m}/attendance/2026-11")),
             Some(DocKind::Member {

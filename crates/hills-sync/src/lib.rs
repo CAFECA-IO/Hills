@@ -24,6 +24,10 @@ pub trait Directory {
     fn is_team_member(&self, team: &str, member: &MemberId) -> bool;
     fn is_conv_member(&self, conv: &str, member: &MemberId) -> bool;
     fn is_conv_admin(&self, conv: &str, member: &MemberId) -> bool;
+    /// 小組負責人（小組目標的寫入者，technical-design §16.14）。
+    fn is_team_lead(&self, _team: &str, _member: &MemberId) -> bool {
+        false
+    }
 }
 
 /// 對話紀錄（technical-design §14.2）只能新增：每個 op 都必須是在根物件上、以
@@ -83,6 +87,7 @@ pub fn allowed(kind: &DocKind, who: &Verified, dir: &dyn Directory) -> bool {
     match kind {
         DocKind::Org => who.is_admin(),
         DocKind::Team(t) => dir.is_team_member(t, &who.member_id),
+        DocKind::TeamGoals(t) => who.is_admin() || dir.is_team_lead(t, &who.member_id),
         DocKind::Member { owner, .. } => *owner == who.member_id,
         DocKind::Approvals(approver) => *approver == who.member_id,
         DocKind::ConvMeta(c) => dir.is_conv_admin(c, &who.member_id),

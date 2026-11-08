@@ -849,10 +849,25 @@ pub struct PlanView {
     mine: bool,
 }
 
+/// 計劃項目與彙總進度；任務進度計入週目標（D46，technical-design §16.10）。
+fn rolled_plans(
+    n: &hills_node::Node,
+    query: hills_node::plans::PlanQuery,
+) -> anyhow::Result<(Vec<hills_node::plans::PlanItem>, hills_node::plans::Rollup)> {
+    let items = n.plans(query)?;
+    let tasks: Vec<(String, f64)> = n
+        .tasks()?
+        .iter()
+        .filter_map(|t| t.plan_item_id.clone().map(|p| (p, t.progress())))
+        .collect();
+    let r = hills_node::plans::rollup(&items, &tasks);
+    Ok((items, r))
+}
+
 /// 全部看得到的計劃項目（前端依期間篩選；進度以全部可見項目彙總）。
 #[tauri::command]
 pub async fn plans(state: State<'_, AppState>, mine_only: bool) -> CmdResult<Vec<PlanView>> {
-    use hills_node::plans::{PlanQuery, rollup};
+    use hills_node::plans::PlanQuery;
     let query = if mine_only {
         PlanQuery::Mine
     } else {
@@ -860,15 +875,7 @@ pub async fn plans(state: State<'_, AppState>, mine_only: bool) -> CmdResult<Vec
     };
     with_node!(state, n => {
         let me = n.member_id();
-        let items = n.plans(query).map_err(e)?;
-        // 任務進度計入週目標（D46，technical-design §16.10）
-        let tasks: Vec<(String, f64)> = n
-            .tasks()
-            .map_err(e)?
-            .iter()
-            .filter_map(|t| t.plan_item_id.clone().map(|p| (p, t.progress())))
-            .collect();
-        let r = rollup(&items, &tasks);
+        let (items, r) = rolled_plans(n, query).map_err(e)?;
         Ok(items
             .into_iter()
             .map(|item| {
@@ -906,6 +913,89 @@ pub async fn set_plan_done(state: State<'_, AppState>, id: String, done: bool) -
 #[tauri::command]
 pub async fn delete_plan(state: State<'_, AppState>, id: String) -> CmdResult<()> {
     with_node!(state, n => n.delete_plan(&id).await.map_err(e))
+}
+
+// ── 團隊方向（technical-design §16.14，D47）──────────────────
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectionView {
+    #[serde(flatten)]
+    item: hills_node::direction::Direction,
+    progress: f64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamGoalView {
+    #[serde(flatten)]
+    item: hills_node::direction::TeamGoal,
+    progress: f64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectionsView {
+    directions: Vec<DirectionView>,
+    team_goals: Vec<TeamGoalView>,
+}
+
+/// 公司方向與小組目標，含讀者看得到的對齊進度。
+#[tauri::command]
+pub async fn directions(state: State<'_, AppState>) -> CmdResult<DirectionsView> {
+    use hills_node::direction::direction_progress;
+    with_node!(state, n => {
+        let dirs = n.directions().map_err(e)?;
+        let goals = n.team_goals().map_err(e)?;
+        let (items, r) = rolled_plans(n, hills_node::plans::PlanQuery::Visible).map_err(e)?;
+        let p = direction_progress(&dirs, &goals, &items, &r.items);
+        Ok(DirectionsView {
+            directions: dirs
+                .into_iter()
+                .map(|d| DirectionView {
+                    progress: p.directions.get(&d.id).copied().unwrap_or(0.0),
+                    item: d,
+                })
+                .collect(),
+            team_goals: goals
+                .into_iter()
+                .map(|g| TeamGoalView {
+                    progress: p.team_goals.get(&g.id).copied().unwrap_or(0.0),
+                    item: g,
+                })
+                .collect(),
+        })
+    })
+}
+
+#[tauri::command]
+pub async fn save_direction(
+    state: State<'_, AppState>,
+    input: hills_node::direction::DirectionInput,
+) -> CmdResult<String> {
+    with_node!(state, n => n.save_direction(input).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn delete_direction(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    with_node!(state, n => n.delete_direction(&id).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn save_team_goal(
+    state: State<'_, AppState>,
+    input: hills_node::direction::TeamGoalInput,
+) -> CmdResult<String> {
+    with_node!(state, n => n.save_team_goal(input).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn delete_team_goal(
+    state: State<'_, AppState>,
+    team: String,
+    id: String,
+) -> CmdResult<()> {
+    with_node!(state, n => n.delete_team_goal(&team, &id).await.map_err(e))
 }
 
 // ── 知識庫（technical-design §16.11）─────────────────────────

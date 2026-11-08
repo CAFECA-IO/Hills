@@ -31,7 +31,7 @@ Hills（山丘上的卡菲卡）是 CAFECA 的 P2P 工作協作工具：出勤�
 | 假勤、計劃、Scrum、報表規則 | feature-plan §5.2–5.5；technical-design §7–8 |
 | M1 對話、檔案分享（SwarmStorage 原理） | technical-design §14–15；feature-plan D34–D37；ui-spec「聊天」「檔案分享」 |
 | M2 之後的聊天進階、行動端、AI、整合、通話 | technical-design-m2-m5 對應章節 |
-| 任何 UI | ui-spec 對應章節與「共通規則」 |
+| 任何 UI | ui-spec 對應章節與「共通規則」；[docs/design-system.md](docs/design-system.md)、[docs/components.md](docs/components.md) |
 
 讀完後，在回覆或 PR 描述中列出「依據的文件章節」。
 
@@ -67,6 +67,7 @@ Hills（山丘上的卡菲卡）是 CAFECA 的 P2P 工作協作工具：出勤�
 - 提交金鑰、token、`.env`、憑證、真實個人資料（repo 為公開，D25）。
 - 在日誌或錯誤訊息中輸出金鑰、復原詞或業務資料內容。
 - 寫死 CAFECA 專屬設定（D20）；寫死 UI 文字（需 i18n）或色碼（需設計系統 token）。
+- 在 `apps/desktop/src/ui/` 以外直接寫原生互動元素（button、input、select、textarea）或任意樣式值；畫面只能組合通用元件與 token（D45，docs/components.md、docs/design-system.md）。
 - 讓 AI 助理未經使用者確認就送出訊息、修改計劃 / 任務或發佈報表（D17）。
 - 直接 push 到 `main`、改寫已推送的歷史、刪除或停用測試以讓 CI 通過。
 - 引入 GPL / AGPL 等與 MIT 不相容的依賴而未先討論。

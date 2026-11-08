@@ -1,6 +1,6 @@
 # Hills 開發規範
 
-> 版本：v0.1 · 2026-11-05 · 適用對象：所有人類開發者與 AI Agent
+> 版本：v0.2 · 2026-11-08 · 適用對象：所有人類開發者與 AI Agent
 > AI Agent 另需遵守 [AGENTS.md](../AGENTS.md)。本文件與規劃文件衝突時，以規劃文件為準（見 [docs/README.md](./README.md) 的文件優先順序）。
 
 ## 1. 文件優先（Docs-first）
@@ -55,6 +55,11 @@ scripts/     開發與維運腳本
 - `strict` 模式；ESLint + Prettier 必過。
 - 前端不直接處理金鑰或加密，只透過 Tauri commands 讀取投影、送出寫入意圖。
 - 樣式使用 Tailwind 與設計系統 token，禁止寫死色碼（主題色需可由組織覆寫，D22）。
+- **畫面只能組合通用元件**（`apps/desktop/src/ui/`，規格見 [components.md](./components.md)）與 token（[design-system.md](./design-system.md)），D45：
+  - `src/ui/` 以外不得直接使用 `<button>`、`<input>`、`<select>`、`<textarea>`；不得寫色碼、任意字級 / 顏色 / 圓角 / 陰影值、Tailwind 預設色盤。ESLint（`no-restricted-syntax`，design-system §11）會擋下。
+  - 需要新元件或新變體：先改 components.md，再實作於 `src/ui/` 並補 `src/ui/ui.test.tsx`。
+  - 插畫（`figures.tsx`、山景、星空）只用 token，以 `var(--hills-*)` 指定 SVG 顏色。
+  - UI 變更附 1280 × 720 與 1920 × 1080（淺 / 深色）截圖，確認無整頁捲動。
 - 所有使用者可見文字經 i18n（繁中為預設、英文為第二語言），禁止寫死在元件中。
 
 ### 4.3 可設定性（開源需求，D20）

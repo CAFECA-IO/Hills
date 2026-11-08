@@ -11,6 +11,8 @@
 | 3 | [technical-design.md](./technical-design.md) | M0 / M1：身分、金鑰、同步、協定、假勤規則、資料模型、部署 | 協定、資料模型、金鑰流程變更 |
 | 3 | [technical-design-m2-m5.md](./technical-design-m2-m5.md) | M2–M5：聊天、檔案、行動端、AI、整合、通話、開源；提案 P1… | 同上 |
 | 4 | [ui-spec.md](./ui-spec.md) | 畫面結構、流程、狀態 | UI 流程變更 |
+| 4 | [design-system.md](./design-system.md) | 視覺基礎：原則、色彩 token、字級、間距、圓角、陰影、動態、無障礙、lint 規則（D45） | token 或視覺規則變更 |
+| 4 | [components.md](./components.md) | 通用元件（`apps/desktop/src/ui/`）的用途、變體、狀態、鍵盤與 API，畫面組成模式 | 新增或修改通用元件 |
 | 5 | [development-guidelines.md](./development-guidelines.md) | 分支、commit、程式碼、測試、資安、發佈 | 開發流程變更 |
 | — | [deploy.md](./deploy.md) | 自架 relay + mailbox 的部署、備份、升級、M0 驗收步驟（依 technical-design §10、§16.9） | 部署方式變更 |
 | 6 | [backlog/](./backlog/) | M0–M5 Issue 清單（JSON 為來源，.md 為產生的總覽） | 工作項目增減 |

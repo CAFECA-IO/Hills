@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.13 草案 · 2026-11-08 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.14 草案 · 2026-11-08 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -471,10 +471,11 @@ conv/<convId>/log/<yyyy-mm>-e<n>   寫入者：對話成員（append） 金鑰�
 ```ts
 Message {
   id: ULID, convId, authorId, deviceId, createdAt,
-  kind: 'text' | 'files' | 'system',
+  kind: 'text' | 'files' | 'system' | 'task',
   body: string,                       // Markdown
   mentions: MemberId[],
-  attachments?: Attachment[]          // kind = 'files'
+  attachments?: Attachment[],         // kind = 'files'
+  task?: { teamId, taskId } | null    // kind = 'task'（v0.14）；null = 取消連結
 }
 Attachment =
   | { type: 'file',   manifest: FileManifest,  fileKey: base64 }          // §15.4
@@ -485,6 +486,14 @@ Attachment =
 - 驗證層（§4.2）：作者必須是 `meta` 中的成員；`log` 為多人寫入文件，只接受新增訊息（投影層忽略修改既有訊息的 change）。
 - 傳遞：沿用 §4.5——在線成員直連同步，離線成員經 mailbox 補同步。`fileKey` / `manifestKey` 只出現在 `CK` 加密的訊息中。
 - 通知：收到 `mentions` 含自己或 `dm` 訊息時發桌機通知；群組預設只通知提及。
+
+**對話連結的任務（v0.14，D43 焦點營地）**：
+
+- 任何現任成員都可以送出 `kind = 'task'` 的訊息，把對話連到一個任務或取消連結；沿用 log 的 append-only 規則，驗證層不需變更。其他 kind 的 `task` 欄位在投影時忽略。
+- 對話目前連結的任務 = 本人可讀的紀錄文件中最新（`createdAt`，相同時比 key）的一則 `kind = 'task'` 訊息。新成員看不到加入前的連結訊息，需由任一成員重新連結。
+- 連結訊息不計入未讀、不發通知、不作為對話清單的「最後訊息」；訊息流中顯示為系統列「〈作者〉把對話連到〈任務〉」。
+- 任務內容不複製進對話：讀取時從 `team/<teamId>` 取得。送出前檢查任務存在於本人可讀的小組；讀取方不是該小組成員或任務已刪除時，介面顯示「無法查看此任務」。`teamId`、`taskId` 只出現在 `CK` 加密的訊息中。
+- **步驟完成的系統列由介面依 `TaskStep.doneAt` 推導**，插入訊息流顯示（只顯示落在已載入訊息時間範圍內的），不另外寫入對話，避免多台裝置重複寫入與離線衝突。
 
 ## 15. M1 檔案分享：SwarmStorage 原理（D35、D36）
 

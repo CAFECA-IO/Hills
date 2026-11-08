@@ -15,6 +15,7 @@ import {
 } from './api';
 import { Chat } from './chat';
 import { Portrait, StatusBadge, stateLabel } from './figures';
+import { Goals } from './goals';
 import { Home } from './home';
 import { useIdleAway, useLoad, useSyncStatus } from './hooks';
 import {
@@ -41,7 +42,7 @@ import { LOOK_PALETTE, lookOf } from './summit';
 import { Tasks } from './tasks';
 import { Button, Card, CodeBox, ConfirmButton, ErrorText, Field, useAction } from './ui';
 
-type Page = 'home' | 'team' | 'tasks' | 'chat' | 'settings';
+type Page = 'home' | 'goals' | 'team' | 'tasks' | 'chat' | 'settings';
 
 const SYNC_ICON: Record<SyncStatus, string> = {
   Synced: '●',
@@ -70,6 +71,7 @@ export function SyncIndicator() {
 
 const NAV_ICON: Record<Page, string> = {
   home: 'M3 9.5L10 3.5l7 6V17H3zM8 17v-5h4v5',
+  goals: 'M3 17h4v-4h4V9h4V5h2M3 17v-1',
   team: 'M7 7m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M2 16c.8-3 3-4.5 5-4.5s4.2 1.5 5 4.5M14 8m-2.4 0a2.4 2.4 0 1 0 4.8 0a2.4 2.4 0 1 0 -4.8 0M12 15.5c.5-2 1.7-3 3-3s2.6 1 3 3',
   tasks: 'M4 5h2M4 10h2M4 15h2M9 5h7M9 10h7M9 15h7',
   chat: 'M3 4.5h14v9H8l-4 3v-3H3z',
@@ -79,14 +81,15 @@ const NAV_ICON: Record<Page, string> = {
 
 const PAGE_TITLE: Record<Page, MessageKey> = {
   home: 'nav.home',
+  goals: 'nav.goals',
   team: 'team.title',
   tasks: 'nav.tasks',
   chat: 'chat.title',
   settings: 'settings.title',
 };
 
-/** 導覽列順序（D43）：目標、知識庫隨對應功能加入。 */
-const NAV: Page[] = ['home', 'tasks', 'chat', 'team', 'settings'];
+/** 導覽列順序（D43）：知識庫隨對應功能加入。 */
+const NAV: Page[] = ['home', 'goals', 'tasks', 'chat', 'team', 'settings'];
 
 const noJoins = () => Promise.resolve<JoinRequestView[]>([]);
 
@@ -206,7 +209,7 @@ export function Shell({ info }: { info: AppInfo }) {
             <SyncIndicator />
           </header>
           <main className="min-h-0 flex-1 px-4 pb-4 wide:px-6 wide:pb-6">
-            {page !== 'home' && (
+            {page !== 'home' && page !== 'goals' && (
               <PageHead
                 title={t(PAGE_TITLE[page])}
                 subtitle={page === 'tasks' ? undefined : orgName}
@@ -222,6 +225,16 @@ export function Shell({ info }: { info: AppInfo }) {
                 onOpenConv={openChat}
                 onOpenTasks={() => go('tasks')}
                 now={now}
+              />
+            )}
+            {page === 'goals' && overview.data && (
+              <Goals
+                members={overview.data.members}
+                teams={overview.data.teams}
+                tasks={tasks.data ?? []}
+                focusId={focus.data?.task?.id ?? null}
+                timezone={overview.data.timezone}
+                onOpenTasks={() => go('tasks')}
               />
             )}
             {page === 'team' && overview.data && (

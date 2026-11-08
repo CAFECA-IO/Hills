@@ -2,9 +2,9 @@
 
 use hills_identity::trust::Verified;
 use hills_proto::{KeyFamily, MemberId};
-use hills_sync::{Directory, DocKind, MemberSection};
+use hills_sync::{Directory, DocKind, MemberSection, PlanScope};
 
-/// 文件使用哪個金鑰家族加密。目前支援 org、team、member secrets、對話（§14）。
+/// 文件使用哪個金鑰家族加密。目前支援 org、team、member secrets、計劃、對話（§14）。
 pub fn key_family(doc_id: &str) -> Option<KeyFamily> {
     match DocKind::parse(doc_id)? {
         DocKind::ConvMeta(c) => Some(KeyFamily::ConvMeta(c)),
@@ -15,6 +15,15 @@ pub fn key_family(doc_id: &str) -> Option<KeyFamily> {
             owner,
             section: MemberSection::Secrets,
         } => Some(KeyFamily::MemberPrivate(owner)),
+        // 計劃（§4.3 v0.15）
+        DocKind::Member {
+            owner,
+            section: MemberSection::Plans(scope),
+        } => Some(match scope {
+            PlanScope::Private => KeyFamily::MemberPrivate(owner),
+            PlanScope::Team(t) => KeyFamily::Team(t),
+            PlanScope::Org => KeyFamily::Org,
+        }),
         _ => None,
     }
 }
@@ -28,6 +37,14 @@ pub fn can_read(doc_id: &str, who: &Verified, dir: &crate::org::OrgSnapshot) -> 
             owner,
             section: MemberSection::Secrets,
         }) => owner == who.member_id,
+        Some(DocKind::Member {
+            owner,
+            section: MemberSection::Plans(scope),
+        }) => match scope {
+            PlanScope::Private => owner == who.member_id,
+            PlanScope::Team(t) => dir.is_team_member(&t, &who.member_id),
+            PlanScope::Org => true,
+        },
         Some(DocKind::ConvMeta(c)) => dir.is_conv_member(&c, &who.member_id),
         // 只交出成員加入之後 epoch 的紀錄文件（§14.2 v0.9）
         Some(DocKind::ConvLog(c)) => {

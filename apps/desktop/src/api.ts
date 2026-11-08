@@ -119,6 +119,57 @@ export interface Overview {
   teams: TeamView[];
   offices: OfficeView[];
   lunchBreak: LunchBreak | null;
+  /** 組織時區（IANA），計劃期間依此計算 */
+  timezone: string;
+}
+
+// ── 目標（五層計劃，technical-design §16.10）──
+
+export type PlanLevel = 'year' | 'quarter' | 'month' | 'week' | 'day';
+
+export type Visibility = { kind: 'private' } | { kind: 'org' } | { kind: 'team'; team: string };
+
+export interface KeyResult {
+  id: string;
+  title: string;
+  start: number;
+  target: number;
+  current: number;
+  unit: string;
+  manual: boolean;
+}
+
+export interface PlanView {
+  id: string;
+  owner: string;
+  visibility: Visibility;
+  level: PlanLevel;
+  period: string;
+  title: string;
+  parentId: string | null;
+  krRef: string | null;
+  done: boolean;
+  progressOverride: number | null;
+  keyResults: KeyResult[];
+  createdAt: number;
+  updatedAt: number;
+  /** 彙總後的進度 0–100 */
+  progress: number;
+  krProgress: Record<string, number>;
+  mine: boolean;
+}
+
+export interface PlanInput {
+  id?: string | null;
+  level: PlanLevel;
+  period: string;
+  title: string;
+  parentId: string | null;
+  krRef: string | null;
+  done: boolean;
+  progressOverride: number | null;
+  keyResults: KeyResult[];
+  visibility: Visibility;
 }
 
 export interface Code {
@@ -321,6 +372,10 @@ export const api = {
   setStepDone: (team: string, task: string, step: string, done: boolean) =>
     call<void>('set_step_done', { team, task, step, done }),
   deleteTask: (team: string, task: string) => call<void>('delete_task', { team, task }),
+  plans: (mineOnly: boolean) => call<PlanView[]>('plans', { mineOnly }),
+  savePlan: (input: PlanInput) => call<string>('save_plan', { input }),
+  setPlanDone: (id: string, done: boolean) => call<void>('set_plan_done', { id, done }),
+  deletePlan: (id: string) => call<void>('delete_plan', { id }),
   focus: () => call<FocusView>('focus'),
   setFocus: (team: string | null, task: string | null) => call<void>('set_focus', { team, task }),
   setProfile: (look: Look) => call<void>('set_profile', { look }),

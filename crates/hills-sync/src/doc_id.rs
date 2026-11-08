@@ -24,13 +24,33 @@ pub enum DocKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MemberSection {
-    Plans(String),
+    /// 計劃（technical-design §4.3 v0.15）
+    Plans(PlanScope),
     Scrum(String),
     Attendance(String),
     Requests,
     Reports,
     /// 本人的私密設定，例如邀請 secret（technical-design §16.2）
     Secrets,
+}
+
+/// 計劃文件的可見度：`plans/private`、`plans/team/<teamId>`、`plans/org`（technical-design §4.3 v0.15）。
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum PlanScope {
+    Private,
+    Team(String),
+    Org,
+}
+
+impl PlanScope {
+    /// 文件 ID 中 `plans/` 之後的部分。
+    pub fn path(&self) -> String {
+        match self {
+            PlanScope::Private => "private".into(),
+            PlanScope::Team(t) => format!("team/{t}"),
+            PlanScope::Org => "org".into(),
+        }
+    }
 }
 
 /// 對話紀錄的分段：`<yyyy-mm>-e<epoch>`（technical-design §14.2 v0.9）。
@@ -73,8 +93,10 @@ impl DocKind {
             ["member", m, rest @ ..] => {
                 let owner = MemberId::parse(m).ok()?;
                 let section = match rest {
-                    ["plans", v] if matches!(*v, "private" | "team" | "org") => {
-                        MemberSection::Plans((*v).into())
+                    ["plans", "private"] => MemberSection::Plans(PlanScope::Private),
+                    ["plans", "org"] => MemberSection::Plans(PlanScope::Org),
+                    ["plans", "team", t] if is_segment(t) => {
+                        MemberSection::Plans(PlanScope::Team((*t).into()))
                     }
                     ["scrum", ym] if is_month(ym) => MemberSection::Scrum((*ym).into()),
                     ["attendance", ym] if is_month(ym) => MemberSection::Attendance((*ym).into()),
@@ -109,6 +131,20 @@ mod tests {
                 section: MemberSection::Attendance("2026-11".into())
             })
         );
+        for (path, scope) in [
+            ("private", PlanScope::Private),
+            ("org", PlanScope::Org),
+            ("team/t-1", PlanScope::Team("t-1".into())),
+        ] {
+            assert_eq!(scope.path(), path);
+            assert_eq!(
+                DocKind::parse(&format!("member/{m}/plans/{path}")),
+                Some(DocKind::Member {
+                    owner: m,
+                    section: MemberSection::Plans(scope)
+                })
+            );
+        }
         assert_eq!(
             DocKind::parse(&format!("approvals/{m}")),
             Some(DocKind::Approvals(m))
@@ -130,6 +166,9 @@ mod tests {
             "team/../org".into(),
             format!("member/{m}/attendance/2026-1"),
             format!("member/{m}/plans/public"),
+            format!("member/{m}/plans/team"),
+            format!("member/{m}/plans/team/a/b"),
+            format!("member/{m}/plans/team/a.b"),
             "member/notbase32/requests".into(),
             "conv/c1/log/202611".into(),
         ] {

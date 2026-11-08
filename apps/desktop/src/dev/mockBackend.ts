@@ -11,8 +11,11 @@ import type {
   OnboardArgs,
   OnboardStatus,
   Overview,
+  PlanInput,
+  PlanView,
   PresenceState,
 } from '../api';
+import { periodsAt } from '../goals-utils';
 
 type Handler = (payload: unknown) => void;
 const listeners = new Map<string, Set<Handler>>();
@@ -128,6 +131,80 @@ let tasks: MockTask[] = [
     createdAt: now0 - 86400_000,
     updatedAt: now0,
   },
+];
+const P = periodsAt(Date.now(), 'Asia/Taipei');
+const plan = (
+  id: string,
+  level: PlanView['level'],
+  title: string,
+  progress: number,
+  parentId: string | null = null,
+  extra: Partial<PlanView> = {},
+): PlanView => ({
+  id,
+  owner: 'mem-me',
+  visibility: { kind: 'team', team: 'default' },
+  level,
+  period: P[level],
+  title,
+  parentId,
+  krRef: null,
+  done: progress === 100 && !['year', 'quarter'].includes(level),
+  progressOverride: null,
+  keyResults: [],
+  createdAt: now0,
+  updatedAt: now0,
+  progress,
+  krProgress: {},
+  mine: true,
+  ...extra,
+});
+const kr = (
+  id: string,
+  title: string,
+  start: number,
+  target: number,
+  current: number,
+  unit = '',
+) => ({
+  id,
+  title,
+  start,
+  target,
+  current,
+  unit,
+  manual: true,
+});
+// 示範目標（虛構，與設計稿第七輪相同）
+let plans: PlanView[] = [
+  plan('y1', 'year', 'Hills 上線並導入全公司', 58, null, {
+    keyResults: [kr('k1', '導入人數', 0, 40, 23, '人'), kr('k2', '每週活躍率', 0, 80, 47, '%')],
+    krProgress: { k1: 57.5, k2: 58.75 },
+  }),
+  plan('y2', 'year', '營運流程數位化', 40),
+  plan('q1', 'quarter', 'M1 上線', 62, 'y1', {
+    keyResults: [
+      kr('k3', 'M1 功能完成', 0, 28, 18, '項'),
+      kr('k4', 'Mac / Windows 驗收', 0, 2, 1, '台'),
+      kr('k5', '設計定稿', 0, 4, 4, '份'),
+    ],
+    krProgress: { k3: 64.3, k4: 50, k5: 100 },
+  }),
+  plan('q2', 'quarter', '假勤規則上線', 20, 'y2'),
+  plan('q3', 'quarter', '招募兩位工程師', 50, 'y1', {
+    owner: 'mem-a',
+    mine: false,
+    keyResults: [kr('k6', '錄取', 0, 2, 1, '人')],
+    krProgress: { k6: 50 },
+  }),
+  plan('m1', 'month', 'Mac / Windows 驗收', 70, 'q1', { krRef: 'q1/k4' }),
+  plan('m2', 'month', '壓力測試', 30, 'q1'),
+  plan('m3', 'month', '設計定稿', 85, 'q1', { krRef: 'q1/k5' }),
+  plan('w1', 'week', '檔案分享穩定', 80, 'm1'),
+  plan('w2', 'week', '對話焦點營地', 40, 'm1'),
+  plan('d1', 'day', 'relay 更新', 50, 'w1'),
+  plan('d2', 'day', 'Windows 驗收', 0, 'w1'),
+  plan('d3', 'day', '寫週報', 0, null, { visibility: { kind: 'private' } }),
 ];
 let manualFocus: string | null = null;
 let myLook = look(0, 5, 2);
@@ -327,7 +404,38 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     teams: [{ id: 'default', name: '全體成員', members: [state.me, ...others.map((m) => m.id)] }],
     offices,
     lunchBreak,
+    timezone: 'Asia/Taipei',
   }),
+  plans: (a) => (a.mineOnly ? plans.filter((x) => x.mine) : plans),
+  save_plan: (a) => {
+    const input = a.input as PlanInput;
+    const id = input.id || 'p' + Math.random().toString(16).slice(2, 8);
+    const old = plans.find((x) => x.id === id);
+    const item: PlanView = {
+      ...input,
+      id,
+      owner: state.me,
+      keyResults: input.keyResults.map((k, i) => ({ ...k, id: k.id || `${id}-k${i}` })),
+      createdAt: old?.createdAt ?? Date.now(),
+      updatedAt: Date.now(),
+      progress: input.progressOverride ?? (input.done ? 100 : (old?.progress ?? 0)),
+      krProgress: old?.krProgress ?? {},
+      mine: true,
+    };
+    plans = [...plans.filter((x) => x.id !== id), item];
+    touch();
+    return id;
+  },
+  set_plan_done: (a) => {
+    plans = plans.map((x) =>
+      x.id === a.id ? { ...x, done: Boolean(a.done), progress: a.done ? 100 : 0 } : x,
+    );
+    touch();
+  },
+  delete_plan: (a) => {
+    plans = plans.filter((x) => x.id !== a.id);
+    touch();
+  },
   set_presence: (a) => {
     state.presence = a.presence as PresenceState;
     state.note = String(a.note);

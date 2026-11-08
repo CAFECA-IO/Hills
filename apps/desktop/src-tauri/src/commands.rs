@@ -578,6 +578,8 @@ pub struct Overview {
     teams: Vec<TeamView>,
     offices: Vec<OfficeView>,
     lunch_break: Option<LunchView>,
+    /// 組織時區（IANA；計劃期間依此計算，technical-design §16.10）
+    timezone: String,
 }
 
 #[tauri::command]
@@ -624,7 +626,7 @@ pub async fn overview(state: State<'_, AppState>) -> CmdResult<Overview> {
             .lunch_break
             .as_ref()
             .map(|l| LunchView { start: l.start.clone(), end: l.end.clone() });
-        Ok(Overview { org_name: org.name, members, teams, offices, lunch_break })
+        Ok(Overview { org_name: org.name, members, teams, offices, lunch_break, timezone: org.timezone })
     })
 }
 
@@ -799,6 +801,72 @@ pub async fn set_step_done(
 #[tauri::command]
 pub async fn delete_task(state: State<'_, AppState>, team: String, task: String) -> CmdResult<()> {
     with_node!(state, n => n.delete_task(&team, &task).await.map_err(e))
+}
+
+// ── 目標（五層計劃，technical-design §16.10）────────────────
+
+/// 一個計劃項目與彙總後的進度（0–100）。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanView {
+    #[serde(flatten)]
+    item: hills_node::plans::PlanItem,
+    progress: f64,
+    /// 關鍵結果 id → 進度
+    kr_progress: std::collections::BTreeMap<String, f64>,
+    mine: bool,
+}
+
+/// 全部看得到的計劃項目（前端依期間篩選；進度以全部可見項目彙總）。
+#[tauri::command]
+pub async fn plans(state: State<'_, AppState>, mine_only: bool) -> CmdResult<Vec<PlanView>> {
+    use hills_node::plans::{PlanQuery, rollup};
+    let query = if mine_only {
+        PlanQuery::Mine
+    } else {
+        PlanQuery::Visible
+    };
+    with_node!(state, n => {
+        let me = n.member_id();
+        let items = n.plans(query).map_err(e)?;
+        let r = rollup(&items);
+        Ok(items
+            .into_iter()
+            .map(|item| {
+                let kr_progress = item
+                    .key_results
+                    .iter()
+                    .filter_map(|k| {
+                        r.krs.get(&format!("{}/{}", item.id, k.id)).map(|v| (k.id.clone(), *v))
+                    })
+                    .collect();
+                PlanView {
+                    progress: r.items.get(&item.id).copied().unwrap_or(0.0),
+                    kr_progress,
+                    mine: item.owner == me,
+                    item,
+                }
+            })
+            .collect())
+    })
+}
+
+#[tauri::command]
+pub async fn save_plan(
+    state: State<'_, AppState>,
+    input: hills_node::plans::PlanInput,
+) -> CmdResult<String> {
+    with_node!(state, n => n.save_plan(input).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn set_plan_done(state: State<'_, AppState>, id: String, done: bool) -> CmdResult<()> {
+    with_node!(state, n => n.set_plan_done(&id, done).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn delete_plan(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    with_node!(state, n => n.delete_plan(&id).await.map_err(e))
 }
 
 #[tauri::command]

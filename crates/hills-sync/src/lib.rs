@@ -17,7 +17,7 @@ use hills_identity::cert::DeviceKey;
 use hills_identity::trust::{TrustStore, Verified};
 use hills_proto::{FORMAT_VERSION, MemberId, Pub32, SignedChange, SignedChangeBody, Timestamp};
 
-pub use doc_id::{DocKind, MemberSection};
+pub use doc_id::{DocKind, MemberSection, PlanScope};
 
 /// 小組與對話成員資料（來自 org 文件與 conv/<id>/meta 的投影）。
 pub trait Directory {

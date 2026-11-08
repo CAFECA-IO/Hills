@@ -22,6 +22,12 @@
   --hills-hill-near: #b6dec6;
   --hills-hill-mid: #cdebd8;
   --hills-hill-far: #c4e5d0;
+  /* 目標層級（ui-spec「目標」，一律搭配層級文字） */
+  --hills-level-year: #7c5cfc;
+  --hills-level-quarter: #1f6feb;
+  --hills-level-month: #0f7b5f;
+  --hills-level-week: #d9661f;
+  --hills-level-day: #1e9e6a;
   /* 狀態：徽章色 / 文字色（文字對 surface ≥ 4.5:1） */
   --hills-st-online: #1e9e6a;
   --hills-st-online-text: #146c48;
@@ -100,6 +106,11 @@
     --hills-hill-near: #1e3a2d;
     --hills-hill-mid: #22402f;
     --hills-hill-far: #264535;
+    --hills-level-year: #9d85ff;
+    --hills-level-quarter: #4c8df6;
+    --hills-level-month: #3cc49a;
+    --hills-level-week: #f29a5c;
+    --hills-level-day: #4fcb8d;
     --hills-st-online-text: #5fd3a0;
     --hills-st-busy-text: #ff8a8e;
     --hills-st-lunch-text: #ffab7a;
@@ -140,6 +151,11 @@
   --color-hill-near: var(--hills-hill-near);
   --color-hill-mid: var(--hills-hill-mid);
   --color-hill-far: var(--hills-hill-far);
+  --color-level-year: var(--hills-level-year);
+  --color-level-quarter: var(--hills-level-quarter);
+  --color-level-month: var(--hills-level-month);
+  --color-level-week: var(--hills-level-week);
+  --color-level-day: var(--hills-level-day);
   --color-st-online: var(--hills-st-online);
   --color-st-online-text: var(--hills-st-online-text);
   --color-st-busy: var(--hills-st-busy);

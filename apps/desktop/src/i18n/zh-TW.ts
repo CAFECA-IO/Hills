@@ -165,6 +165,7 @@ export const zhTW = {
   'camp.toTask.link': '連到這個對話',
   'camp.toTask.create': '建立任務',
   'camp.toTask.untitled': '新任務',
+  'camp.drawer': '對話詳情',
   'camp.drawer.show': '顯示詳情',
   'camp.drawer.hide': '收起詳情',
   'camp.tab.members': '成員',

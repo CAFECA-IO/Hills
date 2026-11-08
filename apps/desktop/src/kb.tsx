@@ -1,5 +1,5 @@
 /** 知識庫「星空」（ui-spec「知識庫」，D42；technical-design §16.11）。 */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import {
   api,
@@ -29,7 +29,25 @@ import {
   type RelationKind,
 } from './kb-utils';
 import { PageHead } from './layout';
-import { Button, ConfirmButton, ErrorText, useAction } from './ui';
+import {
+  Button,
+  Checkbox,
+  Chip,
+  ConfirmButton,
+  Dialog,
+  EmptyState,
+  ErrorText,
+  Field,
+  LinkButton,
+  ListButton,
+  Pressable,
+  SegmentedControl,
+  Select,
+  Slider,
+  TextArea,
+  TextInput,
+  useAction,
+} from './ui';
 
 const REL_COLOR: Record<RelationKind, string> = {
   ref: 'var(--hills-rel-ref)',
@@ -91,45 +109,37 @@ export function Knowledge({ members, isAdmin, timezone, onOpenConv }: Props) {
         subtitle={t('kb.subtitle', { count: data.items.length })}
         actions={
           <>
-            <div role="tablist" className="inline-flex rounded-full bg-surface p-1 shadow-sm">
-              {(['sky', 'list'] as const).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  role="tab"
-                  aria-selected={view === k}
-                  onClick={() => setView(k)}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${view === k ? 'bg-primary text-on-primary' : ''}`}
-                >
-                  {t(`kb.view.${k}` as MessageKey)}
-                </button>
-              ))}
-            </div>
-            <Button className="h-9 py-0" onClick={() => setEditing(blank())}>
-              {t('kb.new')}
-            </Button>
+            <SegmentedControl
+              label={t('kb.title')}
+              value={view}
+              onChange={setView}
+              options={(['sky', 'list'] as const).map((k) => ({
+                value: k,
+                label: t(`kb.view.${k}` as MessageKey),
+              }))}
+            />
+            <Button onClick={() => setEditing(blank())}>{t('kb.new')}</Button>
           </>
         }
       />
       <div className="flex flex-wrap items-center gap-2">
-        <input
+        <TextInput
           type="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={t('kb.search')}
           aria-label={t('kb.search')}
-          className="h-9 w-64 rounded-full border border-line bg-surface px-4 text-sm"
+          className="h-9 w-64 rounded-full px-4"
         />
         {activeCategories(data.categories).map((c) => (
-          <button
+          <Chip
             key={c.id}
-            type="button"
-            aria-pressed={catFilter === c.id}
+            selected={catFilter === c.id}
             onClick={() => setCatFilter((f) => (f === c.id ? null : c.id))}
-            className={`h-8 rounded-full border px-3 text-xs ${catFilter === c.id ? 'border-primary bg-primary-soft font-bold text-primary' : 'border-line bg-surface'}`}
+            className="h-8 px-3"
           >
             {c.name}
-          </button>
+          </Chip>
         ))}
         <ErrorText message={kb.error} />
       </div>
@@ -360,7 +370,14 @@ function Starfield({
               <circle cx={p.x} cy={p.y} r={r * 2.2} fill="var(--hills-star)" opacity={0.12} />
               <circle cx={p.x} cy={p.y} r={r} fill="var(--hills-star)" />
               {on && (
-                <circle cx={p.x} cy={p.y} r={r + 4} fill="none" stroke="#fff" strokeWidth={2} />
+                <circle
+                  cx={p.x}
+                  cy={p.y}
+                  r={r + 4}
+                  fill="none"
+                  stroke="var(--hills-cloud)"
+                  strokeWidth={2}
+                />
               )}
               {isNew && (
                 <>
@@ -395,7 +412,7 @@ function Starfield({
       </svg>
       <ul
         aria-label={t('kb.legend')}
-        className="absolute bottom-3 left-3 flex flex-wrap gap-3 rounded-control bg-night-top/70 px-3 py-1.5 text-[11px] text-night-text"
+        className="absolute bottom-3 left-3 flex flex-wrap gap-3 rounded-control bg-night-top/70 px-3 py-1.5 text-2xs text-night-text"
       >
         {(['ref', 'topic', 'task', 'conv'] as const).map((k) => (
           <li key={k} className="flex items-center gap-1.5">
@@ -466,9 +483,8 @@ function PreviewCard({
             const o = data.items.find((i) => i.key === r.key);
             return (
               <li key={r.key}>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 text-left hover:text-primary"
+                <Pressable
+                  className="flex w-full items-center gap-2 rounded-sm hover:text-primary"
                   onClick={() => onSelect(r.key)}
                 >
                   <svg width={16} height={6} aria-hidden className="shrink-0">
@@ -484,7 +500,7 @@ function PreviewCard({
                   </svg>
                   <span className="truncate">{o?.title}</span>
                   <span className="ml-auto shrink-0 text-xs text-muted">{relName(r.kind)}</span>
-                </button>
+                </Pressable>
               </li>
             );
           })}
@@ -517,20 +533,15 @@ function ShareToConv({
   const [done, setDone] = useState(false);
   return (
     <div className="flex flex-col gap-2 rounded-control border border-line p-2 text-sm">
-      <label className="flex flex-col gap-1">
-        <span className="text-xs text-muted">{t('kb.share.to')}</span>
-        <select
-          value={conv}
-          onChange={(e) => setConv(e.target.value)}
-          className="rounded-control border border-line bg-surface px-2 py-1"
-        >
+      <Field label={t('kb.share.to')}>
+        <Select size="sm" value={conv} onChange={(e) => setConv(e.target.value)}>
           {convs.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name || t('kb.share.dm')}
             </option>
           ))}
-        </select>
-      </label>
+        </Select>
+      </Field>
       {done && <p className="text-xs text-st-online-text">{t('kb.share.done')}</p>}
       <ErrorText message={error} />
       <div className="flex justify-end gap-2">
@@ -598,8 +609,7 @@ function Timeline({
             />
           ))}
         </div>
-        <input
-          type="range"
+        <Slider
           min={0}
           max={Math.max(0, weeks.length - 1)}
           value={idx}
@@ -609,15 +619,15 @@ function Timeline({
             const i = Number(e.target.value);
             onWeek(i >= weeks.length - 1 ? null : (weeks[i]?.week ?? null));
           }}
-          className="w-full accent-primary"
+          className="w-full"
         />
       </div>
       <div className="flex w-28 shrink-0 flex-col items-end gap-1 text-xs">
         <span className="font-bold">{weeks[idx]?.week}</span>
         {week && (
-          <button type="button" className="text-primary underline" onClick={() => onWeek(null)}>
+          <LinkButton className="underline" onClick={() => onWeek(null)}>
             {t('kb.timeline.now')}
-          </button>
+          </LinkButton>
         )}
       </div>
     </section>
@@ -640,7 +650,7 @@ function KbList({
   const cites = citations(data.items);
   return (
     <div className="scroll-panel min-h-0 flex-1 rounded-card bg-surface p-4 shadow-sm">
-      {cats.length === 0 && <p className="text-sm text-muted">{t('kb.empty')}</p>}
+      {cats.length === 0 && <EmptyState>{t('kb.empty')}</EmptyState>}
       <ul className="flex flex-col gap-4">
         {cats.map((c) => (
           <li key={c.id}>
@@ -656,16 +666,15 @@ function KbList({
                         .filter((i) => placeOf(i, data.topics).topic?.id === tp.id)
                         .map((i) => (
                           <li key={i.key}>
-                            <button
-                              type="button"
+                            <ListButton
                               onClick={() => onOpen(i.key)}
-                              className="flex w-full items-center justify-between gap-2 rounded-control px-2 py-1 text-left text-sm hover:bg-bg"
+                              className="justify-between px-2 py-1"
                             >
                               <span className="truncate">{i.title}</span>
                               <span className="shrink-0 text-xs text-muted">
                                 {t('kb.cited', { count: cites.get(i.key) ?? 0 })}
                               </span>
-                            </button>
+                            </ListButton>
                           </li>
                         ))}
                     </ul>
@@ -708,13 +717,13 @@ function MetaRow({
             if (await attempt(() => api.kbRename(kind, item.id, name))) setMode('view');
           }}
         >
-          <input
+          <TextInput
+            size="sm"
             autoFocus
             value={name}
             maxLength={60}
             aria-label={t('kb.meta.rename')}
             onChange={(e) => setName(e.target.value)}
-            className="rounded-control border border-line bg-surface px-2 py-1 text-sm"
           />
           <Button type="submit" className="h-7 px-2 py-0 text-xs" disabled={busy}>
             {t('kb.save')}
@@ -726,17 +735,13 @@ function MetaRow({
       {mode === 'merge' && (
         <span className="flex items-center gap-2 text-xs">
           {t('kb.meta.mergeInto')}
-          <select
-            value={into}
-            onChange={(e) => setInto(e.target.value)}
-            className="rounded-control border border-line bg-surface px-2 py-1"
-          >
+          <Select size="sm" value={into} onChange={(e) => setInto(e.target.value)}>
             {others.map((o) => (
               <option key={o.id} value={o.id}>
                 {o.name}
               </option>
             ))}
-          </select>
+          </Select>
           <Button
             className="h-7 px-2 py-0 text-xs"
             disabled={busy || !into}
@@ -749,21 +754,13 @@ function MetaRow({
         </span>
       )}
       <span className="flex gap-1 text-xs">
-        <button
-          type="button"
-          className="text-muted hover:text-fg"
-          onClick={() => setMode(mode === 'rename' ? 'view' : 'rename')}
-        >
+        <LinkButton tone="muted" onClick={() => setMode(mode === 'rename' ? 'view' : 'rename')}>
           {t('kb.meta.rename')}
-        </button>
+        </LinkButton>
         {others.length > 0 && (
-          <button
-            type="button"
-            className="text-muted hover:text-fg"
-            onClick={() => setMode(mode === 'merge' ? 'view' : 'merge')}
-          >
+          <LinkButton tone="muted" onClick={() => setMode(mode === 'merge' ? 'view' : 'merge')}>
             {t('kb.meta.merge')}
-          </button>
+          </LinkButton>
         )}
       </span>
       <ErrorText message={error} />
@@ -793,16 +790,15 @@ function TopicPicker({
   const inCat = topics.filter((x) => x.categoryId === cat);
   return (
     <div className="grid grid-cols-2 gap-3 text-sm">
-      <label className="flex flex-col gap-1">
-        <span className="text-xs text-muted">{t('kb.field.category')}</span>
-        <select
+      <Field label={t('kb.field.category')}>
+        <Select
+          size="sm"
           value={cat}
           onChange={(e) => {
             setCat(e.target.value);
             const first = topics.find((x) => x.categoryId === e.target.value);
             onChange(first?.id ?? '');
           }}
-          className="rounded-control border border-line bg-surface px-2 py-1.5"
         >
           {cats.map((c) => (
             <option key={c.id} value={c.id}>
@@ -810,15 +806,16 @@ function TopicPicker({
             </option>
           ))}
           <option value="__new">{t('kb.field.newCategory')}</option>
-        </select>
+        </Select>
         {cat === '__new' && (
           <span className="flex gap-1">
-            <input
+            <TextInput
+              size="sm"
               value={newCat}
               maxLength={60}
               aria-label={t('kb.field.newCategory')}
               onChange={(e) => setNewCat(e.target.value)}
-              className="min-w-0 flex-1 rounded-control border border-line bg-surface px-2 py-1"
+              className="min-w-0 flex-1"
             />
             <Button
               type="button"
@@ -836,13 +833,12 @@ function TopicPicker({
             </Button>
           </span>
         )}
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="text-xs text-muted">{t('kb.field.topic')}</span>
-        <select
+      </Field>
+      <Field label={t('kb.field.topic')}>
+        <Select
+          size="sm"
           value={inCat.some((x) => x.id === topicId) ? topicId : '__new'}
           onChange={(e) => onChange(e.target.value === '__new' ? '' : e.target.value)}
-          className="rounded-control border border-line bg-surface px-2 py-1.5"
           disabled={cat === '__new'}
         >
           {inCat.map((x) => (
@@ -851,15 +847,16 @@ function TopicPicker({
             </option>
           ))}
           <option value="__new">{t('kb.field.newTopic')}</option>
-        </select>
+        </Select>
         {cat !== '__new' && !inCat.some((x) => x.id === topicId) && (
           <span className="flex gap-1">
-            <input
+            <TextInput
+              size="sm"
               value={newTopic}
               maxLength={60}
               aria-label={t('kb.field.newTopic')}
               onChange={(e) => setNewTopic(e.target.value)}
-              className="min-w-0 flex-1 rounded-control border border-line bg-surface px-2 py-1"
+              className="min-w-0 flex-1"
             />
             <Button
               type="button"
@@ -877,7 +874,7 @@ function TopicPicker({
             </Button>
           </span>
         )}
-      </label>
+      </Field>
       <ErrorText message={error} />
     </div>
   );
@@ -904,7 +901,7 @@ function KbEditor({
   const set = (p: Partial<KbInput>) => setV((x) => ({ ...x, ...p }));
   const candidates = data.items.filter((i) => i.key !== v.key && matches(i, refQ)).slice(0, 30);
   return (
-    <Dialog label={v.key ? t('kb.edit') : t('kb.newTitle')} onClose={onClose}>
+    <Dialog label={v.key ? t('kb.edit') : t('kb.newTitle')} onClose={onClose} width="lg">
       <form
         className="flex flex-col gap-3"
         onSubmit={async (e) => {
@@ -924,24 +921,22 @@ function KbEditor({
         }}
       >
         <h2 className="text-lg font-bold">{v.key ? t('kb.edit') : t('kb.newTitle')}</h2>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-xs text-muted">{t('kb.field.title')}</span>
-          <input
+        <Field label={t('kb.field.title')}>
+          <TextInput
             autoFocus
             required
             maxLength={200}
             value={v.title}
             onChange={(e) => set({ title: e.target.value })}
-            className="rounded-control border border-line bg-surface px-3 py-2"
           />
-        </label>
+        </Field>
         <TopicPicker data={data} topicId={v.topicId} onChange={(topicId) => set({ topicId })} />
         <div className="flex flex-col gap-1 text-sm">
           <span className="flex items-center justify-between text-xs text-muted">
             {t('kb.field.body')}
-            <button type="button" className="text-primary" onClick={() => setPreview((p) => !p)}>
+            <LinkButton onClick={() => setPreview((p) => !p)}>
               {preview ? t('kb.field.write') : t('kb.field.preview')}
-            </button>
+            </LinkButton>
           </span>
           {preview ? (
             <div className="prose-hills min-h-32 rounded-control border border-line p-3 text-sm">
@@ -950,41 +945,33 @@ function KbEditor({
               </Markdown>
             </div>
           ) : (
-            <textarea
+            <TextArea
               rows={7}
               value={v.body}
               aria-label={t('kb.field.body')}
               onChange={(e) => set({ body: e.target.value })}
-              className="rounded-control border border-line bg-surface px-3 py-2"
             />
           )}
         </div>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-xs text-muted">{t('kb.field.tags')}</span>
-          <input
-            value={tags}
-            onChange={(e) => setTags(e.target.value)}
-            className="rounded-control border border-line bg-surface px-3 py-2"
-          />
-        </label>
+        <Field label={t('kb.field.tags')}>
+          <TextInput value={tags} onChange={(e) => setTags(e.target.value)} />
+        </Field>
         <fieldset className="flex flex-col gap-1 text-sm">
           <legend className="mb-1 text-xs text-muted">
             {t('kb.field.refs')} · {v.refs.length}
           </legend>
-          <input
+          <TextInput
             type="search"
             value={refQ}
             placeholder={t('kb.search')}
             aria-label={t('kb.field.refs')}
             onChange={(e) => setRefQ(e.target.value)}
-            className="rounded-control border border-line bg-surface px-3 py-1.5"
           />
           <ul className="scroll-panel max-h-32 rounded-control border border-line p-1">
             {candidates.map((i) => (
               <li key={i.key}>
                 <label className="flex items-center gap-2 px-1 py-0.5">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={v.refs.includes(i.key)}
                     onChange={(e) =>
                       set({
@@ -1011,41 +998,6 @@ function KbEditor({
         </div>
       </form>
     </Dialog>
-  );
-}
-
-function Dialog({
-  label,
-  onClose,
-  children,
-}: {
-  label: string;
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  // 開啟時把焦點移進對話框（Esc 關閉、鍵盤操作）；內部有 autoFocus 的欄位時不搶焦點
-  useEffect(() => {
-    const el = ref.current;
-    if (el && !el.contains(document.activeElement)) el.focus();
-  }, []);
-  return (
-    <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-fg/20"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div
-        ref={ref}
-        tabIndex={-1}
-        role="dialog"
-        aria-modal="true"
-        aria-label={label}
-        className="scroll-panel max-h-[90vh] w-[600px] rounded-card bg-surface p-5 shadow-lg outline-none"
-        onKeyDown={(e) => e.key === 'Escape' && onClose()}
-      >
-        {children}
-      </div>
-    </div>
   );
 }
 
@@ -1081,7 +1033,7 @@ function KbReader({
   const convId = src.kind === 'message' || src.kind === 'file' ? src.convId : null;
   const inConv = convId ? convs.some((c) => c.id === convId) : false;
   return (
-    <Dialog label={item.title} onClose={onClose}>
+    <Dialog label={item.title} onClose={onClose} width="lg">
       <div className="flex flex-col gap-3">
         <span className="text-xs text-muted">{pathOf(item, data)}</span>
         <h2 className="text-xl font-bold">{item.title}</h2>
@@ -1113,16 +1065,15 @@ function KbReader({
           {t(`kb.source.${src.kind}` as MessageKey)}
           {convId &&
             (inConv ? (
-              <button
-                type="button"
-                className="ml-2 text-primary underline"
+              <LinkButton
+                className="ml-2 underline"
                 onClick={() => {
                   onClose();
                   onOpenConv(convId);
                 }}
               >
                 {t('kb.source.openConv')}
-              </button>
+              </LinkButton>
             ) : (
               <span className="ml-2">{t('kb.source.notMember')}</span>
             ))}
@@ -1133,14 +1084,12 @@ function KbReader({
             <ul className="flex flex-wrap gap-2">
               {rels.map((r) => (
                 <li key={r.key}>
-                  <button
-                    type="button"
+                  <Chip
                     onClick={() => onOpenItem(r.key)}
-                    className="rounded-full border border-line px-2 py-0.5 text-xs hover:text-primary"
                     style={{ borderColor: REL_COLOR[r.kind] }}
                   >
                     {relName(r.kind)} · {data.items.find((i) => i.key === r.key)?.title}
-                  </button>
+                  </Chip>
                 </li>
               ))}
             </ul>
@@ -1206,17 +1155,16 @@ export function SaveToKb({
       }}
     >
       <span className="font-bold">{t('kb.save.title')}</span>
-      <label className="flex flex-col gap-1">
-        <span className="text-xs text-muted">{t('kb.field.title')}</span>
-        <input
+      <Field label={t('kb.field.title')}>
+        <TextInput
+          size="sm"
           autoFocus
           required
           maxLength={200}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          className="rounded-control border border-line bg-surface px-2 py-1"
         />
-      </label>
+      </Field>
       {kb.data && <TopicPicker data={kb.data} topicId={topic} onChange={setTopic} />}
       <p role="note" className="rounded-control bg-bg px-2 py-1.5 text-xs text-warning">
         {attachment !== null ? t('kb.save.fileWarning') : t('kb.save.messageWarning')}

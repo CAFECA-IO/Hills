@@ -24,7 +24,17 @@ import {
   todayPlan,
   type MemberScrumStatus,
 } from './scrum-utils';
-import { Button, Card, ErrorText, useAction } from './ui';
+import {
+  Badge,
+  Button,
+  Card,
+  ErrorText,
+  IconButton,
+  Pressable,
+  Select,
+  TextInput,
+  useAction,
+} from './ui';
 
 interface Props {
   members: MemberView[];
@@ -56,31 +66,24 @@ export function Scrum({ members, teams, tasks, focusId, timezone }: Props) {
         subtitle={`${date}（${t(`scrum.weekday.${new Date(`${date}T00:00:00Z`).getUTCDay()}` as MessageKey)}）`}
         actions={
           <div className="flex items-center gap-1">
-            <Button
+            <IconButton
               variant="secondary"
-              className="h-9 px-3 py-0"
-              aria-label={t('goals.prevDay')}
+              label={t('goals.prevDay')}
               onClick={() => setOffset((o) => o - 1)}
             >
               ◀
-            </Button>
-            <Button
-              variant="secondary"
-              className="h-9 px-3 py-0"
-              disabled={offset === 0}
-              onClick={() => setOffset(0)}
-            >
+            </IconButton>
+            <Button variant="secondary" disabled={offset === 0} onClick={() => setOffset(0)}>
               {t('goals.today')}
             </Button>
-            <Button
+            <IconButton
               variant="secondary"
-              className="h-9 px-3 py-0"
-              aria-label={t('goals.nextDay')}
+              label={t('goals.nextDay')}
               disabled={offset >= 0}
               onClick={() => setOffset((o) => Math.min(0, o + 1))}
             >
               ▶
-            </Button>
+            </IconButton>
           </div>
         }
       />
@@ -291,20 +294,18 @@ function RefSection({
           >
             <span className="flex min-w-0 items-center gap-2">
               {r.kind !== 'text' && (
-                <span className="shrink-0 rounded-full border border-line px-1.5 text-[11px] text-muted">
-                  {t(r.kind === 'task' ? 'scrum.kind.task' : 'scrum.kind.plan')}
-                </span>
+                <Badge>{t(r.kind === 'task' ? 'scrum.kind.task' : 'scrum.kind.plan')}</Badge>
               )}
               <span className="truncate">{r.title}</span>
             </span>
-            <button
-              type="button"
-              aria-label={t('scrum.remove', { title: r.title })}
-              className="shrink-0 text-muted hover:text-danger"
+            <IconButton
+              size="sm"
+              label={t('scrum.remove', { title: r.title })}
+              className="hover:text-danger"
               onClick={() => onChange(items.filter((_, j) => j !== i))}
             >
               ×
-            </button>
+            </IconButton>
           </li>
         ))}
       </ul>
@@ -337,14 +338,14 @@ function TextSection({
             className="flex items-center justify-between gap-2 rounded-control border border-danger/40 px-3 py-1.5 text-sm"
           >
             <span className="truncate">{b}</span>
-            <button
-              type="button"
-              aria-label={t('scrum.remove', { title: b })}
-              className="shrink-0 text-muted hover:text-danger"
+            <IconButton
+              size="sm"
+              label={t('scrum.remove', { title: b })}
+              className="hover:text-danger"
               onClick={() => onChange(items.filter((_, j) => j !== i))}
             >
               ×
-            </button>
+            </IconButton>
           </li>
         ))}
       </ul>
@@ -366,7 +367,7 @@ function AddLine({ label, onAdd }: { label: string; onAdd: (text: string) => voi
     setText('');
   };
   return (
-    <input
+    <TextInput
       value={text}
       maxLength={200}
       placeholder={label}
@@ -379,7 +380,7 @@ function AddLine({ label, onAdd }: { label: string; onAdd: (text: string) => voi
         }
       }}
       onBlur={add}
-      className="rounded-control border border-dashed border-line bg-surface px-3 py-1.5 text-sm"
+      className="border-dashed"
     />
   );
 }
@@ -466,18 +467,18 @@ function TeamOverview({
       <div className="flex items-center justify-between gap-2">
         <h2 className="font-bold">{t('scrum.team')}</h2>
         {teams.length > 1 && (
-          <select
+          <Select
+            size="sm"
             value={teamId}
             aria-label={t('scrum.team')}
             onChange={(e) => onTeam(e.target.value)}
-            className="rounded-control border border-line bg-surface px-2 py-1 text-sm"
           >
             {teams.map((x) => (
               <option key={x.id} value={x.id}>
                 {x.name}
               </option>
             ))}
-          </select>
+          </Select>
         )}
       </div>
       <p className="text-xs text-muted">
@@ -489,9 +490,8 @@ function TeamOverview({
       <ul className="flex flex-col divide-y divide-line">
         {rows.map(({ member, status, report }) => (
           <li key={member.id} className="py-2">
-            <button
-              type="button"
-              className="flex w-full items-center justify-between gap-2 text-left text-sm"
+            <Pressable
+              className="flex w-full items-center justify-between gap-2 rounded-sm text-sm disabled:opacity-100"
               aria-expanded={open === member.id}
               disabled={!report}
               onClick={() => setOpen(open === member.id ? null : member.id)}
@@ -509,7 +509,7 @@ function TeamOverview({
                   ? t('scrum.counts', { done: report.done.length, today: report.today.length })
                   : t(`scrum.status.${status}` as MessageKey)}
               </span>
-            </button>
+            </Pressable>
             {report && report.blockers.length > 0 && (
               <p className="mt-1 flex items-start gap-1 pl-6 text-xs text-danger">
                 <span aria-hidden>⚠</span>

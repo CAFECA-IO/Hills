@@ -31,7 +31,20 @@ import {
 import { useLoad, useMediaQuery } from './hooks';
 import { SaveToKb } from './kb';
 import { formatTime, t } from './i18n';
-import { Button, ConfirmButton, ErrorText, Field, useAction } from './ui';
+import {
+  Badge,
+  Button,
+  Checkbox,
+  ConfirmButton,
+  EmptyState,
+  ErrorText,
+  Field,
+  LinkButton,
+  ListButton,
+  Radio,
+  TextArea,
+  useAction,
+} from './ui';
 
 interface Props {
   members: MemberView[];
@@ -71,14 +84,13 @@ export function Chat({ members, tasks, teams, initial = null }: Props) {
       c.kind === 'dm' ? members.find((m) => m.id !== me && c.members.includes(m.id)) : undefined;
     return (
       <li key={c.id}>
-        <button
-          type="button"
+        <ListButton
           onClick={() => {
             setCreating(false);
             setCurrent(c.id);
           }}
-          aria-current={c.id === current ? 'true' : undefined}
-          className={`flex w-full items-center justify-between gap-2 rounded-control px-3 py-2 text-left text-sm ${c.id === current ? 'bg-primary-soft font-semibold text-primary' : 'hover:bg-bg'}`}
+          selected={c.id === current}
+          className="justify-between"
         >
           <span className="flex min-w-0 items-center gap-2">
             {other && (
@@ -94,14 +106,11 @@ export function Chat({ members, tasks, teams, initial = null }: Props) {
             <span className="truncate">{convTitle(c, me, nameOf)}</span>
           </span>
           {c.unread > 0 && (
-            <span
-              className="rounded-full bg-primary px-2 text-xs text-on-primary"
-              aria-label={t('chat.unread', { count: c.unread })}
-            >
+            <Badge tone="solid" label={t('chat.unread', { count: c.unread })}>
               {c.unread}
-            </span>
+            </Badge>
           )}
-        </button>
+        </ListButton>
       </li>
     );
   };
@@ -123,7 +132,7 @@ export function Chat({ members, tasks, teams, initial = null }: Props) {
         <aside className="scroll-panel flex w-60 shrink-0 flex-col gap-3">
           <Button onClick={() => setCreating(true)}>{t('chat.new')}</Button>
           <ErrorText message={convs.error} />
-          {list.length === 0 && <p className="text-sm text-muted">{t('chat.empty')}</p>}
+          {list.length === 0 && <EmptyState>{t('chat.empty')}</EmptyState>}
           {groups.length > 0 && (
             <section>
               <h2 className="px-3 text-xs font-medium text-muted">{t('chat.groups')}</h2>
@@ -213,18 +222,25 @@ function NewConversation({
       </div>
       {group && <Field label={t('chat.new.groupName')} value={name} onChange={setName} />}
       <fieldset className="flex flex-col gap-1">
-        <legend className="mb-1 text-sm font-medium">{t('chat.new.pick')}</legend>
-        {members.map((m) => (
-          <label key={m.id} className="flex items-center gap-2 text-sm">
-            <input
-              type={group ? 'checkbox' : 'radio'}
-              name="conv-member"
+        <legend className="mb-1 text-xs font-medium text-muted">{t('chat.new.pick')}</legend>
+        {members.map((m) =>
+          group ? (
+            <Checkbox
+              key={m.id}
+              label={m.name}
               checked={picked.includes(m.id)}
               onChange={() => toggle(m.id)}
             />
-            {m.name}
-          </label>
-        ))}
+          ) : (
+            <Radio
+              key={m.id}
+              name="conv-member"
+              label={m.name}
+              checked={picked.includes(m.id)}
+              onChange={() => toggle(m.id)}
+            />
+          ),
+        )}
       </fieldset>
       {hint && (
         <p role="alert" className="text-sm text-danger">
@@ -442,14 +458,14 @@ function MessageItem({
       {attachments.map((a, i) => (
         <div key={i} className="flex flex-col items-start gap-1">
           <AttachmentCard a={a} author={author} createdAt={m.createdAt} />
-          <button
-            type="button"
-            className="text-xs text-muted hover:text-primary"
+          <LinkButton
+            tone="muted"
+            className="text-xs"
             aria-expanded={savingFile === i}
             onClick={() => setSavingFile(savingFile === i ? null : i)}
           >
             {t('camp.action.toKb')}
-          </button>
+          </LinkButton>
           {savingFile === i && (
             <SaveToKb
               conv={m.conv}
@@ -554,16 +570,17 @@ function Composer({
         >
           {options.map((c, i) => (
             <li key={c.id} role="option" aria-selected={i === hi}>
-              <button
-                type="button"
-                className={`w-full px-3 py-1 text-left text-sm ${i === hi ? 'bg-bg text-primary' : ''}`}
+              <ListButton
+                tabIndex={-1}
+                selected={i === hi}
+                className="rounded-none py-1"
                 onMouseDown={(e) => {
                   e.preventDefault();
                   choose(c);
                 }}
               >
                 {c.name}
-              </button>
+              </ListButton>
             </li>
           ))}
         </ul>
@@ -571,11 +588,11 @@ function Composer({
       <ErrorText message={error} />
       <div className="flex items-end gap-2">
         <AttachMenu conv={conv} />
-        <textarea
+        <TextArea
           ref={area}
           aria-label={t('chat.placeholder')}
           placeholder={t('chat.placeholder')}
-          className="min-h-12 flex-1 resize-y rounded-control border border-line bg-surface px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-primary"
+          className="min-h-12 flex-1 resize-y"
           value={text}
           rows={2}
           onChange={(e) => {
@@ -640,18 +657,14 @@ function MembersPanel({
           <fieldset className="flex flex-col gap-1">
             <legend className="mb-1 font-medium">{t('chat.panel.add')}</legend>
             {others.map((m) => (
-              <label key={m.id} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={adding.includes(m.id)}
-                  onChange={() =>
-                    setAdding((a) =>
-                      a.includes(m.id) ? a.filter((x) => x !== m.id) : [...a, m.id],
-                    )
-                  }
-                />
-                {m.name}
-              </label>
+              <Checkbox
+                key={m.id}
+                label={m.name}
+                checked={adding.includes(m.id)}
+                onChange={() =>
+                  setAdding((a) => (a.includes(m.id) ? a.filter((x) => x !== m.id) : [...a, m.id]))
+                }
+              />
             ))}
             <Button
               className="mt-2"

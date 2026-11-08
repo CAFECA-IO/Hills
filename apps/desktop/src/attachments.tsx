@@ -1,5 +1,5 @@
 /** 檔案分享的畫面（ui-spec「檔案分享」，D40 視覺語言）：附件選單、資料夾摘要、上傳佇列、附件卡、下載。 */
-import { useState, useSyncExternalStore } from 'react';
+import { useRef, useState, useSyncExternalStore } from 'react';
 import { api, errorMessage, type FolderPick, type MemberView } from './api';
 import { formatTime, t, type MessageKey } from './i18n';
 import {
@@ -20,7 +20,17 @@ import {
   type DownloadResult,
   type UploadJob,
 } from './share';
-import { Button, ErrorText, useAction } from './ui';
+import {
+  Button,
+  Checkbox,
+  ErrorText,
+  IconButton,
+  Menu,
+  MenuItem,
+  Popover,
+  ProgressBar,
+  useAction,
+} from './ui';
 
 const v = (name: string) => `var(--hills-${name})`;
 
@@ -55,28 +65,11 @@ function FileIcon({ folder = false }: { folder?: boolean }) {
   );
 }
 
-function ProgressBar({ value, label }: { value: number; label: string }) {
-  return (
-    <div
-      className="h-2.5 overflow-hidden rounded-full bg-line"
-      role="progressbar"
-      aria-label={label}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={Math.round(value * 100)}
-    >
-      <div
-        className="h-full rounded-full bg-primary transition-[width] duration-(--hills-motion)"
-        style={{ width: `${Math.round(value * 100)}%` }}
-      />
-    </div>
-  );
-}
-
 // ── 附件選單與資料夾摘要 ─────────────────────────────────────
 
 export function AttachMenu({ conv }: { conv: string }) {
   const [open, setOpen] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null);
   const [folder, setFolder] = useState<FolderPick | null>(null);
   const { busy, error, run, setError } = useAction();
   const pickFiles = async () => {
@@ -96,10 +89,11 @@ export function AttachMenu({ conv }: { conv: string }) {
   };
   return (
     <div className="relative">
-      <Button
+      <IconButton
+        ref={btn}
         variant="secondary"
-        className="px-3"
-        aria-label={t('files.attach')}
+        label={t('files.attach')}
+        aria-haspopup="menu"
         aria-expanded={open}
         disabled={busy}
         onClick={() => setOpen((o) => !o)}
@@ -113,33 +107,17 @@ export function AttachMenu({ conv }: { conv: string }) {
             strokeLinecap="round"
           />
         </svg>
-      </Button>
+      </IconButton>
       {open && (
-        <ul
-          role="menu"
-          className="absolute bottom-full left-0 z-10 mb-2 w-44 rounded-control bg-surface py-1 text-sm shadow-lg"
+        <Menu
+          label={t('files.attach')}
+          onClose={() => setOpen(false)}
+          anchorRef={btn}
+          className="absolute bottom-full left-0 mb-2"
         >
-          <li role="none">
-            <button
-              type="button"
-              role="menuitem"
-              className="w-full px-3 py-2 text-left hover:bg-bg"
-              onClick={() => void pickFiles()}
-            >
-              {t('files.pickFiles')}
-            </button>
-          </li>
-          <li role="none">
-            <button
-              type="button"
-              role="menuitem"
-              className="w-full px-3 py-2 text-left hover:bg-bg"
-              onClick={() => void pickFolder()}
-            >
-              {t('files.pickFolder')}
-            </button>
-          </li>
-        </ul>
+          <MenuItem onSelect={() => void pickFiles()}>{t('files.pickFiles')}</MenuItem>
+          <MenuItem onSelect={() => void pickFolder()}>{t('files.pickFolder')}</MenuItem>
+        </Menu>
       )}
       {folder && (
         <FolderSummary
@@ -180,10 +158,11 @@ function FolderSummary({
   onCancel: () => void;
 }) {
   return (
-    <div
-      role="dialog"
-      aria-label={t('files.folder.title', { name: pick.root })}
-      className="absolute bottom-full left-0 z-20 mb-2 flex w-96 flex-col gap-3 rounded-card bg-surface p-4 shadow-lg"
+    <Popover
+      label={t('files.folder.title', { name: pick.root })}
+      onClose={onCancel}
+      closeOnOutside={false}
+      className="absolute bottom-full left-0 mb-2 flex w-96 flex-col gap-3 p-4"
     >
       <div className="flex items-center gap-3">
         <FileIcon folder />
@@ -219,7 +198,7 @@ function FolderSummary({
           {t('common.cancel')}
         </Button>
       </div>
-    </div>
+    </Popover>
   );
 }
 
@@ -282,19 +261,19 @@ export function UploadQueue({ conv }: { conv: string }) {
             <ProgressBar value={pct} label={t('files.progress', { name: j.title })} />
             <div className="flex gap-2">
               {j.status === 'failed' ? (
-                <Button variant="soft" className="px-3 py-1" onClick={() => retry(j.id)}>
+                <Button variant="soft" size="sm" onClick={() => retry(j.id)}>
                   {t('common.retry')}
                 </Button>
               ) : j.status === 'paused' ? (
-                <Button variant="soft" className="px-3 py-1" onClick={() => resume(j.id)}>
+                <Button variant="soft" size="sm" onClick={() => resume(j.id)}>
                   {t('files.resume')}
                 </Button>
               ) : (
-                <Button variant="secondary" className="px-3 py-1" onClick={() => pause(j.id, true)}>
+                <Button variant="secondary" size="sm" onClick={() => pause(j.id, true)}>
                   {t('files.pause')}
                 </Button>
               )}
-              <Button variant="secondary" className="px-3 py-1" onClick={() => cancel(j.id)}>
+              <Button variant="secondary" size="sm" onClick={() => cancel(j.id)}>
                 {t('common.cancel')}
               </Button>
             </div>
@@ -322,10 +301,10 @@ export function PendingUploads({
       className="flex flex-wrap items-center gap-3 rounded-card bg-primary-soft px-4 py-3 text-sm"
     >
       <span className="font-semibold text-primary">{t('files.pending', { count })}</span>
-      <Button variant="primary" className="px-3 py-1" onClick={onResume}>
+      <Button variant="primary" size="sm" onClick={onResume}>
         {t('files.resume')}
       </Button>
-      <Button variant="secondary" className="px-3 py-1" onClick={onDiscard}>
+      <Button variant="secondary" size="sm" onClick={onDiscard}>
         {t('files.discard')}
       </Button>
     </div>
@@ -485,15 +464,15 @@ export function AttachmentCard({
         <div className="flex flex-wrap gap-2">
           {folder ? (
             <>
-              <Button variant="soft" className="px-3 py-1" onClick={() => void downloadFolder()}>
+              <Button variant="soft" size="sm" onClick={() => void downloadFolder()}>
                 {t('files.downloadAll')}
               </Button>
-              <Button variant="secondary" className="px-3 py-1" onClick={() => void chooseFiles()}>
+              <Button variant="secondary" size="sm" onClick={() => void chooseFiles()}>
                 {t('files.chooseFiles')}
               </Button>
             </>
           ) : (
-            <Button variant="soft" className="px-3 py-1" onClick={() => void downloadSingle()}>
+            <Button variant="soft" size="sm" onClick={() => void downloadSingle()}>
               {state.phase === 'error' ? t('common.retry') : t('files.download')}
             </Button>
           )}
@@ -533,7 +512,7 @@ function DoneSummary({ state }: { state: Extract<DownloadState, { phase: 'done' 
         {!state.folder && last && (
           <Button
             variant="secondary"
-            className="px-3 py-1"
+            size="sm"
             onClick={() =>
               void attempt(() => api.showDownload(state.token, last.path, last.name, true))
             }
@@ -543,7 +522,7 @@ function DoneSummary({ state }: { state: Extract<DownloadState, { phase: 'done' 
         )}
         <Button
           variant="secondary"
-          className="px-3 py-1"
+          size="sm"
           onClick={() =>
             void attempt(() =>
               state.folder
@@ -579,9 +558,7 @@ function ChooseFiles({
           return (
             <li key={e.path} style={{ paddingLeft: `${depth * 16}px` }}>
               <label className="flex items-center gap-2 py-0.5">
-                <input
-                  type="checkbox"
-                  className="size-4 accent-primary"
+                <Checkbox
                   checked={picked.has(e.path)}
                   onChange={() =>
                     setPicked((s) => {

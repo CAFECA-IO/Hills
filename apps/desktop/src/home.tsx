@@ -9,7 +9,7 @@ import {
   type Task,
 } from './api';
 import {
-  Badge,
+  SceneBadge,
   Cloud,
   Figure,
   House,
@@ -37,7 +37,18 @@ import {
   type Checkpoint,
   type Hill,
 } from './summit';
-import { Button, Card, ErrorText, useAction } from './ui';
+import {
+  Button,
+  Card,
+  EmptyState,
+  ErrorText,
+  IconButton,
+  ListButton,
+  Popover,
+  SectionLabel,
+  SegmentedControl,
+  useAction,
+} from './ui';
 
 const v = (name: string) => `var(--hills-${name})`;
 
@@ -99,32 +110,26 @@ export function Home({ overview, tasks, focus, convs, onOpenConv, onOpenTasks, n
           <>
             <Button
               variant="secondary"
-              className="h-9 py-0"
               aria-expanded={choosing}
               onClick={() => setChoosing((c) => !c)}
             >
               {t('home.changeMountain')}
             </Button>
-            <div role="tablist" className="inline-flex rounded-full bg-surface p-1 shadow-sm">
-              {(['scene', 'list'] as const).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  role="tab"
-                  aria-selected={view === k}
-                  onClick={() => setView(k)}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${view === k ? 'bg-primary text-on-primary' : ''}`}
-                >
-                  {t(k === 'scene' ? 'home.view.scene' : 'home.view.list')}
-                </button>
-              ))}
-            </div>
+            <SegmentedControl
+              label={t('home.title')}
+              value={view}
+              onChange={setView}
+              options={(['scene', 'list'] as const).map((k) => ({
+                value: k,
+                label: t(k === 'scene' ? 'home.view.scene' : 'home.view.list'),
+              }))}
+            />
           </>
         }
       />
       <section
         ref={setBox}
-        className="relative min-h-0 overflow-hidden rounded-[20px] bg-sky-top shadow-sm"
+        className="relative min-h-0 overflow-hidden rounded-card bg-sky-top shadow-sm"
       >
         {view === 'scene' ? (
           <>
@@ -605,27 +610,22 @@ function MemberCard({
   const left = `${Math.min(70, Math.max(2, (picked.x / sceneW) * 100 - 14))}%`;
   const top = `${Math.min(64, Math.max(2, ((picked.y - SCENE.h + sceneH) / sceneH) * 100 - 30))}%`;
   return (
-    <div
-      role="dialog"
-      aria-label={m.name}
-      className="absolute z-10 flex w-64 flex-col gap-2 rounded-card bg-surface p-4 shadow-lg"
+    <Popover
+      label={m.name}
+      onClose={onClose}
+      closeOnOutside={false}
+      autoFocus={false}
+      className="absolute flex w-64 flex-col gap-2 p-4"
       style={{ left, top }}
-      onKeyDown={(e) => e.key === 'Escape' && onClose()}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex flex-col">
           <span className="font-bold">{m.isMe ? t('home.you') : m.name}</span>
           <StatusBadge state={m.presence} />
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label={t('common.close')}
-          className="rounded-full px-2 text-muted hover:text-fg"
-          autoFocus
-        >
+        <IconButton size="sm" label={t('common.close')} onClick={onClose} autoFocus>
           ×
-        </button>
+        </IconButton>
       </div>
       <dl className="grid grid-cols-[4rem_1fr] gap-x-2 gap-y-1 text-sm">
         <dt className="text-muted">{t('card.place')}</dt>
@@ -659,7 +659,7 @@ function MemberCard({
         </>
       )}
       <ErrorText message={error} />
-    </div>
+    </Popover>
   );
 }
 
@@ -749,10 +749,6 @@ function SceneList({
 
 // ── 右側摘要圖卡 ────────────────────────────────────────────
 
-function Eyebrow({ children, tone }: { children: string; tone: string }) {
-  return <p className={`text-xs font-bold tracking-wider ${tone}`}>{children}</p>;
-}
-
 function Ring({ fraction, label, title }: { fraction: number; label: string; title: string }) {
   const r = 30;
   const c = 2 * Math.PI * r;
@@ -801,8 +797,8 @@ function NextStepCard({
   if (!task) {
     return (
       <Card className="flex flex-col gap-3">
-        <Eyebrow tone="text-primary">{t('home.next')}</Eyebrow>
-        <p className="text-sm text-muted">{t('home.empty.desc')}</p>
+        <SectionLabel tone="primary">{t('home.next')}</SectionLabel>
+        <EmptyState>{t('home.empty.desc')}</EmptyState>
         <Button onClick={onOpenTasks}>{t('home.empty.action')}</Button>
       </Card>
     );
@@ -813,9 +809,9 @@ function NextStepCard({
   const left = task.dueAt ? formatRemaining(task.dueAt - now) : null;
   return (
     <Card className="flex flex-col gap-3">
-      <Eyebrow tone="text-primary">
+      <SectionLabel tone="primary">
         {step ? t('home.next.step', { n: idx + 1, total: task.steps.length }) : t('home.next')}
-      </Eyebrow>
+      </SectionLabel>
       <div className="flex items-center gap-3">
         {left && task.dueAt !== null && (
           <Ring
@@ -869,10 +865,10 @@ function UnreadCard({
       : (overview.members.find((m) => m.id !== me && c.members.includes(m.id))?.name ?? '');
   return (
     <Card className="flex flex-col gap-2">
-      <Eyebrow tone="text-warning">
+      <SectionLabel tone="warning">
         {t('home.waiting', { count: convs.filter((c) => c.unread > 0).length })}
-      </Eyebrow>
-      {list.length === 0 && <p className="text-sm text-muted">{t('home.waiting.empty')}</p>}
+      </SectionLabel>
+      {list.length === 0 && <EmptyState>{t('home.waiting.empty')}</EmptyState>}
       {list.map((c) => (
         <div
           key={c.id}
@@ -914,9 +910,9 @@ function BackSoonCard({
   const X = (ms: number) => 10 + ((ms - now) / (horizon - now)) * (W - 20);
   return (
     <Card className="flex flex-col gap-2">
-      <Eyebrow tone="text-st-online-text">{t('home.backSoon')}</Eyebrow>
+      <SectionLabel tone="success">{t('home.backSoon')}</SectionLabel>
       {list.length === 0 ? (
-        <p className="text-sm text-muted">{t('home.backSoon.empty')}</p>
+        <EmptyState>{t('home.backSoon.empty')}</EmptyState>
       ) : (
         <>
           <svg viewBox={`0 0 ${W} 40`} className="w-full" aria-hidden>
@@ -928,7 +924,7 @@ function BackSoonCard({
             />
             <circle cx={10} cy={20} r={6} fill={v('primary')} />
             {list.map((m) => (
-              <Badge
+              <SceneBadge
                 key={m.id}
                 x={X(m.until ?? now)}
                 y={20}
@@ -973,21 +969,20 @@ function ChooseMountain({
   return (
     <Card className="flex flex-col gap-2">
       <h3 className="font-bold">{t('home.choose.title')}</h3>
-      {tasks.length === 0 && <p className="text-sm text-muted">{t('home.choose.empty')}</p>}
+      {tasks.length === 0 && <EmptyState>{t('home.choose.empty')}</EmptyState>}
       <ul className="flex flex-col gap-1">
         {tasks.map((x) => (
           <li key={`${x.team}/${x.id}`}>
-            <button
-              type="button"
+            <ListButton
               onClick={() => void choose(x.team, x.id)}
-              aria-pressed={current?.id === x.id}
-              className={`flex w-full justify-between gap-2 rounded-control px-3 py-2 text-left text-sm hover:bg-bg ${current?.id === x.id ? 'bg-primary-soft font-semibold text-primary' : ''}`}
+              selected={current?.id === x.id}
+              className="justify-between"
             >
               <span className="truncate">{x.title}</span>
               <span className="shrink-0 text-muted">
                 {x.dueAt ? formatClock(x.dueAt) : t('tasks.noDue')}
               </span>
-            </button>
+            </ListButton>
           </li>
         ))}
       </ul>

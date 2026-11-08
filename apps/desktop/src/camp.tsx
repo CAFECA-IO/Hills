@@ -1,5 +1,5 @@
 /** 對話「焦點營地」（ui-spec「聊天」焦點營地，D43；technical-design §14.2 v0.14）。 */
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode, type RefObject } from 'react';
 import {
   api,
   type ConvRow,
@@ -14,7 +14,19 @@ import { StatusBadge } from './figures';
 import { SaveToKb } from './kb';
 import { formatClock, formatDate, formatTime, t, type MessageKey } from './i18n';
 import { parseAttachments, type Attachment } from './share';
-import { Button, ErrorText, useAction } from './ui';
+import {
+  Button,
+  Checkbox,
+  Chip,
+  EmptyState,
+  ErrorText,
+  ListButton,
+  Popover,
+  Select,
+  Tabs,
+  TextInput,
+  useAction,
+} from './ui';
 
 const MAX_STEPS_SHOWN = 6;
 
@@ -37,6 +49,7 @@ export function ConvMountain({
   nameOf: NameOf;
 }) {
   const [picking, setPicking] = useState(false);
+  const pickBtn = useRef<HTMLButtonElement>(null);
   const { busy, error, attempt } = useAction();
   const unlink = () => void attempt(() => api.setConvTask(conv.id, null));
   return (
@@ -62,20 +75,16 @@ export function ConvMountain({
         )}
         <div className="flex shrink-0 items-center gap-2">
           <Button
+            ref={pickBtn}
             variant="secondary"
-            className="h-8 px-3 py-0 text-xs"
+            size="sm"
             aria-expanded={picking}
             onClick={() => setPicking((p) => !p)}
           >
             {task || missing ? t('camp.change') : t('camp.pick')}
           </Button>
           {(task || missing) && (
-            <Button
-              variant="secondary"
-              className="h-8 px-3 py-0 text-xs"
-              disabled={busy}
-              onClick={unlink}
-            >
+            <Button variant="secondary" size="sm" disabled={busy} onClick={unlink}>
               {t('camp.unlink')}
             </Button>
           )}
@@ -87,6 +96,7 @@ export function ConvMountain({
           tasks={tasks}
           teams={teams}
           current={task}
+          anchorRef={pickBtn}
           onClose={() => setPicking(false)}
           onPick={(x) =>
             void attempt(() => api.setConvTask(conv.id, { team: x.team, id: x.id })).then(
@@ -143,7 +153,7 @@ function StepStrip({ task, nameOf }: { task: Task; nameOf: NameOf }) {
                 className={`h-0.5 flex-1 ${i === 0 && before === 0 ? 'opacity-0' : ''} ${s.done || state === 'current' ? 'bg-primary' : 'border-t-2 border-dashed border-line'}`}
               />
               <span
-                className={`flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                className={`flex size-6 shrink-0 items-center justify-center rounded-full text-2xs font-bold ${
                   state === 'done'
                     ? 'bg-st-online text-on-primary'
                     : state === 'current'
@@ -159,7 +169,7 @@ function StepStrip({ task, nameOf }: { task: Task; nameOf: NameOf }) {
               />
             </span>
             <span
-              className={`max-w-full truncate text-[11px] ${state === 'current' ? 'font-bold text-primary' : 'text-muted'}`}
+              className={`max-w-full truncate text-2xs ${state === 'current' ? 'font-bold text-primary' : 'text-muted'}`}
               title={`${s.title} · ${s.assignee ? nameOf(s.assignee) : t('home.unassigned')}`}
             >
               {s.title}
@@ -184,46 +194,47 @@ function TaskPicker({
   tasks,
   teams,
   current,
+  anchorRef,
   onPick,
   onClose,
 }: {
   tasks: Task[];
   teams: TeamView[];
   current: Task | null;
+  anchorRef: RefObject<HTMLElement | null>;
   onPick: (task: Task) => void;
   onClose: () => void;
 }) {
   const open = tasks.filter((x) => x.status !== 'done');
   const teamName = (id: string) => teams.find((x) => x.id === id)?.name ?? '';
   return (
-    <div
-      role="dialog"
-      aria-label={t('camp.pick')}
-      className="scroll-panel absolute top-full right-4 z-20 mt-1 max-h-72 w-80 rounded-card bg-surface p-2 shadow-lg"
-      onKeyDown={(e) => e.key === 'Escape' && onClose()}
+    <Popover
+      label={t('camp.pick')}
+      onClose={onClose}
+      anchorRef={anchorRef}
+      className="scroll-panel absolute top-full right-4 mt-1 max-h-72 w-80 p-2"
     >
-      {open.length === 0 && <p className="p-2 text-sm text-muted">{t('camp.pick.empty')}</p>}
+      {open.length === 0 && <EmptyState className="p-2">{t('camp.pick.empty')}</EmptyState>}
       <ul className="flex flex-col">
         {open.map((x) => (
           <li key={`${x.team}:${x.id}`}>
-            <button
-              type="button"
+            <ListButton
               onClick={() => onPick(x)}
-              aria-current={current?.id === x.id ? 'true' : undefined}
-              className={`flex w-full items-center justify-between gap-2 rounded-control px-3 py-2 text-left text-sm hover:bg-bg ${current?.id === x.id ? 'font-bold text-primary' : ''}`}
+              selected={current?.id === x.id}
+              className="justify-between"
             >
               <span className="truncate">{x.title}</span>
               <span className="shrink-0 text-xs text-muted">{teamName(x.team)}</span>
-            </button>
+            </ListButton>
           </li>
         ))}
       </ul>
       <div className="mt-1 flex justify-end">
-        <Button variant="secondary" className="h-8 px-3 py-0 text-xs" onClick={onClose}>
+        <Button variant="secondary" size="sm" onClick={onClose}>
           {t('common.close')}
         </Button>
       </div>
-    </div>
+    </Popover>
   );
 }
 
@@ -297,20 +308,16 @@ export function MessageActions({
     <div className="flex flex-col items-end gap-1">
       <div className="flex gap-1">
         {step && task && (
-          <button
-            type="button"
+          <Chip
             disabled={busy}
-            className="rounded-full border border-line bg-surface px-2 py-0.5 text-xs hover:text-primary"
             onClick={() => void attempt(() => api.setStepDone(task.team, task.id, step.id, true))}
             title={step.title}
           >
             {t('camp.action.report')}
-          </button>
+          </Chip>
         )}
         {myTeams.length > 0 && (
-          <button
-            type="button"
-            className="rounded-full border border-line bg-surface px-2 py-0.5 text-xs hover:text-primary"
+          <Chip
             aria-expanded={making}
             onClick={() => {
               setSaving(false);
@@ -318,12 +325,10 @@ export function MessageActions({
             }}
           >
             {t('camp.action.toTask')}
-          </button>
+          </Chip>
         )}
         {m.body.trim() && (
-          <button
-            type="button"
-            className="rounded-full border border-line bg-surface px-2 py-0.5 text-xs hover:text-primary"
+          <Chip
             aria-expanded={saving}
             onClick={() => {
               setMaking(false);
@@ -331,7 +336,7 @@ export function MessageActions({
             }}
           >
             {t('camp.action.toKb')}
-          </button>
+          </Chip>
         )}
       </div>
       {saving && (
@@ -394,40 +399,37 @@ function MakeTaskForm({
     >
       <label className="flex flex-col gap-1">
         <span className="text-xs text-muted">{t('camp.toTask.title')}</span>
-        <input
+        <TextInput
+          size="sm"
           autoFocus
           value={title}
           maxLength={200}
           onChange={(e) => setTitle(e.target.value)}
-          className="rounded-control border border-line bg-surface px-2 py-1"
         />
       </label>
       {teams.length > 1 && (
         <label className="flex flex-col gap-1">
           <span className="text-xs text-muted">{t('camp.toTask.team')}</span>
-          <select
-            value={team}
-            onChange={(e) => setTeam(e.target.value)}
-            className="rounded-control border border-line bg-surface px-2 py-1"
-          >
+          <Select size="sm" value={team} onChange={(e) => setTeam(e.target.value)}>
             {teams.map((x) => (
               <option key={x.id} value={x.id}>
                 {x.name}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
       )}
-      <label className="flex items-center gap-2">
-        <input type="checkbox" checked={link} onChange={(e) => setLink(e.target.checked)} />
-        {t('camp.toTask.link')}
-      </label>
+      <Checkbox
+        label={t('camp.toTask.link')}
+        checked={link}
+        onChange={(e) => setLink(e.target.checked)}
+      />
       <ErrorText message={error} />
       <div className="flex justify-end gap-2">
-        <Button type="button" variant="secondary" className="h-8 px-3 py-0" onClick={onDone}>
+        <Button type="button" variant="secondary" size="sm" onClick={onDone}>
           {t('common.cancel')}
         </Button>
-        <Button type="submit" className="h-8 px-3 py-0" disabled={busy || !title.trim()}>
+        <Button type="submit" size="sm" disabled={busy || !title.trim()}>
           {t('camp.toTask.create')}
         </Button>
       </div>
@@ -479,21 +481,17 @@ export function ConvDrawer({
     conv.kind === 'dm' ? members.find((x) => x.id !== me && conv.members.includes(x.id)) : null;
   return (
     <aside className="flex w-72 shrink-0 flex-col border-l border-line wide:w-80">
-      <div role="tablist" className="flex border-b border-line px-2">
-        {(['members', 'files', 'task'] as const).map((k) => (
-          <button
-            key={k}
-            type="button"
-            role="tab"
-            aria-selected={tab === k}
-            onClick={() => setTab(k)}
-            className={`flex-1 px-2 py-2 text-sm ${tab === k ? 'border-b-2 border-primary font-bold text-primary' : 'text-muted hover:text-fg'}`}
-          >
-            {t(`camp.tab.${k}` as MessageKey)}
-            {k === 'files' && files.length > 0 && ` · ${files.length}`}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        label={t('camp.drawer')}
+        fill
+        className="px-2"
+        value={tab}
+        onChange={setTab}
+        options={(['members', 'files', 'task'] as const).map((k) => ({
+          value: k,
+          label: `${t(`camp.tab.${k}` as MessageKey)}${k === 'files' && files.length > 0 ? ` · ${files.length}` : ''}`,
+        }))}
+      />
       <div className="scroll-panel min-h-0 flex-1">
         {tab === 'members' &&
           (other ? (
@@ -512,7 +510,7 @@ export function ConvDrawer({
           ))}
         {tab === 'files' && (
           <div className="flex flex-col gap-2 p-3">
-            {files.length === 0 && <p className="text-sm text-muted">{t('camp.files.empty')}</p>}
+            {files.length === 0 && <EmptyState>{t('camp.files.empty')}</EmptyState>}
             {files.map((f) => (
               <AttachmentCard
                 key={f.key}
@@ -542,9 +540,7 @@ function TaskTab({
 }) {
   const { busy, error, attempt } = useAction();
   if (!task) {
-    return (
-      <p className="p-4 text-sm text-muted">{missing ? t('camp.missing') : t('camp.empty')}</p>
-    );
+    return <EmptyState className="p-4">{missing ? t('camp.missing') : t('camp.empty')}</EmptyState>;
   }
   return (
     <div className="flex flex-col gap-3 p-4 text-sm">
@@ -560,8 +556,7 @@ function TaskTab({
           const mine = s.assignee === me;
           return (
             <li key={s.id} className="flex items-start gap-2">
-              <input
-                type="checkbox"
+              <Checkbox
                 className="mt-1"
                 checked={s.done}
                 disabled={!mine || busy}

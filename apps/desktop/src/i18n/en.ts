@@ -172,6 +172,7 @@ export const en: Record<MessageKey, string> = {
   'camp.toTask.link': 'Link to this conversation',
   'camp.toTask.create': 'Create task',
   'camp.toTask.untitled': 'New task',
+  'camp.drawer': 'Conversation details',
   'camp.drawer.show': 'Show details',
   'camp.drawer.hide': 'Hide details',
   'camp.tab.members': 'Members',

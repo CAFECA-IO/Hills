@@ -1,5 +1,5 @@
 /** 任務頁（ui-spec「任務」M1 第一批範圍，D40）：清單、新增 / 編輯對話框、勾選步驟。 */
-import { useId, useState } from 'react';
+import { useState } from 'react';
 import {
   api,
   type FocusView,
@@ -9,7 +9,22 @@ import {
   type TeamView,
 } from './api';
 import { formatClock, t } from './i18n';
-import { Button, Card, ConfirmButton, ErrorText, Field, useAction } from './ui';
+import {
+  Badge,
+  Button,
+  Card,
+  Checkbox,
+  ConfirmButton,
+  EmptyState,
+  ErrorText,
+  Field,
+  IconButton,
+  Pressable,
+  ProgressBar,
+  Select,
+  TextInput,
+  useAction,
+} from './ui';
 
 interface Props {
   tasks: Task[];
@@ -46,7 +61,7 @@ export function Tasks({ tasks, teams, members, focus, error }: Props) {
       )}
       {tasks.length === 0 && !editing && (
         <Card className="flex flex-col items-start gap-2">
-          <p className="text-sm text-muted">{t('tasks.empty')}</p>
+          <EmptyState>{t('tasks.empty')}</EmptyState>
         </Card>
       )}
       {myTeams.map((tm) => {
@@ -90,42 +105,31 @@ function TaskRow({
   return (
     <li className="flex flex-col gap-2 py-3">
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
+        <Pressable
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
-          className={`min-w-0 flex-1 truncate text-left font-semibold ${task.status === 'done' ? 'text-muted line-through' : ''}`}
+          className={`min-w-0 flex-1 truncate rounded-sm font-semibold ${task.status === 'done' ? 'text-muted line-through' : ''}`}
         >
           {task.title}
-        </button>
-        {isFocus && (
-          <span className="rounded-full bg-primary-soft px-2 py-0.5 text-xs font-bold text-primary">
-            {t('tasks.focus')}
-          </span>
-        )}
+        </Pressable>
+        {isFocus && <Badge tone="primary">{t('tasks.focus')}</Badge>}
         <span className="text-sm text-muted">{nameOf(task.assignee)}</span>
         <span className="text-sm text-muted">
           {task.dueAt ? formatClock(task.dueAt) : t('tasks.noDue')}
         </span>
         {task.steps.length > 0 && (
           <span className="flex items-center gap-2 text-sm">
-            <span
-              className="h-2 w-16 overflow-hidden rounded-full bg-line"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={task.steps.length}
-              aria-valuenow={done}
-              aria-label={t('tasks.progress', { done, total: task.steps.length })}
-            >
-              <span
-                className="block h-2 rounded-full bg-st-online"
-                style={{ width: `${(done / task.steps.length) * 100}%` }}
-              />
-            </span>
+            <ProgressBar
+              size="sm"
+              className="w-16"
+              barClassName="bg-st-online"
+              value={done / task.steps.length}
+              label={t('tasks.progress', { done, total: task.steps.length })}
+            />
             {done} / {task.steps.length}
           </span>
         )}
-        <Button variant="secondary" className="px-3 py-1" onClick={onEdit}>
+        <Button variant="secondary" size="sm" onClick={onEdit}>
           {t('tasks.edit')}
         </Button>
       </div>
@@ -133,18 +137,18 @@ function TaskRow({
         <ol className="flex flex-col gap-1 pl-2">
           {task.steps.map((s) => (
             <li key={s.id}>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="size-4 accent-primary"
-                  checked={s.done}
-                  onChange={(e) =>
-                    void attempt(() => api.setStepDone(task.team, task.id, s.id, e.target.checked))
-                  }
-                />
-                <span className={s.done ? 'text-muted line-through' : ''}>{s.title}</span>
-                <span className="text-muted">· {nameOf(s.assignee)}</span>
-              </label>
+              <Checkbox
+                checked={s.done}
+                onChange={(e) =>
+                  void attempt(() => api.setStepDone(task.team, task.id, s.id, e.target.checked))
+                }
+                label={
+                  <>
+                    <span className={s.done ? 'text-muted line-through' : ''}>{s.title}</span>
+                    <span className="text-muted"> · {nameOf(s.assignee)}</span>
+                  </>
+                }
+              />
             </li>
           ))}
         </ol>
@@ -181,7 +185,6 @@ function TaskDialog({
       [],
   );
   const { busy, error, attempt } = useAction();
-  const ids = { team: useId(), assignee: useId(), due: useId() };
   const teamMembers = members.filter((m) =>
     teams.find((x) => x.id === team)?.members.includes(m.id),
   );
@@ -208,77 +211,50 @@ function TaskDialog({
     );
     if (ok) onClose();
   };
-  const select = 'rounded-control border border-line bg-surface px-3 py-2 text-sm';
   return (
     <Card className="flex flex-col gap-4">
       <h2 className="text-lg font-bold">{task ? t('tasks.edit.title') : t('tasks.new')}</h2>
       {!task && teams.length > 1 && (
-        <div className="flex flex-col gap-1">
-          <label htmlFor={ids.team} className="text-sm font-medium">
-            {t('tasks.team')}
-          </label>
-          <select
-            id={ids.team}
-            className={select}
-            value={team}
-            onChange={(e) => setTeam(e.target.value)}
-          >
+        <Field label={t('tasks.team')}>
+          <Select value={team} onChange={(e) => setTeam(e.target.value)}>
             {teams.map((x) => (
               <option key={x.id} value={x.id}>
                 {x.name}
               </option>
             ))}
-          </select>
-        </div>
+          </Select>
+        </Field>
       )}
       <Field label={t('tasks.field.title')} value={title} onChange={setTitle} autoFocus />
       <div className="flex flex-wrap gap-4">
-        <div className="flex flex-col gap-1">
-          <label htmlFor={ids.assignee} className="text-sm font-medium">
-            {t('tasks.field.assignee')}
-          </label>
-          <select
-            id={ids.assignee}
-            className={select}
-            value={assignee}
-            onChange={(e) => setAssignee(e.target.value)}
-          >
+        <Field label={t('tasks.field.assignee')}>
+          <Select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
             <option value="">{t('home.unassigned')}</option>
             {teamMembers.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name}
               </option>
             ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label htmlFor={ids.due} className="text-sm font-medium">
-            {t('tasks.field.due')}
-          </label>
-          <input
-            id={ids.due}
-            type="datetime-local"
-            className={select}
-            value={due}
-            onChange={(e) => setDue(e.target.value)}
-          />
-        </div>
+          </Select>
+        </Field>
+        <Field label={t('tasks.field.due')}>
+          <TextInput type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} />
+        </Field>
       </div>
       <fieldset className="flex flex-col gap-2">
-        <legend className="mb-1 text-sm font-medium">{t('tasks.field.steps')}</legend>
-        {steps.length === 0 && <p className="text-sm text-muted">{t('tasks.steps.empty')}</p>}
+        <legend className="mb-1 text-xs font-medium text-muted">{t('tasks.field.steps')}</legend>
+        {steps.length === 0 && <EmptyState>{t('tasks.steps.empty')}</EmptyState>}
         {steps.map((s, i) => (
           <div key={s.id ?? `new-${i}`} className="flex flex-wrap items-center gap-2">
             <span className="w-6 text-right text-sm text-muted">{i + 1}</span>
-            <input
+            <TextInput
               aria-label={t('tasks.step.title', { n: i + 1 })}
-              className={`${select} min-w-48 flex-1`}
+              className="min-w-48 flex-1"
               value={s.title}
               onChange={(e) => setStep(i, { title: e.target.value })}
             />
-            <select
+            <Select
               aria-label={t('tasks.step.assignee', { n: i + 1 })}
-              className={select}
               value={s.assignee ?? ''}
               onChange={(e) => setStep(i, { assignee: e.target.value || null })}
             >
@@ -288,31 +264,20 @@ function TaskDialog({
                   {m.name}
                 </option>
               ))}
-            </select>
-            <Button
-              variant="secondary"
-              className="px-2 py-1"
-              aria-label={t('tasks.step.up')}
-              onClick={() => move(i, -1)}
-            >
+            </Select>
+            <IconButton variant="secondary" label={t('tasks.step.up')} onClick={() => move(i, -1)}>
               ↑
-            </Button>
-            <Button
-              variant="secondary"
-              className="px-2 py-1"
-              aria-label={t('tasks.step.down')}
-              onClick={() => move(i, 1)}
-            >
+            </IconButton>
+            <IconButton variant="secondary" label={t('tasks.step.down')} onClick={() => move(i, 1)}>
               ↓
-            </Button>
-            <Button
+            </IconButton>
+            <IconButton
               variant="secondary"
-              className="px-2 py-1"
-              aria-label={t('tasks.step.remove')}
+              label={t('tasks.step.remove')}
               onClick={() => setSteps((list) => list.filter((_, j) => j !== i))}
             >
               ×
-            </Button>
+            </IconButton>
           </div>
         ))}
         <div>

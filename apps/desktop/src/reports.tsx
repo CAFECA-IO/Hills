@@ -27,7 +27,18 @@ import {
   type ReportLabels,
 } from './reports-utils';
 import { shouldRemind, weekday } from './scrum-utils';
-import { Button, Card, ErrorText, useAction } from './ui';
+import {
+  Button,
+  Card,
+  Checkbox,
+  ErrorText,
+  IconButton,
+  Pressable,
+  SegmentedControl,
+  Select,
+  TextArea,
+  useAction,
+} from './ui';
 
 const SECTIONS: (keyof ReportSections)[] = ['progress', 'okr', 'attendance', 'next'];
 
@@ -76,49 +87,37 @@ export function Reports({ members, teams, tasks, timezone }: Props) {
         subtitle={titleOf(kind, period)}
         actions={
           <>
-            <div role="tablist" className="inline-flex rounded-full bg-surface p-1 shadow-sm">
-              {(['daily', 'weekly'] as const).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  role="tab"
-                  aria-selected={kind === k}
-                  onClick={() => {
-                    setKind(k);
-                    setShift(0);
-                  }}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${kind === k ? 'bg-primary text-on-primary' : ''}`}
-                >
-                  {t(`report.kind.${k}` as MessageKey)}
-                </button>
-              ))}
-            </div>
+            <SegmentedControl
+              label={t('report.page')}
+              value={kind}
+              onChange={(k) => {
+                setKind(k);
+                setShift(0);
+              }}
+              options={(['daily', 'weekly'] as const).map((k) => ({
+                value: k,
+                label: t(`report.kind.${k}` as MessageKey),
+              }))}
+            />
             <div className="flex items-center gap-1">
-              <Button
+              <IconButton
                 variant="secondary"
-                className="h-9 px-3 py-0"
-                aria-label={t('report.prev')}
+                label={t('report.prev')}
                 onClick={() => setShift((s) => s - 1)}
               >
                 ◀
-              </Button>
-              <Button
-                variant="secondary"
-                className="h-9 px-3 py-0"
-                disabled={shift === 0}
-                onClick={() => setShift(0)}
-              >
+              </IconButton>
+              <Button variant="secondary" disabled={shift === 0} onClick={() => setShift(0)}>
                 {t(kind === 'daily' ? 'goals.today' : 'report.thisWeek')}
               </Button>
-              <Button
+              <IconButton
                 variant="secondary"
-                className="h-9 px-3 py-0"
-                aria-label={t('report.next')}
+                label={t('report.next')}
                 disabled={shift >= 0}
                 onClick={() => setShift((s) => Math.min(0, s + 1))}
               >
                 ▶
-              </Button>
+              </IconButton>
             </div>
           </>
         }
@@ -315,12 +314,12 @@ function MyReport({
               </Markdown>
             </div>
           ) : (
-            <textarea
+            <TextArea
               value={form.sections[k]}
               aria-label={t(`report.section.${k}` as MessageKey)}
               rows={k === 'attendance' ? 2 : 5}
               onChange={(e) => set({ sections: { ...form.sections, [k]: e.target.value } })}
-              className="rounded-control border border-line bg-surface px-3 py-2 font-mono text-xs"
+              className="font-mono text-xs"
             />
           )}
         </section>
@@ -328,20 +327,18 @@ function MyReport({
       <fieldset className="flex flex-wrap items-center gap-3 text-sm">
         <legend className="mb-1 text-xs text-muted">{t('report.publishTo')}</legend>
         {myTeams.map((x) => (
-          <label key={x.id} className="flex items-center gap-1.5">
-            <input
-              type="checkbox"
-              checked={form.publishedTo.includes(x.id)}
-              onChange={(e) =>
-                set({
-                  publishedTo: e.target.checked
-                    ? [...form.publishedTo, x.id]
-                    : form.publishedTo.filter((y) => y !== x.id),
-                })
-              }
-            />
-            {x.name}
-          </label>
+          <Checkbox
+            key={x.id}
+            label={x.name}
+            checked={form.publishedTo.includes(x.id)}
+            onChange={(e) =>
+              set({
+                publishedTo: e.target.checked
+                  ? [...form.publishedTo, x.id]
+                  : form.publishedTo.filter((y) => y !== x.id),
+              })
+            }
+          />
         ))}
       </fieldset>
       <ErrorText message={error ?? mine.error} />
@@ -446,18 +443,18 @@ function TeamReports({
       <div className="flex items-center justify-between gap-2">
         <h2 className="font-bold">{t('report.team')}</h2>
         {teams.length > 1 && (
-          <select
+          <Select
+            size="sm"
             value={teamId}
             aria-label={t('report.team')}
             onChange={(e) => onTeam(e.target.value)}
-            className="rounded-control border border-line bg-surface px-2 py-1 text-sm"
           >
             {teams.map((x) => (
               <option key={x.id} value={x.id}>
                 {x.name}
               </option>
             ))}
-          </select>
+          </Select>
         )}
       </div>
       <p className="text-xs text-muted">
@@ -500,12 +497,11 @@ function TeamReports({
             const r = list.find((x) => x.member === m.id);
             return (
               <li key={m.id} className="py-2">
-                <button
-                  type="button"
+                <Pressable
                   disabled={!r}
                   aria-expanded={open === m.id}
                   onClick={() => setOpen(open === m.id ? null : m.id)}
-                  className="flex w-full items-center justify-between gap-2 text-left text-sm"
+                  className="flex w-full items-center justify-between gap-2 rounded-sm text-sm disabled:opacity-100"
                 >
                   <span className="truncate font-medium">
                     {m.isMe ? t('goals.owner.me') : m.name}
@@ -515,7 +511,7 @@ function TeamReports({
                       ? t('report.publishedAt', { time: formatTime(r.publishedAt) })
                       : t('report.notPublished')}
                   </span>
-                </button>
+                </Pressable>
                 {open === m.id && r && (
                   <div className="mt-2">
                     <SectionsView sections={r.sections} />

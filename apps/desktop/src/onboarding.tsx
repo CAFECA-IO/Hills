@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, errorMessage, type OnboardArgs, type SignInInfo } from './api';
 import { defaultDeviceName, useNodeEvents } from './hooks';
 import { getLocale, t, type MessageKey } from './i18n';
-import { Button, Card, Centered, ErrorText, Field, useAction } from './ui';
+import { Button, Card, Centered, Checkbox, ErrorText, Field, Pressable, useAction } from './ui';
 
 export type Start = 'create' | 'join';
 
@@ -17,15 +17,14 @@ export function Welcome({ onPick }: { onPick: (s: Start) => void }) {
       <p className="text-muted">{t('welcome.subtitle')}</p>
       <div className="grid gap-3 sm:grid-cols-2">
         {items.map(([k, title, desc]) => (
-          <button
+          <Pressable
             key={k}
-            type="button"
             onClick={() => onPick(k)}
-            className="flex flex-col gap-1 rounded-card bg-surface shadow-sm p-4 text-left hover:border-primary focus-visible:outline-2 focus-visible:outline-primary"
+            className="flex flex-col gap-1 rounded-card bg-surface p-4 shadow-sm hover:bg-primary-soft"
           >
             <span className="font-medium">{t(title)}</span>
             <span className="text-sm text-muted">{t(desc)}</span>
-          </button>
+          </Pressable>
         ))}
       </div>
     </Centered>
@@ -422,7 +421,7 @@ function SignInCard({ info, now }: { info: SignInInfo; now: number }) {
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <span className="text-sm text-muted">{t('signin.code')}</span>
-          <span className="font-mono text-3xl tracking-[0.2em]" aria-live="polite">
+          <span className="font-mono text-3xl tracking-widest" aria-live="polite">
             {info.code}
           </span>
           <span className="text-sm">{t('signin.codeHint')}</span>
@@ -448,10 +447,11 @@ function RecoverConfirm({ onBack, onGo }: { onBack: () => void; onGo: () => void
     <Centered title={t('recover.title')}>
       <Card className="flex flex-col gap-3">
         <p className="text-sm">{t('recover.desc')}</p>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
-          {t('recover.ack')}
-        </label>
+        <Checkbox
+          label={t('recover.ack')}
+          checked={ack}
+          onChange={(e) => setAck(e.target.checked)}
+        />
       </Card>
       <div className="flex justify-between">
         <Button variant="secondary" onClick={onBack}>

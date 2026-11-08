@@ -68,7 +68,17 @@ function BadgeShape({ state }: { state: St }) {
 }
 
 /** SVG 內的狀態徽章。 */
-export function Badge({ x, y, state, r = 7 }: { x: number; y: number; state: St; r?: number }) {
+export function SceneBadge({
+  x,
+  y,
+  state,
+  r = 7,
+}: {
+  x: number;
+  y: number;
+  state: St;
+  r?: number;
+}) {
   const off = state === 'Offline';
   return (
     <g transform={`translate(${x} ${y})`}>
@@ -99,7 +109,7 @@ export function StatusBadge({
   return (
     <span className="inline-flex items-center gap-1.5">
       <svg width={size} height={size} viewBox="-8 -8 16 16" aria-hidden className="shrink-0">
-        <Badge x={0} y={0} state={s} r={6.5} />
+        <SceneBadge x={0} y={0} state={s} r={6.5} />
       </svg>
       {withText ? (
         <span className={`text-sm font-semibold ${statusTextClass[s]}`}>{stateLabel(state)}</span>
@@ -151,7 +161,7 @@ export function NamePill({
         stroke={ring ? v('primary') : v('border')}
         strokeWidth={ring ? 2 : 1}
       />
-      {state && <Badge x={x0 + 14} y={y + h / 2} state={state} r={6} />}
+      {state && <SceneBadge x={x0 + 14} y={y + h / 2} state={state} r={6} />}
       <text
         x={x0 + (state ? 26 : 10)}
         y={y + h / 2 + 4.2 * k}

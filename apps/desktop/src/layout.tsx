@@ -12,6 +12,7 @@ import { createPortal } from 'react-dom';
 import type { MemberView } from './api';
 import { StatusBadge } from './figures';
 import { t, type MessageKey } from './i18n';
+import { Dialog, Kbd, Pressable, TextInput } from './ui';
 
 /** 頂列的兩個插槽：標題區與頁面動作區（由 Shell 提供 DOM 節點）。 */
 export interface HeadSlots {
@@ -81,8 +82,7 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigat
 /** 頂列的「找人或指令 ⌘K」按鈕。 */
 export function CommandButton({ onOpen }: { onOpen: () => void }) {
   return (
-    <button
-      type="button"
+    <Pressable
       onClick={onOpen}
       className="flex h-9 items-center gap-2 rounded-full border border-line bg-surface px-3 text-sm text-muted hover:text-fg"
     >
@@ -91,8 +91,8 @@ export function CommandButton({ onOpen }: { onOpen: () => void }) {
         <path d="M11 11l3.5 3.5" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" />
       </svg>
       <span>{t('cmd.button')}</span>
-      <kbd className="rounded bg-bg px-1.5 text-xs">{isMac ? '⌘K' : 'Ctrl K'}</kbd>
-    </button>
+      <Kbd>{isMac ? '⌘K' : 'Ctrl K'}</Kbd>
+    </Pressable>
   );
 }
 
@@ -123,61 +123,52 @@ export function CommandPalette({
   };
   const listId = 'cmd-list';
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-fg/20 pt-[12vh]"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={t('cmd.title')}
-        className="flex max-h-[60vh] w-[560px] flex-col overflow-hidden rounded-card bg-surface shadow-lg"
-      >
-        <input
-          ref={input}
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            setSel(0);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') onClose();
-            else if (e.key === 'ArrowDown') {
-              e.preventDefault();
-              setSel((s) => Math.min(s + 1, shown.length - 1));
-            } else if (e.key === 'ArrowUp') {
-              e.preventDefault();
-              setSel((s) => Math.max(s - 1, 0));
-            } else if (e.key === 'Enter') run(shown[current]);
-          }}
-          placeholder={t('cmd.placeholder')}
-          role="combobox"
-          aria-expanded="true"
-          aria-controls={listId}
-          aria-activedescendant={shown[current] ? `cmd-${shown[current].id}` : undefined}
-          className="border-b border-line bg-transparent px-4 py-3 outline-none"
-        />
-        <ul id={listId} role="listbox" className="scroll-panel flex-1 p-2">
-          {shown.length === 0 && <li className="px-3 py-2 text-sm text-muted">{t('cmd.none')}</li>}
-          {shown.map((c, i) => (
-            <li
-              key={c.id}
-              id={`cmd-${c.id}`}
-              role="option"
-              aria-selected={i === current}
-              onMouseEnter={() => setSel(i)}
-              onClick={() => run(c)}
-              className={`flex cursor-pointer items-center justify-between gap-3 rounded-control px-3 py-2 text-sm ${i === current ? 'bg-primary-soft text-primary' : ''}`}
-            >
-              <span className="truncate">{c.label}</span>
-              <span className="flex shrink-0 items-center gap-2 text-xs text-muted">
-                {c.member && <StatusBadge state={c.member.presence} />}
-                {t(c.group)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
+    <Dialog label={t('cmd.title')} onClose={onClose} placement="top" padded={false}>
+      <TextInput
+        appearance="bare"
+        ref={input}
+        value={q}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setSel(0);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') onClose();
+          else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setSel((s) => Math.min(s + 1, shown.length - 1));
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setSel((s) => Math.max(s - 1, 0));
+          } else if (e.key === 'Enter') run(shown[current]);
+        }}
+        placeholder={t('cmd.placeholder')}
+        role="combobox"
+        aria-expanded="true"
+        aria-controls={listId}
+        aria-activedescendant={shown[current] ? `cmd-${shown[current].id}` : undefined}
+        className="border-b border-line px-4 py-3"
+      />
+      <ul id={listId} role="listbox" className="scroll-panel flex-1 p-2">
+        {shown.length === 0 && <li className="px-3 py-2 text-sm text-muted">{t('cmd.none')}</li>}
+        {shown.map((c, i) => (
+          <li
+            key={c.id}
+            id={`cmd-${c.id}`}
+            role="option"
+            aria-selected={i === current}
+            onMouseEnter={() => setSel(i)}
+            onClick={() => run(c)}
+            className={`flex cursor-pointer items-center justify-between gap-3 rounded-control px-3 py-2 text-sm ${i === current ? 'bg-primary-soft text-primary' : ''}`}
+          >
+            <span className="truncate">{c.label}</span>
+            <span className="flex shrink-0 items-center gap-2 text-xs text-muted">
+              {c.member && <StatusBadge state={c.member.presence} />}
+              {t(c.group)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Dialog>
   );
 }

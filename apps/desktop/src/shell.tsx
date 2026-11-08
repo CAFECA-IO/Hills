@@ -1,5 +1,5 @@
 /** 應用外框、團隊、狀態選單、設定（ui-spec「應用外框」「團隊」「設定」，D40）。 */
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 'react';
 import {
   api,
   PRESENCE_STATES,
@@ -43,7 +43,23 @@ import {
 import { BackupForm } from './onboarding';
 import { LOOK_PALETTE, lookOf } from './summit';
 import { Tasks } from './tasks';
-import { Button, Card, CodeBox, ConfirmButton, ErrorText, Field, useAction } from './ui';
+import {
+  Badge,
+  Button,
+  Card,
+  Checkbox,
+  CodeBox,
+  ConfirmButton,
+  EmptyState,
+  ErrorText,
+  Field,
+  Popover,
+  Pressable,
+  Select,
+  Tabs,
+  TextInput,
+  useAction,
+} from './ui';
 
 type Page = 'home' | 'goals' | 'team' | 'tasks' | 'scrum' | 'reports' | 'chat' | 'kb' | 'settings';
 
@@ -58,8 +74,7 @@ export function SyncIndicator() {
   const status = useSyncStatus();
   if (!status) return null;
   return (
-    <button
-      type="button"
+    <Pressable
       className="flex items-center gap-1 rounded-full bg-surface px-3 py-1 text-sm text-muted shadow-sm hover:text-fg"
       onClick={() => void api.syncNow().catch(() => undefined)}
       aria-live="polite"
@@ -68,7 +83,7 @@ export function SyncIndicator() {
         {SYNC_ICON[status]}
       </span>
       {t(`sync.${status}` as MessageKey)}
-    </button>
+    </Pressable>
   );
 }
 
@@ -174,7 +189,7 @@ export function Shell({ info }: { info: AppInfo }) {
       <div className="flex h-full overflow-hidden bg-bg">
         <nav
           aria-label={t('nav.label')}
-          className="flex w-[76px] shrink-0 flex-col items-center gap-1 border-r border-line bg-surface py-3 wide:w-[88px] wide:gap-2 wide:py-4"
+          className="flex w-19 shrink-0 flex-col items-center gap-1 border-r border-line bg-surface py-3 wide:w-22 wide:gap-2 wide:py-4"
         >
           <span
             className="mb-2 flex size-10 items-center justify-center rounded-control bg-primary font-bold text-on-primary"
@@ -187,12 +202,11 @@ export function Shell({ info }: { info: AppInfo }) {
             const active = page === p;
             const badge = p === 'settings' ? pendingJoins : p === 'chat' ? unread : 0;
             return (
-              <button
+              <Pressable
                 key={p}
-                type="button"
                 aria-current={active ? 'page' : undefined}
                 onClick={() => go(p)}
-                className={`relative flex w-[60px] flex-col items-center gap-0.5 rounded-control py-1.5 text-xs wide:w-[72px] wide:py-2 ${active ? 'bg-primary-soft font-bold text-primary' : 'text-muted hover:text-fg'}`}
+                className={`relative flex w-15 flex-col items-center gap-0.5 rounded-control py-1.5 text-xs wide:w-18 wide:py-2 ${active ? 'bg-primary-soft font-bold text-primary' : 'text-muted hover:text-fg'}`}
               >
                 <svg width={20} height={20} viewBox="0 0 20 20" aria-hidden>
                   <path
@@ -206,24 +220,25 @@ export function Shell({ info }: { info: AppInfo }) {
                 </svg>
                 {t(PAGE_TITLE[p])}
                 {badge > 0 && (
-                  <span
-                    className="absolute top-0.5 right-1.5 min-w-[18px] rounded-full bg-st-busy px-1 text-[11px] leading-[18px] font-bold text-on-primary"
-                    aria-label={
+                  <Badge
+                    tone="alert"
+                    className="absolute top-0.5 right-1.5 min-w-4.5 justify-center"
+                    label={
                       p === 'chat'
                         ? t('chat.unread', { count: badge })
                         : t('joins.badge', { count: badge })
                     }
                   >
                     {badge}
-                  </span>
+                  </Badge>
                 )}
-              </button>
+              </Pressable>
             );
           })}
           {me && overview.data && <StatusMenu me={me} overview={overview.data} />}
         </nav>
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-[52px] shrink-0 items-center gap-3 px-4 wide:h-[60px] wide:px-6">
+          <header className="flex h-13 shrink-0 items-center gap-3 px-4 wide:h-15 wide:px-6">
             <div ref={titleRef} className="flex min-w-0 flex-1" />
             <div ref={actionsRef} className="flex shrink-0 items-center gap-2" />
             <CommandButton onOpen={() => setPalette(true)} />
@@ -355,19 +370,11 @@ function locationLabel(code: string, offices: OfficeView[]): string {
 
 function StatusMenu({ me, overview }: { me: MemberView; overview: Overview }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener('mousedown', onDown);
-    return () => window.removeEventListener('mousedown', onDown);
-  }, [open]);
+  const btn = useRef<HTMLButtonElement>(null);
   return (
-    <div ref={ref} className="relative mt-auto flex flex-col items-center">
-      <button
-        type="button"
+    <div className="relative mt-auto flex flex-col items-center">
+      <Pressable
+        ref={btn}
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((o) => !o)}
@@ -375,12 +382,13 @@ function StatusMenu({ me, overview }: { me: MemberView; overview: Overview }) {
       >
         <Portrait look={lookOf(me)} state={me.presence} size={52} label={t('status.menu')} />
         <StatusBadge state={me.presence} />
-      </button>
+      </Pressable>
       {open && (
         <StatusPanel
           key={`${me.presence}-${me.until}-${me.location}-${me.note}`}
           me={me}
           overview={overview}
+          anchorRef={btn}
           onClose={() => setOpen(false)}
         />
       )}
@@ -392,10 +400,12 @@ function StatusPanel({
   me,
   overview,
   onClose,
+  anchorRef,
 }: {
   me: MemberView;
   overview: Overview;
   onClose: () => void;
+  anchorRef: RefObject<HTMLElement | null>;
 }) {
   const [state, setState] = useState<PresenceState>(me.presence ?? 'Online');
   const [until, setUntil] = useState<number | null>(me.until);
@@ -407,13 +417,12 @@ function StatusPanel({
   const save = async (s = state, u = until) => {
     if (await attempt(() => api.setPresenceFull(s, note, u, location))) onClose();
   };
-  const select = 'w-full rounded-control border border-line bg-surface px-3 py-2 text-sm';
   return (
-    <div
-      role="dialog"
-      aria-label={t('status.menu')}
-      className="absolute bottom-0 left-full z-20 ml-3 flex w-80 flex-col gap-3 rounded-card bg-surface p-4 shadow-lg"
-      onKeyDown={(e) => e.key === 'Escape' && onClose()}
+    <Popover
+      label={t('status.menu')}
+      onClose={onClose}
+      anchorRef={anchorRef}
+      className="absolute bottom-0 left-full ml-3 flex w-80 flex-col gap-3 p-4"
     >
       {lunch && inLunch(lunch, new Date()) && state !== 'Lunch' && (
         <Button
@@ -428,9 +437,9 @@ function StatusPanel({
         <label htmlFor={ids.state} className="text-sm font-medium">
           {t('team.myStatus')}
         </label>
-        <select
+        <Select
           id={ids.state}
-          className={select}
+          className="w-full"
           value={state}
           onChange={(e) => setState(e.target.value as PresenceState)}
         >
@@ -439,7 +448,7 @@ function StatusPanel({
               {stateLabel(s)}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
       <div className="flex flex-col gap-1">
         <span id={ids.until} className="text-sm font-medium">
@@ -448,7 +457,7 @@ function StatusPanel({
         <div role="group" aria-labelledby={ids.until} className="flex flex-wrap gap-1">
           <Button
             variant={until === null ? 'soft' : 'secondary'}
-            className="px-3 py-1"
+            size="sm"
             onClick={() => setUntil(null)}
           >
             {t('status.until.none')}
@@ -457,16 +466,16 @@ function StatusPanel({
             <Button
               key={m}
               variant="secondary"
-              className="px-3 py-1"
+              size="sm"
               onClick={() => setUntil(Date.now() + m * 60_000)}
             >
               {t('time.minutes', { m })}
             </Button>
           ))}
-          <input
+          <TextInput
+            size="sm"
             type="time"
             aria-label={t('status.until.at')}
-            className="rounded-control border border-line bg-surface px-2 py-1 text-sm"
             value={until ? formatClock(until).slice(-5) : ''}
             onChange={(e) => {
               if (!e.target.value) return;
@@ -488,9 +497,9 @@ function StatusPanel({
         <label htmlFor={ids.loc} className="text-sm font-medium">
           {t('status.location')}
         </label>
-        <select
+        <Select
           id={ids.loc}
-          className={select}
+          className="w-full"
           value={location}
           onChange={(e) => setLocation(e.target.value)}
         >
@@ -501,7 +510,7 @@ function StatusPanel({
           ))}
           <option value="remote">{t('location.remote')}</option>
           <option value="hidden">{t('location.hidden')}</option>
-        </select>
+        </Select>
       </div>
       <Field
         label={t('team.note')}
@@ -518,7 +527,7 @@ function StatusPanel({
         </Button>
       </div>
       <ErrorText message={error} />
-    </div>
+    </Popover>
   );
 }
 
@@ -538,7 +547,7 @@ function TeamList({ overview }: { overview: Overview }) {
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted">{t('team.summary', { online, total: members.length })}</p>
-      {members.length <= 1 && <p className="text-sm text-muted">{t('team.empty')}</p>}
+      {members.length <= 1 && <EmptyState>{t('team.empty')}</EmptyState>}
       {grouped.map((g) => (
         <Card key={g.id || 'none'}>
           <h2 className="mb-3 font-bold">{g.name}</h2>
@@ -552,11 +561,7 @@ function TeamList({ overview }: { overview: Overview }) {
                 <span className="truncate font-semibold">
                   {m.name}
                   {m.isMe && <span className="text-muted">{t('team.me')}</span>}
-                  {m.isAdmin && (
-                    <span className="ml-2 rounded-full border border-line px-2 text-xs font-normal text-muted">
-                      {t('team.admin')}
-                    </span>
-                  )}
+                  {m.isAdmin && <Badge className="ml-2 font-normal">{t('team.admin')}</Badge>}
                 </span>
                 <StatusBadge state={m.presence} />
                 <span className="truncate text-sm text-muted">
@@ -605,9 +610,8 @@ function MyLook({ me }: { me: MemberView }) {
             >
               <span className="w-12 text-sm font-medium">{t(p.label)}</span>
               {Array.from({ length: p.count }, (_, i) => (
-                <button
+                <Pressable
                   key={i}
-                  type="button"
                   role="radio"
                   aria-checked={look[p.key] === i}
                   aria-label={t('look.option', { n: i + 1 })}
@@ -685,21 +689,11 @@ function OfficesCard({ overview }: { overview: Overview }) {
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1 text-sm font-medium">
           {t('lunch.start')}
-          <input
-            type="time"
-            className="rounded-control border border-line bg-surface px-3 py-2 text-sm"
-            value={start}
-            onChange={(e) => setStart(e.target.value)}
-          />
+          <TextInput type="time" value={start} onChange={(e) => setStart(e.target.value)} />
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium">
           {t('lunch.end')}
-          <input
-            type="time"
-            className="rounded-control border border-line bg-surface px-3 py-2 text-sm"
-            value={end}
-            onChange={(e) => setEnd(e.target.value)}
-          />
+          <TextInput type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
         </label>
         <Button
           variant="soft"
@@ -728,15 +722,15 @@ function OfficeRow({ office }: { office: OfficeView }) {
   const { busy, error, attempt } = useAction();
   return (
     <li className="flex flex-wrap items-center gap-2 py-2">
-      <input
+      <TextInput
         aria-label={t('offices.name')}
-        className="min-w-40 flex-1 rounded-control border border-line bg-surface px-3 py-1.5 text-sm"
+        className="min-w-40 flex-1"
         value={name}
         onChange={(e) => setName(e.target.value)}
       />
       <Button
         variant="secondary"
-        className="px-3 py-1"
+        size="sm"
         disabled={busy || !name.trim() || name === office.name}
         onClick={() => void attempt(() => api.upsertOffice(office.id, name))}
       >
@@ -775,20 +769,12 @@ function Settings({
   ];
   return (
     <div className="flex max-w-3xl flex-col gap-4">
-      <div role="tablist" className="flex gap-1 border-b border-line">
-        {tabs.map(([k, label]) => (
-          <button
-            key={k}
-            type="button"
-            role="tab"
-            aria-selected={tab === k}
-            onClick={() => setTab(k)}
-            className={`px-4 py-2 text-sm ${tab === k ? 'border-b-2 border-primary font-medium text-primary' : 'text-muted hover:text-fg'}`}
-          >
-            {t(label)}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        label={t('nav.settings')}
+        value={tab}
+        onChange={setTab}
+        options={tabs.map(([k, label]) => ({ value: k, label: t(label) }))}
+      />
       {tab === 'personal' && <PersonalTab me={members.find((m) => m.isMe)} />}
       {tab === 'org' && <OrgTab info={info} orgName={orgName} overview={overview} />}
       {tab === 'members' && <MembersTab info={info} members={members} overview={overview} />}
@@ -807,9 +793,8 @@ function PersonalTab({ me }: { me: MemberView | undefined }) {
         <label htmlFor="lang" className="text-sm font-medium">
           {t('settings.language')}
         </label>
-        <select
+        <Select
           id="lang"
-          className="rounded-control border border-line bg-surface px-3 py-2 text-sm"
           value={getLocale()}
           onChange={(e) => setLocale(e.target.value as (typeof LOCALES)[number])}
         >
@@ -818,7 +803,7 @@ function PersonalTab({ me }: { me: MemberView | undefined }) {
               {t(`lang.${l}` as MessageKey)}
             </option>
           ))}
-        </select>
+        </Select>
       </Card>
       <ScrumReminderCard />
       {account.data && (
@@ -872,12 +857,11 @@ function ScrumReminderCard() {
         {t('settings.scrumReminder')}
       </label>
       <div className="flex items-center gap-2">
-        <input
+        <TextInput
           id="scrum-reminder"
           type="time"
           value={current}
           onChange={(e) => setValue(e.target.value)}
-          className="rounded-control border border-line bg-surface px-3 py-2 text-sm"
         />
         <Button
           variant="secondary"
@@ -912,13 +896,12 @@ function OrgScrumReminderCard() {
         {t('settings.orgScrumReminder')}
       </label>
       <div className="flex items-center gap-2">
-        <input
+        <TextInput
           id="org-scrum-reminder"
           type="time"
           required
           value={current}
           onChange={(e) => setValue(e.target.value)}
-          className="rounded-control border border-line bg-surface px-3 py-2 text-sm"
         />
         <Button
           variant="secondary"
@@ -1014,9 +997,7 @@ function MembersTab({
       <Card className="flex flex-col gap-3">
         <h2 className="font-medium">{t('joins.title')}</h2>
         <p className="text-sm text-muted">{t('joins.desc')}</p>
-        {(joins.data ?? []).length === 0 && (
-          <p className="text-sm text-muted">{t('joins.empty')}</p>
-        )}
+        {(joins.data ?? []).length === 0 && <EmptyState>{t('joins.empty')}</EmptyState>}
         <ul className="flex flex-col divide-y divide-line">
           {(joins.data ?? []).map((j) => (
             <JoinRow key={j.device} join={j} overview={overview} onDone={joins.reload} />
@@ -1092,24 +1073,20 @@ function JoinRow({
       ) : (
         <div className="flex flex-wrap items-center gap-4 text-sm">
           <label className="flex items-center gap-2">
-            <input type="checkbox" checked={admin} onChange={(e) => setAdmin(e.target.checked)} />
+            <Checkbox checked={admin} onChange={(e) => setAdmin(e.target.checked)} />
             {t('joins.asAdmin')}
           </label>
           {teams.length > 0 && (
             <label className="flex items-center gap-2">
               {t('joins.team')}
-              <select
-                className="rounded-control border border-line bg-surface px-2 py-1"
-                value={team}
-                onChange={(e) => setTeam(e.target.value)}
-              >
+              <Select size="sm" value={team} onChange={(e) => setTeam(e.target.value)}>
                 <option value="">{t('joins.team.default')}</option>
                 {teams.map((tm) => (
                   <option key={tm.id} value={tm.id}>
                     {tm.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           )}
         </div>

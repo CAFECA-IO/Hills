@@ -10,7 +10,7 @@ import {
   Button,
   Card,
   ConfirmButton,
-  Dialog,
+  ConfirmDialog,
   ErrorText,
   SectionLabel,
   Switch,
@@ -211,27 +211,23 @@ export function McpPersonalCard() {
       )}
       <ErrorText message={error} />
       {asking && (
-        <Dialog title={t('mcp.warn.title')} onClose={() => setAsking(false)}>
-          <p className="text-sm leading-normal">{t('mcp.warn.body')}</p>
-          <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-muted">
-            <li>{t('mcp.warn.point1')}</li>
-            <li>{t('mcp.warn.point2')}</li>
-            <li>{t('mcp.warn.point3')}</li>
-          </ul>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" onClick={() => setAsking(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button
-              onClick={() => {
-                setAsking(false);
-                set(true);
-              }}
-            >
-              {t('mcp.warn.ok')}
-            </Button>
-          </div>
-        </Dialog>
+        <ConfirmDialog
+          title={t('mcp.warn.title')}
+          body={[
+            t('mcp.warn.body'),
+            '',
+            `- ${t('mcp.warn.point1')}`,
+            `- ${t('mcp.warn.point2')}`,
+            `- ${t('mcp.warn.point3')}`,
+          ].join('\n')}
+          acknowledge={t('mcp.warn.agree')}
+          confirmLabel={t('mcp.warn.ok')}
+          onCancel={() => setAsking(false)}
+          onConfirm={() => {
+            setAsking(false);
+            set(true);
+          }}
+        />
       )}
     </Card>
   );

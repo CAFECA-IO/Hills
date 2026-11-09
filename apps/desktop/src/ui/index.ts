@@ -8,3 +8,5 @@ export * from './overlay';
 export * from './nav';
 export * from './display';
 export * from './feedback';
+export * from './dialogs';
+export * from './markdown';

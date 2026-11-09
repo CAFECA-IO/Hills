@@ -13,52 +13,6 @@ export function ErrorText({ message }: { message: string | null }) {
   );
 }
 
-/** 不可逆動作的二次確認（ui-spec 共通規則）。 */
-export function ConfirmButton({
-  label,
-  message,
-  onConfirm,
-  size = 'sm',
-}: {
-  label: string;
-  message: string;
-  onConfirm: () => void | Promise<void>;
-  size?: 'sm' | 'md';
-}) {
-  const [asking, setAsking] = useState(false);
-  if (!asking) {
-    return (
-      <Button variant="danger" size={size} onClick={() => setAsking(true)}>
-        {label}
-      </Button>
-    );
-  }
-  return (
-    <div
-      role="alertdialog"
-      className="flex flex-col gap-2 rounded-control border border-danger p-3 text-sm"
-    >
-      <p>{message}</p>
-      <div className="flex gap-2">
-        <Button
-          variant="danger"
-          size="sm"
-          autoFocus
-          onClick={async () => {
-            setAsking(false);
-            await onConfirm();
-          }}
-        >
-          {t('common.confirm')}
-        </Button>
-        <Button variant="secondary" size="sm" onClick={() => setAsking(false)}>
-          {t('common.cancel')}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 /** 置中的單欄頁面（初次啟動流程用）。 */
 export function Centered({ title, children }: { title: string; children: ReactNode }) {
   return (

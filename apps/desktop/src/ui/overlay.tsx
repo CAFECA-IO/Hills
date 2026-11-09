@@ -63,6 +63,8 @@ export function Dialog({
   padded = true,
   closeButton = false,
   dirty = false,
+  alert = false,
+  describedBy,
   children,
 }: {
   title?: ReactNode;
@@ -76,6 +78,10 @@ export function Dialog({
   closeButton?: boolean;
   /** 有未儲存的修改：Esc、點遮罩、× 先詢問是否放棄 */
   dirty?: boolean;
+  /** `role="alertdialog"`（確認、警告類，components ConfirmDialog / NoticeDialog） */
+  alert?: boolean;
+  /** 說明文字的 id（`aria-describedby`） */
+  describedBy?: string;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLElement | null>(null);
@@ -125,8 +131,9 @@ export function Dialog({
     </div>
   );
   const aria = {
-    role: 'dialog',
+    role: alert ? 'alertdialog' : 'dialog',
     'aria-modal': true,
+    'aria-describedby': describedBy,
     'aria-label': label ?? (typeof title === 'string' ? title : undefined),
     tabIndex: -1,
     onKeyDown,

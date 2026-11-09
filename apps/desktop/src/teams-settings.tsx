@@ -18,6 +18,7 @@ import {
   Card,
   Checkbox,
   ConfirmButton,
+  ConfirmDialog,
   Dialog,
   EmptyState,
   ErrorText,
@@ -238,20 +239,17 @@ function TeamDialog({
       )}
       <p className="text-xs text-muted">{t('teams.keyHint')}</p>
       {confirming && (
-        <div
-          role="alert"
-          className="flex flex-col gap-2 rounded-control border border-warning px-3 py-2 text-sm"
-        >
-          <span>{t('teams.removed.confirm', { names: removed.map(nameOf).join('、') })}</span>
-          <span className="flex gap-2">
-            <Button variant="danger" size="sm" busy={busy} onClick={() => void save(true)}>
-              {t('teams.removed.ok')}
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>
-              {t('common.cancel')}
-            </Button>
-          </span>
-        </div>
+        <ConfirmDialog
+          title={t('teams.removed.title')}
+          body={t('teams.removed.confirm', { names: removed.map(nameOf).join('、') })}
+          tone="danger"
+          confirmLabel={t('teams.removed.ok')}
+          onCancel={() => setConfirming(false)}
+          onConfirm={async () => {
+            setConfirming(false);
+            await save(true);
+          }}
+        />
       )}
       <ErrorText message={error} />
       <div className="flex items-center gap-2 pt-2">

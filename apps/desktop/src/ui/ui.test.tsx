@@ -6,14 +6,17 @@ import {
   Button,
   Checkbox,
   ChoiceCard,
+  ConfirmDialog,
   Chip,
   Dialog,
   EmptyState,
   Field,
   IconButton,
   ListButton,
+  Markdown,
   Menu,
   MenuItem,
+  NoticeDialog,
   ProgressBar,
   Select,
   SegmentedControl,
@@ -226,5 +229,39 @@ describe('ui 元件（docs/components.md）', () => {
 
   it('停用的主按鈕改用 line 底色', () => {
     expect(html(<Button disabled>存</Button>)).toContain('disabled:bg-line');
+  });
+  it('ConfirmDialog 為 alertdialog，說明以 Markdown 顯示，簽署條文未勾選前不能確認', () => {
+    const h = html(
+      <ConfirmDialog
+        title="開啟？"
+        body={'**注意**\n\n- 一\n- 二'}
+        acknowledge="我同意"
+        onConfirm={noop}
+        onCancel={noop}
+      />,
+    );
+    expect(h).toContain('role="alertdialog"');
+    expect(h).toContain('aria-describedby=');
+    expect(h).toContain('<strong>注意</strong>');
+    expect(h).toContain('<li>一</li>');
+    expect(h).toContain('我同意');
+    // 主按鈕（最後一個按鈕）停用
+    const last = h.slice(h.lastIndexOf('<button'));
+    expect(last).toContain('disabled=""');
+  });
+
+  it('NoticeDialog 依等級標示文字，警告與錯誤為 alertdialog', () => {
+    const info = html(<NoticeDialog title="完成匯入" level="success" onClose={noop} />);
+    expect(info).toContain('role="dialog"');
+    expect(info).toContain(t('notice.level.success'));
+    const bad = html(<NoticeDialog title="無法啟動" level="danger" body="x" onClose={noop} />);
+    expect(bad).toContain('role="alertdialog"');
+    expect(bad).toContain(t('notice.level.danger'));
+  });
+
+  it('Markdown 不轉譯原始 HTML，連結開新視窗', () => {
+    const h = html(<Markdown>{'<b>x</b> [a](https://e.com)'}</Markdown>);
+    expect(h).not.toContain('<b>');
+    expect(h).toContain('target="_blank"');
   });
 });

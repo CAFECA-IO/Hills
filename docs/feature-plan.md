@@ -1,6 +1,6 @@
 # 山丘上的卡菲卡（Hills）功能規劃
 
-> 版本：v1.29 · 2026-11-09 · 狀態：M0 完成，進入 M1
+> 版本：v1.30 · 2026-11-09 · 狀態：M0 完成，進入 M1
 > 本文件是專案的最高層事實來源；修改專案前先修改本文件（見 [AGENTS.md](../AGENTS.md)、[docs/README.md](./README.md)）。
 
 ## 1. 產品定位
@@ -422,6 +422,7 @@ Hills 是 CAFECA 團隊的工作通訊與協作工具，安裝於桌機、筆電
 | v1.27 | 2026-11-09 | 新增 D49 小組管理與小組金鑰交接（§5.1）：team-roster 文件、成員裝置交接 TK、指定輪替裝置、mailbox PutKeys 規則；technical-design v0.25 §16.15、ui-spec v0.28 |
 | v1.28 | 2026-11-09 | 新增 D50 組長分派任務（§5.4）：分派板、負荷、批次拆解、接下 / 有困難；technical-design v0.26 §16.8、ui-spec v0.29 |
 | v1.29 | 2026-11-09 | technical-design v0.27（MCP 伺服器在 app 重新開啟後自動啟動）、ui-spec v0.30（設定 → 個人顯示版本與建置 commit） |
+| v1.30 | 2026-11-09 | ui-spec v0.31：進階檢視開關固定在頂列最右邊；路線圖泳道標頭可開啟目標編輯、目標編輯對話框可刪除 |
 | v1.16 | 2026-11-09 | 新增 D46 任務是目標的最底層（修改 D8）：目標四層、週目標拆成任務、任務進度計入週目標、私人任務、目標頁任務欄；§1、§5.3、§5.4、§8；technical-design v0.19、ui-spec v0.18、backlog |
 | v1.15 | 2026-11-09 | 目標編輯對話框改善：欄位依層級排序、期間改用選擇器、標題必填提示與送出時驗證、未儲存修改的放棄確認、關鍵結果 / 手動進度 / 可見度說明；ui-spec v0.17「目標」、components.md v0.2、design-system v0.2 |
 | v1.14 | 2026-11-08 | 新增 D45 設計系統與通用元件（字級 18 / 16 / 14 / 12 / 11、畫面只用通用元件與 token、ESLint 強制）；新增 design-system.md v0.1、components.md v0.1；ui-spec v0.16、development-guidelines v0.2、AGENTS.md §3 §5、docs/README 索引 |

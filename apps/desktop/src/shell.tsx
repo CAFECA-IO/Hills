@@ -321,6 +321,7 @@ export function Shell({ info }: { info: AppInfo }) {
                   focus={focus.data}
                   timezone={overview.data?.timezone ?? ''}
                   error={tasks.error}
+                  isAdmin={info.isAdmin}
                 />
               </div>
             )}

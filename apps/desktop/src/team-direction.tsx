@@ -2,6 +2,7 @@
  * 目標 → 團隊（ui-spec「目標 → 團隊」v0.20，D47；設計畫布 D1、D2、D3、D7）：
  * 團隊往哪裡走、每個人往哪裡走（清單 / 方向羅盤）、某人的方向與四項檢查、建議對齊。
  */
+import { BreakdownDialog } from './assign-breakdown';
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   api,
@@ -60,6 +61,8 @@ export interface TeamTabProps {
   weekNotes: WeekNote[];
   onEditGoal: (team: string, goal: TeamGoal | null) => void;
   onChanged: () => void;
+  /** 組織時區（「拆成任務」計算負荷用，D50） */
+  timezone?: string;
 }
 
 type View =
@@ -286,6 +289,8 @@ function Overview({
   onEditGoal,
   onChanged,
   onOpenTeam,
+  members,
+  timezone,
 }: TeamTabProps & {
   rowsOf: (tm: TeamView) => Row[];
   today: number;
@@ -296,6 +301,7 @@ function Overview({
   const [y, setY] = useState(periods.year);
   const dirs = directions.filter((d) => d.year === y);
   const { error, attempt } = useAction();
+  const [breaking, setBreaking] = useState<{ team: TeamView; goal: string } | null>(null);
   const all = teams.flatMap((tm) => rowsOf(tm));
   const unique = [...new Map(all.map((r) => [r.member.id, r])).values()];
   const myTeam = teams.find((tm) => teamIds(tm).includes(me));
@@ -416,6 +422,13 @@ function Overview({
                               <Button
                                 variant="secondary"
                                 size="sm"
+                                onClick={() => setBreaking({ team: tm, goal: g.id })}
+                              >
+                                {t('breakdown.fromGoal')}
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                size="sm"
                                 onClick={() => onEditGoal(tm.id, g)}
                               >
                                 {t('guide.team.edit')}
@@ -528,6 +541,17 @@ function Overview({
           );
         })}
       </Card>
+      {breaking && (
+        <BreakdownDialog
+          team={breaking.team}
+          teamGoals={teamGoals}
+          goalId={breaking.goal}
+          members={members}
+          timezone={timezone ?? 'Asia/Taipei'}
+          onClose={() => setBreaking(null)}
+          onDone={onChanged}
+        />
+      )}
     </div>
   );
 }

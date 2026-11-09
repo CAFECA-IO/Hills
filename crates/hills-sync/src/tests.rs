@@ -219,6 +219,14 @@ fn team_profile_only_by_owner() {
     // 其他 key 不受限制
     let task = put(&mut doc, format!("task:{bob}"), &w.alice.1);
     assert!(v.check("team/t1", &task).is_ok());
+    // 任務回應（D50）：只能寫自己的 ack
+    let ack = put(&mut doc, format!("ack:t1:{alice}"), &w.alice.1);
+    assert!(v.check("team/t1", &ack).is_ok());
+    let forged = put(&mut doc, format!("ack:t1:{alice}"), &w.bob.1);
+    assert_eq!(
+        v.check("team/t1", &forged).unwrap_err(),
+        SyncError::NotOwnProfile
+    );
 }
 
 #[test]

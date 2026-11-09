@@ -146,6 +146,11 @@ interface MockTask {
   createdBy: string | null;
   createdAt: number;
   updatedAt: number;
+  // 分派（D50）
+  assignedBy?: string | null;
+  assignedAt?: number | null;
+  teamGoalId?: string | null;
+  ack?: { state: 'accepted' | 'concern'; note?: string; at: number } | null;
 }
 const st = (id: string, title: string, assignee: string | null, done = false): MockStep => ({
   id,
@@ -218,7 +223,60 @@ let tasks: MockTask[] = [
     createdAt: now0 - 7200_000,
     updatedAt: now0,
   })),
+  // 分派示範（D50）：我指派給別人、別人指派給我、未指派
+  ...(
+    [
+      ['t20', 'B2 設備清單比對', 'mem-c', 'mem-me', 3, null],
+      [
+        't21',
+        'B3 介接測試',
+        'mem-c',
+        'mem-me',
+        4,
+        { state: 'concern', note: '需要測試帳號才能開始', at: now0 },
+      ],
+      ['t22', '異常事件庫 v1', 'mem-b', 'mem-me', 2, { state: 'accepted', at: now0 }],
+      ['t23', 'DEMO 腳本', 'mem-b', 'mem-me', 1, { state: 'accepted', at: now0 }],
+      ['t24', '動畫元件庫 v1', 'mem-b', 'mem-b', 2, null],
+      ['t25', '確認 A3 資料來源', 'mem-b', 'mem-b', 1, null],
+      ['t26', '擴充介面規格 v0.1', null, null, 6, null],
+      ['t27', '製程流程圖初稿', null, null, 1, null],
+      ['t28', '設施清冊整理', 'mem-me', 'mem-b', 2, null],
+      ['t29', '可觀測數據清單', 'mem-a', 'mem-me', 5, { state: 'accepted', at: now0 }],
+    ] as const
+  ).map(([id, title, assignee, by, days, ack]): MockTask => ({
+    id,
+    team: 'default',
+    title,
+    assignee,
+    status: 'todo',
+    dueAt: now0 + days * 86400_000,
+    steps: [],
+    planItemId: null,
+    createdBy: by ?? 'mem-me',
+    createdAt: now0 - 3600_000,
+    updatedAt: now0,
+    assignedBy: by,
+    assignedAt: by ? now0 - 3600_000 : null,
+    teamGoalId: 'tg-1',
+    ack,
+  })),
 ];
+/** 待接下：別人指派、還沒接下（D50） */
+const withAck = (t: MockTask) => ({
+  ...t,
+  assignedBy: t.assignedBy ?? null,
+  assignedAt: t.assignedAt ?? null,
+  teamGoalId: t.teamGoalId ?? null,
+  ack: t.ack ?? null,
+  pendingAck: Boolean(
+    t.assignee &&
+    t.assignedBy &&
+    t.assignee !== t.assignedBy &&
+    t.status !== 'done' &&
+    t.ack?.state !== 'accepted',
+  ),
+});
 const P = periodsAt(Date.now(), 'Asia/Taipei');
 const plan = (
   id: string,
@@ -1185,7 +1243,22 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     }
     touch('presence');
   },
-  tasks: () => tasks,
+  tasks: () => tasks.map(withAck),
+  set_task_ack: (a) => {
+    tasks = tasks.map((x) =>
+      x.id === a.task
+        ? {
+            ...x,
+            ack: {
+              state: a.ack as 'accepted' | 'concern',
+              note: a.note ? String(a.note) : undefined,
+              at: Date.now(),
+            },
+          }
+        : x,
+    );
+    touch();
+  },
   create_task: (a) => {
     const input = a.input as Omit<MockTask, 'id' | 'team' | 'steps'> & { steps: MockStep[] };
     const id = 't' + (tasks.length + 1) + Math.random().toString(16).slice(2, 6);
@@ -1199,6 +1272,9 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
         assignee: a.team === 'private' ? state.me : input.assignee,
         planItemId: input.planItemId ?? null,
         steps: input.steps.map((x, i) => ({ ...x, id: x.id ?? `${id}-${i}`, doneAt: null })),
+        assignedBy: input.assignee ? state.me : null,
+        assignedAt: input.assignee ? Date.now() : null,
+        teamGoalId: input.teamGoalId ?? null,
         createdBy: state.me,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1217,6 +1293,13 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
             status: input.status ?? x.status,
             doneAt: x.doneAt ?? null,
             planItemId: input.planItemId ?? null,
+            ...(input.assignee !== x.assignee
+              ? {
+                  assignedBy: input.assignee ? state.me : null,
+                  assignedAt: input.assignee ? Date.now() : null,
+                  ack: null,
+                }
+              : {}),
             steps: input.steps.map((y, i) => ({
               ...y,
               id: y.id ?? `${x.id}-n${i}`,

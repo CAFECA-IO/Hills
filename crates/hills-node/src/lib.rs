@@ -39,5 +39,5 @@ pub use lifecycle::{DEFAULT_TEAM, DeviceView};
 pub use node::{Event, Node, NodeOptions, SyncStatus};
 pub use onboarding::{CreateOrg, OnboardKind, OnboardStep, Onboarding, SignInView};
 pub use org::{LunchBreak, OfficeRec, OrgSnapshot};
-pub use team::{Focus, Look, StepInput, Task, TaskInput, TaskStatus, TaskStep};
+pub use team::{Ack, AckState, Focus, Look, StepInput, Task, TaskInput, TaskStatus, TaskStep};
 pub use teams::TeamInfo;

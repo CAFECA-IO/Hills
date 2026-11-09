@@ -254,6 +254,7 @@ export function GuidedGoals({
           now={now}
           onEditGoal={(team, goal) => setView({ kind: 'teamGoal', team, goal })}
           onChanged={reload}
+          timezone={timezone}
         />
       ) : showWeekly && me ? (
         <WeeklyCheck

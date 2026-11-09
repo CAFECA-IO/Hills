@@ -14,6 +14,9 @@ import {
   type Task,
   type TeamView,
 } from './api';
+import { BreakdownDialog } from './assign-breakdown';
+import { AssignBoard } from './assign-board';
+import { loadOf, loads, sortByLoad } from './assign-utils';
 import { periodsAt, weekGoalOptions } from './goals-utils';
 import { useLoad } from './hooks';
 import { formatClock, t } from './i18n';
@@ -30,6 +33,7 @@ import {
   IconButton,
   Pressable,
   ProgressBar,
+  SegmentedControl,
   Select,
   TextInput,
   useAction,
@@ -42,19 +46,48 @@ interface Props {
   focus: FocusView | null;
   timezone: string;
   error: string | null;
+  isAdmin?: boolean;
 }
+
+type View = 'list' | 'board';
+const VIEW_KEY = 'hills.tasks.view';
+const readView = (): View => {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'board' ? 'board' : 'list';
+  } catch {
+    return 'list';
+  }
+};
 
 /** 新增任務時的預填值（目標頁「拆成任務」、任務欄「+ 任務」）。 */
 export interface TaskDraft {
   team?: string;
   planItemId?: string | null;
+  /** 來源小組目標（D50） */
+  teamGoalId?: string | null;
 }
 
-export function Tasks({ tasks, teams, members, focus, timezone, error }: Props) {
+export function Tasks({ tasks, teams, members, focus, timezone, error, isAdmin = false }: Props) {
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const plans = useLoad(() => api.plans(false), ['doc', 'org', 'roster']);
+  const dirs = useLoad(api.directions, ['doc', 'org']);
   const me = members.find((m) => m.isMe);
-  const myTeams = teams.filter((tm) => me && tm.members.includes(me.id));
+  const myTeams = teams.filter(
+    (tm) => me && (tm.members.includes(me.id) || tm.leads.includes(me.id)),
+  );
+  const [view, setViewState] = useState<View>(readView);
+  const setView = (v: View) => {
+    setViewState(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      // 本機偏好，存不了就算了
+    }
+  };
+  const [boardTeam, setBoardTeam] = useState('');
+  const team = myTeams.find((x) => x.id === boardTeam) ?? myTeams[0];
+  const [breakdown, setBreakdown] = useState(false);
+  const canBreak = Boolean(team && (isAdmin || (me && team.leads.includes(me.id))));
   const nameOf = (id: string | null) =>
     id ? (members.find((m) => m.id === id)?.name ?? '?') : t('home.unassigned');
   const goalOf = (id: string | null) =>
@@ -69,13 +102,52 @@ export function Tasks({ tasks, teams, members, focus, timezone, error }: Props) 
   ];
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <SegmentedControl
+          label={t('assign.view.label')}
+          options={[
+            { value: 'list', label: t('assign.view.list') },
+            { value: 'board', label: t('assign.view.board') },
+          ]}
+          value={view}
+          onChange={setView}
+        />
+        {view === 'board' && myTeams.length > 0 && (
+          <Select
+            size="sm"
+            aria-label={t('assign.team')}
+            className="w-auto"
+            value={team?.id ?? ''}
+            onChange={(e) => setBoardTeam(e.target.value)}
+          >
+            {myTeams.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name}
+              </option>
+            ))}
+          </Select>
+        )}
         <p className="text-sm text-muted">
           {t('tasks.summary', { count: tasks.filter((x) => x.status !== 'done').length })}
         </p>
+        <span className="flex-1" />
+        {view === 'board' && canBreak && (
+          <Button variant="secondary" onClick={() => setBreakdown(true)}>
+            {t('assign.breakdown')}
+          </Button>
+        )}
         <Button onClick={() => setEditing('new')}>{t('tasks.new')}</Button>
       </div>
       <ErrorText message={error} />
+      {breakdown && team && (
+        <BreakdownDialog
+          team={team}
+          teamGoals={dirs.data?.teamGoals ?? []}
+          members={members}
+          timezone={timezone}
+          onClose={() => setBreakdown(false)}
+        />
+      )}
       {editing && (
         <TaskDialog
           task={editing === 'new' ? null : editing}
@@ -85,13 +157,27 @@ export function Tasks({ tasks, teams, members, focus, timezone, error }: Props) 
           onClose={() => setEditing(null)}
         />
       )}
-      {tasks.length === 0 && (
+      {view === 'board' &&
+        (team ? (
+          <AssignBoard
+            team={team}
+            tasks={tasks}
+            members={members}
+            plans={plans.data ?? []}
+            isAdmin={isAdmin}
+            timezone={timezone}
+            onEdit={(x) => setEditing(x)}
+          />
+        ) : (
+          <EmptyState>{t('assign.noTeams')}</EmptyState>
+        ))}
+      {view === 'list' && tasks.length === 0 && (
         <Card className="flex flex-col items-start gap-2">
           <EmptyState>{t('tasks.empty')}</EmptyState>
         </Card>
       )}
       {groups.map((g) => {
-        if (g.list.length === 0) return null;
+        if (view !== 'list' || g.list.length === 0) return null;
         return (
           <Card key={g.key} className="flex flex-col gap-1">
             <h2 className="mb-2 font-bold">{g.name}</h2>
@@ -228,7 +314,9 @@ export function TaskDialog({
 }) {
   const me = members.find((m) => m.isMe)?.id ?? '';
   const plans = useLoad(() => api.plans(false), ['doc', 'org', 'roster']);
+  const allTasks = useLoad(api.tasks, ['doc']);
   const [thisWeek] = useState(() => periodsAt(Date.now(), timezone).week);
+  const load = loads(allTasks.data ?? [], thisWeek, timezone);
   const initial = useMemo(
     () => ({
       team: task?.team ?? draft?.team ?? teams[0]?.id ?? PRIVATE_TEAM,
@@ -259,6 +347,19 @@ export function TaskDialog({
   );
   const goalOwner = priv ? me : v.assignee || me;
   const goals = weekGoalOptions(plans.data ?? [], goalOwner, thisWeek);
+  // 指派給別人、對方沒有我看得到的本週以後週目標：週目標讓他接下時選（D50）
+  const forOther = !priv && Boolean(v.assignee) && v.assignee !== me;
+  const later = forOther && !goals.some((g) => g.period >= thisWeek);
+  const assigneeLabel = (m: MemberView) => {
+    const l = loadOf(load, m.id);
+    const key =
+      m.presence === 'Leave'
+        ? 'tasks.assignee.leave'
+        : l.heavy
+          ? 'tasks.assignee.heavy'
+          : 'tasks.assignee.load';
+    return t(key, { name: m.name, open: l.open, due: l.dueThisWeek });
+  };
   const linked = v.planItemId ? (plans.data ?? []).find((p) => p.id === v.planItemId) : null;
   const dirty = JSON.stringify(v) !== JSON.stringify(initial);
   const setStep = (i: number, patch: Partial<StepInput>) =>
@@ -285,6 +386,7 @@ export function TaskDialog({
         .filter((s) => s.title.trim())
         .map((s) => (priv ? { ...s, assignee: null } : s)),
       planItemId: v.planItemId || null,
+      teamGoalId: priv ? null : (task?.teamGoalId ?? draft?.teamGoalId ?? null),
     };
     let id = task?.id ?? '';
     const ok = await attempt(async () => {
@@ -333,9 +435,12 @@ export function TaskDialog({
           }}
         />
       </Field>
-      <Field label={t('tasks.field.goal')} hint={t('tasks.goal.hint')}>
+      <Field
+        label={t('tasks.field.goal')}
+        hint={later && !v.planItemId ? t('tasks.goal.laterHint') : t('tasks.goal.hint')}
+      >
         <Select value={v.planItemId} onChange={(e) => set({ planItemId: e.target.value })}>
-          <option value="">{t('tasks.goal.none')}</option>
+          <option value="">{forOther ? t('tasks.goal.later') : t('tasks.goal.none')}</option>
           {v.planItemId && !goals.some((g) => g.id === v.planItemId) && (
             <option value={v.planItemId}>
               {linked ? `${linked.period} · ${linked.title}` : t('goals.privateItem')}
@@ -351,11 +456,14 @@ export function TaskDialog({
       <div className="grid grid-cols-2 gap-3">
         {!priv && (
           <Field label={t('tasks.field.assignee')}>
-            <Select value={v.assignee} onChange={(e) => set({ assignee: e.target.value })}>
+            <Select
+              value={v.assignee}
+              onChange={(e) => set({ assignee: e.target.value, planItemId: '' })}
+            >
               <option value="">{t('home.unassigned')}</option>
-              {teamMembers.map((m) => (
+              {sortByLoad(teamMembers, load).map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.name}
+                  {assigneeLabel(m)}
                 </option>
               ))}
             </Select>

@@ -42,6 +42,11 @@ const task = (id: string, extra: Partial<Task> = {}): Task => ({
   createdBy: null,
   createdAt: 0,
   updatedAt: 0,
+  assignedBy: null,
+  assignedAt: null,
+  teamGoalId: null,
+  ack: null,
+  pendingAck: false,
   ...extra,
 });
 

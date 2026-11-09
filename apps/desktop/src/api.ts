@@ -89,6 +89,23 @@ export interface Task {
   createdBy: string | null;
   createdAt: number;
   updatedAt: number;
+  /** 指派者與時間（負責人改變時寫入，D50） */
+  assignedBy: string | null;
+  assignedAt: number | null;
+  /** 來源小組目標（D50） */
+  teamGoalId: string | null;
+  /** 目前負責人有效的回應（D50） */
+  ack: TaskAck | null;
+  /** 待接下：別人指派、還沒接下（D50） */
+  pendingAck: boolean;
+}
+
+export type AckState = 'accepted' | 'concern';
+
+export interface TaskAck {
+  state: AckState;
+  note?: string;
+  at: number;
 }
 
 export interface StepInput {
@@ -105,6 +122,8 @@ export interface TaskInput {
   dueAt: number | null;
   steps: StepInput[];
   planItemId?: string | null;
+  /** 來源小組目標（D50） */
+  teamGoalId?: string | null;
 }
 
 /** 私人任務的「小組」值（technical-design §16.8 v0.19，D46）。 */
@@ -714,6 +733,8 @@ export const api = {
     call<void>('set_step_done', { team, task, step, done }),
   deleteTask: (team: string, task: string) => call<void>('delete_task', { team, task }),
   plans: (mineOnly: boolean) => call<PlanView[]>('plans', { mineOnly }),
+  setTaskAck: (team: string, task: string, ack: AckState, note: string | null) =>
+    call<void>('set_task_ack', { team, task, ack, note }),
   savePlan: (input: PlanInput) => call<string>('save_plan', { input }),
   setPlanDone: (id: string, done: boolean) => call<void>('set_plan_done', { id, done }),
   deletePlan: (id: string) => call<void>('delete_plan', { id }),

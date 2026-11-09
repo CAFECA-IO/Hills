@@ -114,6 +114,13 @@ pub enum Event {
         date: String,
         text: String,
     },
+    /// 別人指派了任務給本人、尚待接下（§16.8 v0.26，D50）
+    TaskAssigned {
+        team: String,
+        task: String,
+        title: String,
+        by: MemberId,
+    },
     /// 收到別人的新訊息（§14.2 通知）
     Message {
         conv: String,
@@ -194,6 +201,8 @@ pub(crate) struct Inner {
     pub allow_dev_login: bool,
     /// 已通知過的 Scrum 阻礙（`<member>/<date>/<updatedAt>`，§16.12）
     pub scrum_seen: Mutex<std::collections::HashSet<String>>,
+    /// 已通知過的指派（`<team>/<task>/<assignedAt>`，D50）
+    pub task_seen: Mutex<std::collections::HashSet<String>>,
 }
 
 /// Hills 節點：一台裝置上的一個成員身分。
@@ -463,6 +472,26 @@ impl Inner {
                             member: owner,
                             date: r.date.clone(),
                             text: b.text.clone(),
+                        });
+                    }
+                }
+            }
+            // 指派給我的新任務（D50）：只通知最近 3 天、尚待接下的；同一次指派只通知一次
+            if let Some(DocKind::Team(team)) = DocKind::parse(doc_id) {
+                let recent = now_ms() - 3 * 86_400_000;
+                for t in crate::team::read_tasks(&local.doc, &team) {
+                    let (Some(by), Some(at)) = (t.assigned_by, t.assigned_at) else {
+                        continue;
+                    };
+                    if t.assignee != Some(me) || by == me || at < recent || !t.pending_ack() {
+                        continue;
+                    }
+                    if lock(&self.task_seen).insert(format!("{team}/{}/{at}", t.id)) {
+                        self.emit(Event::TaskAssigned {
+                            team: team.clone(),
+                            task: t.id.clone(),
+                            title: t.title.clone(),
+                            by,
                         });
                     }
                 }
@@ -850,6 +879,7 @@ impl Node {
             rejected: std::sync::atomic::AtomicBool::new(false),
             allow_dev_login,
             scrum_seen: Mutex::new(Default::default()),
+            task_seen: Mutex::new(Default::default()),
         });
         {
             let mut st = lock(&inner.st);

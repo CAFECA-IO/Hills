@@ -21,6 +21,7 @@ import {
   stateLabel,
   textWidth,
 } from './figures';
+import { AssignedCard } from './assign-inbox';
 import { useSize } from './hooks';
 import { formatClock, formatDate, t } from './i18n';
 import { PageHead } from './layout';
@@ -175,6 +176,7 @@ export function Home({ overview, tasks, focus, convs, onOpenConv, onOpenTasks, n
       </section>
       <aside className="scroll-panel flex min-h-0 flex-col gap-3">
         <NextStepCard task={task} me={me} nameOf={nameOf} now={clock} onOpenTasks={onOpenTasks} />
+        <AssignedCard tasks={tasks} members={overview.members} timezone={overview.timezone} />
         <UnreadCard convs={convs} overview={overview} onOpenConv={onOpenConv} />
         <BackSoonCard overview={overview} task={task} now={clock} />
       </aside>

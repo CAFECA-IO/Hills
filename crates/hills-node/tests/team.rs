@@ -23,6 +23,7 @@ async fn tasks_profiles_offices_and_presence_sync() {
             DEFAULT_TEAM,
             TaskInput {
                 plan_item_id: None,
+                team_goal_id: None,
                 title: "Windows 驗收".into(),
                 assignee: Some(a),
                 status: None,

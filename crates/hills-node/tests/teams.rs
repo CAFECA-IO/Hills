@@ -8,6 +8,7 @@ use hills_node::{Node, TaskInput};
 fn task(title: &str) -> TaskInput {
     TaskInput {
         plan_item_id: None,
+        team_goal_id: None,
         title: title.into(),
         assignee: None,
         status: None,
@@ -148,6 +149,98 @@ async fn teams_hand_over_and_rotate_keys() {
     );
 
     for n in [carol, bob, alice, admin] {
+        n.shutdown().await;
+    }
+    mb.router.shutdown().await.unwrap();
+}
+
+/// D50：組長指派 → 成員收到通知 → 有困難 / 接下 → 組長看到。
+#[tokio::test]
+async fn assign_notify_and_ack() {
+    use hills_node::{AckState, DEFAULT_TEAM, Event};
+    let mb = mailbox().await;
+    let d_admin = tempfile::tempdir().unwrap();
+    let admin = create(d_admin.path(), store(), &mb.code).await;
+    let d_alice = tempfile::tempdir().unwrap();
+    let alice = invite_and_join(&admin, d_alice.path(), store(), "alice").await;
+    sync_all(&[&admin, &alice]).await;
+    let a = alice.member_id();
+    let mut events = alice.events();
+
+    let mut input = task("B2 設備清單比對");
+    input.assignee = Some(a);
+    let id = admin.create_task(DEFAULT_TEAM, input).await.unwrap();
+    let mut got = false;
+    let start = Instant::now();
+    while !got && start.elapsed() < Duration::from_secs(10) {
+        let _ = alice.sync_now().await;
+        while let Ok(e) = events.try_recv() {
+            if let Event::TaskAssigned { task, by, .. } = e {
+                got |= task == id && by == admin.member_id();
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(got, "被指派者應收到通知");
+    let t = alice
+        .tasks()
+        .unwrap()
+        .into_iter()
+        .find(|t| t.id == id)
+        .unwrap();
+    assert!(t.pending_ack());
+
+    // 只有負責人能回應；有困難需附原因
+    assert!(
+        admin
+            .set_task_ack(DEFAULT_TEAM, &id, AckState::Accepted, None)
+            .await
+            .is_err()
+    );
+    assert!(
+        alice
+            .set_task_ack(DEFAULT_TEAM, &id, AckState::Concern, None)
+            .await
+            .is_err()
+    );
+    alice
+        .set_task_ack(
+            DEFAULT_TEAM,
+            &id,
+            AckState::Concern,
+            Some("需要測試帳號".into()),
+        )
+        .await
+        .unwrap();
+    assert!(
+        eventually(Duration::from_secs(5), || async {
+            let _ = admin.sync_now().await;
+            admin.tasks().unwrap().iter().any(|t| {
+                t.id == id
+                    && t.ack.as_ref().is_some_and(|k| k.state == AckState::Concern)
+                    && t.pending_ack()
+            })
+        })
+        .await,
+        "組長應看到有困難"
+    );
+    alice
+        .set_task_ack(DEFAULT_TEAM, &id, AckState::Accepted, None)
+        .await
+        .unwrap();
+    assert!(
+        eventually(Duration::from_secs(5), || async {
+            let _ = admin.sync_now().await;
+            admin
+                .tasks()
+                .unwrap()
+                .iter()
+                .any(|t| t.id == id && !t.pending_ack())
+        })
+        .await,
+        "接下後不再待接下"
+    );
+    for n in [alice, admin] {
         n.shutdown().await;
     }
     mb.router.shutdown().await.unwrap();

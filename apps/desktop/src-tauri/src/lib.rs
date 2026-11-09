@@ -105,6 +105,7 @@ pub fn run() {
             commands::delete_direction,
             commands::save_team_goal,
             commands::teams_info,
+            commands::set_task_ack,
             commands::create_team,
             commands::rename_team,
             commands::archive_team,

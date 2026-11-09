@@ -17,6 +17,9 @@ const TASK_PREFIX: &str = "task:";
 /// 私人任務在介面與命令中的「小組」值（technical-design §16.8 v0.19）
 pub const PRIVATE_TEAM: &str = "private";
 const PROFILE_PREFIX: &str = "profile:";
+/// 任務回應 `ack:<taskId>:<memberId>`（technical-design §16.8 v0.26，D50）
+const ACK_PREFIX: &str = "ack:";
+const MAX_ACK_NOTE: usize = 200;
 const FOCUS_FILE: &str = "focus";
 const MAX_STEPS: usize = 30;
 const MAX_TITLE: usize = 200;
@@ -79,9 +82,45 @@ pub struct Task {
     pub created_by: Option<MemberId>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+    /// 指派者與指派時間（負責人改變時寫入，D50）
+    pub assigned_by: Option<MemberId>,
+    pub assigned_at: Option<Timestamp>,
+    /// 來源小組目標（D50，只供顯示與建議）
+    pub team_goal_id: Option<String>,
+    /// 目前負責人有效的回應（D50）
+    pub ack: Option<Ack>,
+}
+
+/// 負責人對指派的回應（technical-design §16.8 v0.26）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AckState {
+    Accepted,
+    Concern,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ack {
+    pub state: AckState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    pub at: Timestamp,
 }
 
 impl Task {
+    /// 待接下：有負責人、不是負責人自己指派、且沒有有效的「接下」。
+    pub fn pending_ack(&self) -> bool {
+        match (&self.assignee, &self.assigned_by) {
+            (Some(a), Some(by)) => {
+                a != by
+                    && self.status != TaskStatus::Done
+                    && !matches!(&self.ack, Some(k) if k.state == AckState::Accepted)
+            }
+            _ => false,
+        }
+    }
+
     /// 第一個未完成的步驟。
     pub fn next_step(&self) -> Option<&TaskStep> {
         self.steps.iter().find(|s| !s.done)
@@ -117,6 +156,9 @@ pub struct TaskInput {
     /// 所屬週目標（D46）；由 node 檢查存在且為週層級
     #[serde(default)]
     pub plan_item_id: Option<String>,
+    /// 來源小組目標（D50）；由 node 檢查存在於同一小組
+    #[serde(default)]
+    pub team_goal_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -189,9 +231,35 @@ pub fn read_tasks(doc: &AutoCommit, team: &str) -> Vec<Task> {
                 created_by: member(doc, &t, "createdBy"),
                 created_at: get_int(doc, &t, "createdAt").unwrap_or(0),
                 updated_at: get_int(doc, &t, "updatedAt").unwrap_or(0),
+                assigned_by: member(doc, &t, "assignedBy"),
+                assigned_at: get_int(doc, &t, "assignedAt"),
+                team_goal_id: get_str(doc, &t, "teamGoalId").filter(|s| !s.is_empty()),
+                ack: None,
             })
         })
+        .map(|mut t| {
+            t.ack = read_ack(doc, &t);
+            t
+        })
         .collect()
+}
+
+/// 目前負責人有效的回應：`at ≥ assignedAt`（改派後舊回應失效）。
+fn read_ack(doc: &AutoCommit, t: &Task) -> Option<Ack> {
+    let who = t.assignee?;
+    let raw = get_str(doc, &ROOT, &format!("{ACK_PREFIX}{}:{who}", t.id))?;
+    let ack: Ack = serde_json::from_str(&raw).ok()?;
+    (ack.at >= t.assigned_at.unwrap_or(0)).then_some(ack)
+}
+
+/// 寫入本人對任務的回應。
+pub fn put_ack(doc: &mut AutoCommit, task: &str, me: &MemberId, ack: &Ack) -> Result<()> {
+    doc.put(
+        ROOT,
+        format!("{ACK_PREFIX}{task}:{me}").as_str(),
+        serde_json::to_string(ack)?,
+    )?;
+    Ok(())
 }
 
 /// 任務改成完成時寫入 `doneAt`（已有則保留），離開完成時刪除（technical-design §16.8 v0.21）。
@@ -275,7 +343,31 @@ pub fn write_task(
         }
     };
     doc.put(&t, "title", input.title.trim())?;
+    // 負責人改變時記下指派者與時間（D50）
+    if member(doc, &t, "assignee") != input.assignee {
+        match input.assignee {
+            Some(_) => {
+                doc.put(&t, "assignedBy", me.to_string().as_str())?;
+                doc.put(&t, "assignedAt", now)?;
+            }
+            None => {
+                for k in ["assignedBy", "assignedAt"] {
+                    if doc.get(&t, k)?.is_some() {
+                        doc.delete(&t, k)?;
+                    }
+                }
+            }
+        }
+    }
     put_opt_member(doc, &t, "assignee", input.assignee.as_ref())?;
+    match input.team_goal_id.as_deref().filter(|s| !s.is_empty()) {
+        Some(g) => doc.put(&t, "teamGoalId", g)?,
+        None => {
+            if doc.get(&t, "teamGoalId")?.is_some() {
+                doc.delete(&t, "teamGoalId")?;
+            }
+        }
+    }
     let status = derive_status(input.status.unwrap_or_default(), &input.steps);
     doc.put(&t, "status", status.as_str())?;
     put_done_at(doc, &t, status, now)?;
@@ -503,11 +595,60 @@ impl Node {
         }
         if team == PRIVATE_TEAM {
             input.assignee = Some(self.member_id());
+            input.team_goal_id = None;
             for s in &mut input.steps {
                 s.assignee = None;
             }
         }
+        if let Some(g) = input.team_goal_id.as_deref().filter(|s| !s.is_empty())
+            && !self
+                .team_goals()?
+                .iter()
+                .any(|x| x.id == g && x.team == team)
+        {
+            bail!("找不到這個小組目標");
+        }
         Ok(input)
+    }
+
+    /// 負責人回應指派（D50）：接下或有困難（附原因）。只有目前負責人可回應。
+    pub async fn set_task_ack(
+        &self,
+        team: &str,
+        task: &str,
+        state: AckState,
+        note: Option<String>,
+    ) -> Result<()> {
+        if team == PRIVATE_TEAM {
+            bail!("私人任務不需要回應");
+        }
+        self.ensure_my_team(team)?;
+        let me = self.member_id();
+        let t = self
+            .read_doc(&team_doc(team), |d| read_tasks(d, team))?
+            .into_iter()
+            .find(|x| x.id == task)
+            .ok_or_else(|| anyhow!("找不到任務"))?;
+        if t.assignee != Some(me) {
+            bail!("只有負責人可以回應");
+        }
+        let note = note.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty());
+        if state == AckState::Concern && note.is_none() {
+            bail!("請說明遇到的困難");
+        }
+        if note
+            .as_ref()
+            .is_some_and(|n| n.chars().count() > MAX_ACK_NOTE)
+        {
+            bail!("說明最多 {MAX_ACK_NOTE} 字");
+        }
+        let ack = Ack {
+            state,
+            note,
+            at: now_ms().max(t.assigned_at.unwrap_or(0)),
+        };
+        self.change(&team_doc(team), |doc| put_ack(doc, task, &me, &ack))
+            .await
     }
 
     pub async fn create_task(&self, team: &str, input: TaskInput) -> Result<String> {
@@ -726,6 +867,7 @@ mod tests {
         let mut doc = AutoCommit::new();
         let input = TaskInput {
             plan_item_id: None,
+            team_goal_id: None,
             title: " Windows 驗收 ".into(),
             assignee: Some(B),
             status: None,
@@ -754,6 +896,7 @@ mod tests {
         // 編輯：保留既有步驟的完成時間，新增一步
         let mut edit = TaskInput {
             plan_item_id: None,
+            team_goal_id: None,
             title: "Windows 驗收".into(),
             assignee: Some(B),
             status: Some(TaskStatus::Doing),
@@ -836,7 +979,70 @@ mod tests {
             created_by: None,
             created_at: 0,
             updated_at: 0,
+            assigned_by: None,
+            assigned_at: None,
+            team_goal_id: None,
+            ack: None,
         }
+    }
+
+    #[test]
+    fn assignment_and_ack() {
+        // D50：指派記下指派者；負責人回應；改派後舊回應失效
+        let mut doc = AutoCommit::new();
+        let mut input = TaskInput {
+            title: "B2 設備清單比對".into(),
+            assignee: Some(B),
+            team_goal_id: Some("g1".into()),
+            ..Default::default()
+        };
+        write_task(&mut doc, "t", &input, &A, 10, &mut ids()).unwrap();
+        let t = &read_tasks(&doc, "g")[0];
+        assert_eq!((t.assigned_by, t.assigned_at), (Some(A), Some(10)));
+        assert_eq!(t.team_goal_id.as_deref(), Some("g1"));
+        assert!(t.pending_ack());
+        // 有困難：仍待接下
+        let concern = Ack {
+            state: AckState::Concern,
+            note: Some("需要測試帳號".into()),
+            at: 11,
+        };
+        put_ack(&mut doc, "t", &B, &concern).unwrap();
+        let t = &read_tasks(&doc, "g")[0];
+        assert_eq!(t.ack.as_ref(), Some(&concern));
+        assert!(t.pending_ack());
+        // 接下
+        let ok = Ack {
+            state: AckState::Accepted,
+            note: None,
+            at: 12,
+        };
+        put_ack(&mut doc, "t", &B, &ok).unwrap();
+        assert!(!read_tasks(&doc, "g")[0].pending_ack());
+        // 只改標題不影響指派
+        input.title = "B2 設備清單比對（更新）".into();
+        write_task(&mut doc, "t", &input, &B, 13, &mut ids()).unwrap();
+        let t = &read_tasks(&doc, "g")[0];
+        assert_eq!(t.assigned_at, Some(10));
+        assert!(!t.pending_ack());
+        // 改派給 A 自己：不需接下；B 的舊回應不算
+        input.assignee = Some(A);
+        write_task(&mut doc, "t", &input, &A, 14, &mut ids()).unwrap();
+        let t = &read_tasks(&doc, "g")[0];
+        assert_eq!(t.ack, None);
+        assert!(!t.pending_ack());
+        // 改回 B：舊的接下早於新的指派，失效
+        input.assignee = Some(B);
+        write_task(&mut doc, "t", &input, &A, 15, &mut ids()).unwrap();
+        let t = &read_tasks(&doc, "g")[0];
+        assert_eq!(t.ack, None);
+        assert!(t.pending_ack());
+        // 取消指派
+        input.assignee = None;
+        write_task(&mut doc, "t", &input, &A, 16, &mut ids()).unwrap();
+        let t = &read_tasks(&doc, "g")[0];
+        assert_eq!((t.assigned_by, t.assigned_at), (None, None));
+        assert!(!t.pending_ack());
     }
 
     fn s(id: &str, who: Option<MemberId>, done: bool) -> TaskStep {

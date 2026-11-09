@@ -86,8 +86,11 @@ fn forward_events(app: &AppHandle, node: &Node) {
                         Event::JoinsChanged => "joins",
                         Event::DeviceAdded { .. } => "device-added",
                         Event::Rejected => "rejected",
-                        Event::ScrumBlocker { .. } => "doc",
+                        Event::ScrumBlocker { .. } | Event::TaskAssigned { .. } => "doc",
                     };
+                    if let Event::TaskAssigned { title, by, .. } = &ev {
+                        notify_task_assigned(&app, &node, by, title);
+                    }
                     if let Event::ScrumBlocker { member, text, .. } = &ev {
                         notify_scrum_blocker(&app, &node, member, text);
                     }
@@ -177,6 +180,29 @@ fn notify_scrum_blocker(app: &AppHandle, node: &Node, member: &MemberId, text: &
         .builder()
         .title(title)
         .body(text.chars().take(120).collect::<String>())
+        .show();
+}
+
+/// 別人指派了任務給我（technical-design §16.8 v0.26，D50）。
+fn notify_task_assigned(app: &AppHandle, node: &Node, by: &MemberId, task: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    let zh = !node.org().locale.starts_with("en");
+    let name = node
+        .org()
+        .members
+        .get(by)
+        .map(|m| m.name.clone())
+        .unwrap_or_default();
+    let title = if zh {
+        format!("{name} 指派了任務給你")
+    } else {
+        format!("{name} assigned you a task")
+    };
+    let _ = app
+        .notification()
+        .builder()
+        .title(title)
+        .body(task.chars().take(120).collect::<String>())
         .show();
 }
 
@@ -719,11 +745,23 @@ pub struct TaskView {
     created_by: Option<String>,
     created_at: i64,
     updated_at: i64,
+    /// 分派（D50）
+    assigned_by: Option<String>,
+    assigned_at: Option<i64>,
+    team_goal_id: Option<String>,
+    ack: Option<hills_node::Ack>,
+    pending_ack: bool,
 }
 
 impl From<Task> for TaskView {
     fn from(t: Task) -> Self {
+        let pending_ack = t.pending_ack();
         Self {
+            assigned_by: t.assigned_by.map(|m| m.to_string()),
+            assigned_at: t.assigned_at,
+            team_goal_id: t.team_goal_id.clone(),
+            ack: t.ack.clone(),
+            pending_ack,
             id: t.id,
             team: t.team,
             title: t.title,
@@ -771,6 +809,8 @@ pub struct TaskArgs {
     steps: Vec<StepArgs>,
     #[serde(default)]
     plan_item_id: Option<String>,
+    #[serde(default)]
+    team_goal_id: Option<String>,
 }
 
 impl TaskArgs {
@@ -793,8 +833,21 @@ impl TaskArgs {
                 })
                 .collect::<CmdResult<_>>()?,
             plan_item_id: self.plan_item_id,
+            team_goal_id: self.team_goal_id,
         })
     }
+}
+
+/// 負責人回應指派（D50）。
+#[tauri::command]
+pub async fn set_task_ack(
+    state: State<'_, AppState>,
+    team: String,
+    task: String,
+    ack: hills_node::AckState,
+    note: Option<String>,
+) -> CmdResult<()> {
+    with_node!(state, n => n.set_task_ack(&team, &task, ack, note).await.map_err(e))
 }
 
 #[derive(Serialize)]

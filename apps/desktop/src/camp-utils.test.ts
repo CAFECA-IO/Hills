@@ -32,6 +32,11 @@ const task = (steps: Task['steps']): Task => ({
   createdBy: null,
   createdAt: 0,
   updatedAt: 0,
+  assignedBy: null,
+  assignedAt: null,
+  teamGoalId: null,
+  ack: null,
+  pendingAck: false,
 });
 
 const member = (

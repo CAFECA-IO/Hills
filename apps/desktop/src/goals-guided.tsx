@@ -19,7 +19,7 @@ import {
   type TaskInput,
   type TeamGoal,
 } from './api';
-import { chain, nextPrompt, type ChainRow, type Prompt } from './goals-guided-utils';
+import { chain, nextPrompt, openCount, type ChainRow, type Prompt } from './goals-guided-utils';
 import type { GoalsProps } from './goals-roadmap';
 import { periodsAt, weekRange, splitPeriod, type Periods } from './goals-utils';
 import { BreakdownWizard, GuidedEditor, PlanWizard, TeamGoalWizard } from './goals-wizard';
@@ -32,6 +32,7 @@ import { WeeklyCheck, weeklySeen } from './weekly-check';
 import { t, type MessageKey } from './i18n';
 import { PageHead } from './layout';
 import {
+  Badge,
   Button,
   Card,
   Checkbox,
@@ -173,6 +174,7 @@ export function GuidedGoals({
       <PlanWizard
         {...shared}
         year={view.year}
+        now={periods}
         onCancel={() => setView({ kind: 'home' })}
         onDone={(s) => {
           notify(s);
@@ -293,6 +295,7 @@ export function GuidedGoals({
           items={items}
           tasks={tasks}
           me={meId}
+          members={members}
           directions={directions}
           teamGoals={teamGoals}
           onPlanYear={(year) => setView({ kind: 'plan', year })}
@@ -328,6 +331,14 @@ export function GuidedGoals({
         <GuidedEditor
           {...shared}
           item={editing}
+          onBreakdown={
+            editing.mine && editing.level !== 'week'
+              ? () => {
+                  setEditing(null);
+                  setView({ kind: 'breakdown', parentId: editing.id });
+                }
+              : undefined
+          }
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -363,6 +374,7 @@ function Home({
   items,
   tasks,
   me,
+  members,
   directions,
   teamGoals,
   onPlanYear,
@@ -379,6 +391,7 @@ function Home({
   items: PlanView[];
   tasks: Task[];
   me: string;
+  members: MemberView[];
   directions: Direction[];
   teamGoals: TeamGoal[];
   onPlanYear: (year: string) => void;
@@ -410,6 +423,7 @@ function Home({
         {prompt && (
           <PromptCard
             prompt={prompt}
+            thisYear={periods.year}
             onGo={() =>
               prompt.kind === 'planYear' ? onPlanYear(prompt.year) : onBreakdown(prompt.parent.id)
             }
@@ -511,7 +525,7 @@ function Home({
           {weekTasks.length === 0 ? (
             <EmptyState>{t('guide.week.empty')}</EmptyState>
           ) : (
-            weekTasks.map((x) => <CheckRow key={x.id} task={x} compact />)
+            weekTasks.map((x) => <CheckRow key={x.id} task={x} members={members} me={me} compact />)
           )}
         </div>
       </Card>
@@ -559,11 +573,14 @@ function YourDirection({
 }) {
   const a = assess(weeks, rules, periods, now);
   const today = quarterElapsed(periods) * 100;
-  const checks: [boolean, string][] = [
-    [!a.unaligned, a.unaligned ? t('drift.reason.unaligned') : t('drift.check.aligned')],
-    [!a.elsewhere, a.elsewhere ? t('drift.reason.elsewhere') : t('drift.check.focused')],
-    [!a.behind, a.behind ? t('drift.reason.behind') : t('drift.check.onPace')],
-    [!a.stale, a.stale ? t('drift.reason.stale') : t('drift.check.fresh')],
+  // 第三欄 = 沒有資料可判定（本週沒有完成的事），顯示中性記號而不是 ✓（ui-spec v0.24）
+  const checks: [boolean, string, boolean][] = [
+    [!a.unaligned, a.unaligned ? t('drift.reason.unaligned') : t('drift.check.aligned'), false],
+    a.share === null
+      ? [true, t('drift.check.noUnits'), true]
+      : [!a.elsewhere, a.elsewhere ? t('drift.reason.elsewhere') : t('drift.check.focused'), false],
+    [!a.behind, a.behind ? t('drift.reason.behind') : t('drift.check.onPace'), false],
+    [!a.stale, a.stale ? t('drift.reason.stale') : t('drift.check.fresh'), false],
   ];
   return (
     <div className="flex flex-col gap-1.5">
@@ -602,13 +619,19 @@ function YourDirection({
           </div>
           <MySentence a={a} today={today} />
           <ul className="flex flex-col gap-0.5 text-xs">
-            {checks.map(([ok, text]) => (
-              <li key={text} className="flex gap-2">
+            {checks.map(([ok, text, neutral]) => (
+              <li key={text} className={`flex gap-2 ${neutral ? 'text-muted' : ''}`}>
                 <span
                   aria-hidden="true"
-                  className={ok ? 'font-bold text-st-online-text' : 'text-warning'}
+                  className={
+                    neutral
+                      ? 'w-2.5 text-center'
+                      : ok
+                        ? 'font-bold text-st-online-text'
+                        : 'text-warning'
+                  }
                 >
-                  {ok ? '✓' : '▲'}
+                  {neutral ? '·' : ok ? '✓' : '▲'}
                 </span>
                 {text}
               </li>
@@ -704,14 +727,16 @@ function SuggestionCard({
 
 function PromptCard({
   prompt,
+  thisYear,
   onGo,
   onLater,
 }: {
   prompt: Prompt;
+  thisYear: string;
   onGo: () => void;
   onLater: () => void;
 }) {
-  const [title, body, go] = promptText(prompt);
+  const [title, body, go] = promptText(prompt, thisYear);
   return (
     <Card className="flex items-center gap-5 bg-primary-soft shadow-none">
       <svg width="48" height="48" viewBox="0 0 48 48" aria-hidden="true" className="shrink-0">
@@ -730,7 +755,14 @@ function PromptCard({
   );
 }
 
-function promptText(p: Prompt): [string, string, string] {
+function promptText(p: Prompt, thisYear: string): [string, string, string] {
+  if (p.kind === 'planYear' && p.year === thisYear) {
+    return [
+      t('guide.prompt.thisYear.title', { year: p.year }),
+      t('guide.prompt.thisYear.body'),
+      t('guide.planYear', { year: p.year }),
+    ];
+  }
   if (p.kind === 'planYear') {
     return [
       t('guide.prompt.year.title', { year: p.year }),
@@ -748,8 +780,20 @@ function promptText(p: Prompt): [string, string, string] {
 }
 
 /** 一件任務的勾選列：勾選即標示完成（整筆更新任務狀態）。 */
-function CheckRow({ task, compact = false }: { task: Task; compact?: boolean }) {
+function CheckRow({
+  task,
+  members,
+  me,
+  compact = false,
+}: {
+  task: Task;
+  members: MemberView[];
+  me: string;
+  compact?: boolean;
+}) {
   const { busy, error, attempt } = useAction();
+  const owner =
+    task.assignee && task.assignee !== me ? members.find((m) => m.id === task.assignee) : null;
   const done = task.status === 'done';
   const stepsDone = task.steps.filter((s) => s.done).length;
   return (
@@ -775,6 +819,14 @@ function CheckRow({ task, compact = false }: { task: Task; compact?: boolean }) 
           {task.title}
           {isPrivateTask(task) && (
             <span className="ml-1.5 text-xs font-normal text-muted">{t('tasks.private')}</span>
+          )}
+          {owner && (
+            <Badge
+              className="ml-1.5 align-middle"
+              label={t('guide.week.owner', { name: owner.name })}
+            >
+              {owner.name}
+            </Badge>
           )}
         </span>
         {!compact && task.steps.length > 0 && !done && (
@@ -892,9 +944,16 @@ function WeekView({
               </div>
               <div className="scroll-panel min-h-0 flex-1">
                 {list.map((x) => (
-                  <CheckRow key={x.id} task={x} />
+                  <CheckRow key={x.id} task={x} members={members} me={me} />
                 ))}
-                <AddTask goal={goal} teams={teams} members={members} me={me} notify={notify} />
+                <AddTask
+                  goal={goal}
+                  teams={teams}
+                  members={members}
+                  tasks={tasks}
+                  me={me}
+                  notify={notify}
+                />
               </div>
             </>
           ) : (
@@ -956,12 +1015,14 @@ function AddTask({
   goal,
   teams,
   members,
+  tasks,
   me,
   notify,
 }: {
   goal: PlanView;
   teams: GoalsProps['teams'];
   members: GoalsProps['members'];
+  tasks: Task[];
   me: string;
   notify: (s: ToastState) => void;
 }) {
@@ -987,6 +1048,7 @@ function AddTask({
     if (!id) return;
     setTitle('');
     setDue('');
+    setAssignee(me);
     setOpen(null);
     notify({
       message: t('guide.week.added', { title: text }),
@@ -1020,14 +1082,16 @@ function AddTask({
           selected={Boolean(due) || open === 'due'}
           onClick={() => setOpen(open === 'due' ? null : 'due')}
         >
-          {t('guide.week.when')}
+          {due ? `${Number(due.slice(5, 7))}/${Number(due.slice(8, 10))}` : t('guide.week.when')}
         </Chip>
         {!priv && (
           <Chip
             selected={assignee !== me || open === 'who'}
             onClick={() => setOpen(open === 'who' ? null : 'who')}
           >
-            {t('guide.week.who')}
+            {assignee !== me
+              ? (members.find((m) => m.id === assignee)?.name ?? t('guide.week.who'))
+              : t('guide.week.who')}
           </Chip>
         )}
         <Chip selected={priv} onClick={() => setPriv((p) => !p)}>
@@ -1045,13 +1109,13 @@ function AddTask({
         {open === 'who' && !priv && (
           <Select
             aria-label={t('guide.week.who')}
-            className="w-40"
+            className="w-60"
             value={assignee}
             onChange={(e) => setAssignee(e.target.value)}
           >
             {members.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.isMe ? t('goals.owner.me') : m.name}
+                {whoLabel(m, openCount(tasks, m.id))}
               </option>
             ))}
           </Select>
@@ -1061,4 +1125,25 @@ function AddTask({
       <ErrorText message={error} />
     </div>
   );
+}
+
+/** 負責人選單的選項文字：名字 · 休假至 / 離線 · N 件進行中（ui-spec「這一週」v0.24）。 */
+function whoLabel(m: MemberView, open: number): string {
+  const parts = [m.isMe ? t('goals.owner.me') : m.name];
+  if (m.presence === 'Leave') {
+    parts.push(
+      m.until
+        ? t('home.leaveUntil', {
+            date: new Date(m.until).toLocaleDateString(undefined, {
+              month: 'numeric',
+              day: 'numeric',
+            }),
+          })
+        : t('presence.Leave'),
+    );
+  } else if (m.presence === 'Offline' || m.presence === null) {
+    parts.push(t('presence.Offline'));
+  }
+  if (open > 0) parts.push(t('guide.week.openCount', { n: open }));
+  return parts.join(' · ');
 }

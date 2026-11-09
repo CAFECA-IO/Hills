@@ -298,6 +298,12 @@ export const en: Record<MessageKey, string> = {
   'guide.prompt.year.title': '{year} is coming and has no goal yet',
   'guide.prompt.year.body':
     'Answer three questions — about 5 minutes to plan next year and each quarter.',
+  'guide.prompt.thisYear.title': '{year} has no goal yet',
+  'guide.prompt.thisYear.body':
+    'It is not too late: write down what matters most this year, then split it across the remaining quarters.',
+  'guide.edit.breakdown': 'Break down ›',
+  'guide.week.owner': 'Owner: {name}',
+  'guide.week.openCount': '{n} open',
   'guide.prompt.quarter.title': 'The next quarter of “{title}” is empty',
   'guide.prompt.quarter.body': 'Take a moment to plan the next quarter.',
   'guide.prompt.month.title': 'This month is not planned. Split “{title}” into its three months?',
@@ -509,6 +515,7 @@ export const en: Record<MessageKey, string> = {
   'drift.teams.hint': 'Open a team to see each person’s direction',
   'drift.count.ok': '{n} on track',
   'drift.count.warn': '{n} may be drifting',
+  'drift.count.stale': '{n} not updated lately',
   'drift.openTeam': 'See everyone ›',
   'drift.footer':
     'Everyone can see this page. “May be drifting” is only a hint; private goals and tasks only count toward ratios.',
@@ -540,6 +547,7 @@ export const en: Record<MessageKey, string> = {
   'drift.col.state': 'Status',
   'drift.side.you': 'You: {deg}° off',
   'drift.side.youOk': 'You: {deg}° off, on track ✓',
+  'drift.side.noUnits': 'You: nothing completed this week yet',
   'drift.side.drifting': '▲ Diverging from the team',
   'drift.legend.title': 'How to read this',
   'drift.legend.angle': 'Angle = where time goes',
@@ -608,6 +616,7 @@ export const en: Record<MessageKey, string> = {
   'drift.check.alignedText': 'This quarter’s goal links to a team or company direction.',
   'drift.check.unalignedText': 'No quarter goal is aligned to a team goal or company direction.',
   'drift.check.focused': 'Time mostly on team direction',
+  'drift.check.noUnits': 'Nothing completed this week yet',
   'drift.check.shareText':
     '{units} completed this week, {aligned} linked to team direction ({pct}%). Threshold: at least {min}%.',
   'drift.check.noUnitsText': 'Nothing completed this week, so this is not checked yet.',

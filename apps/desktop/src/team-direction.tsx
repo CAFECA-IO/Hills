@@ -367,7 +367,8 @@ function Overview({
               const goals = teamGoals.filter((g) => g.team === tm.id && g.year === y);
               const canEdit = isAdmin || tm.leads.includes(me);
               const rows = rowsOf(tm);
-              const warn = rows.filter((r) => r.a.state === 'warn' || r.a.state === 'stale').length;
+              const warn = rows.filter((r) => r.a.state === 'warn').length;
+              const stale = rows.filter((r) => r.a.state === 'stale').length;
               const ok = rows.filter((r) => r.a.state === 'ok').length;
               return (
                 <div
@@ -463,6 +464,11 @@ function Overview({
                         <StatePill state="ok">{t('drift.count.ok', { n: ok })}</StatePill>
                         {warn > 0 && (
                           <StatePill state="warn">{t('drift.count.warn', { n: warn })}</StatePill>
+                        )}
+                        {stale > 0 && (
+                          <StatePill state="stale">
+                            {t('drift.count.stale', { n: stale })}
+                          </StatePill>
                         )}
                         <LinkButton className="text-xs" onClick={() => onOpenTeam(tm.id)}>
                           {t('drift.openTeam')}
@@ -576,6 +582,8 @@ function TeamView({
   const size = useCompassSize(box, mode === 'compass');
   const dir = directions.find((d) => d.id === goal?.directionId);
   const warn = rows.filter((r) => r.a.state === 'warn' || r.a.state === 'stale');
+  const warnCount = rows.filter((r) => r.a.state === 'warn').length;
+  const staleCount = warn.length - warnCount;
   const ok = rows.filter((r) => r.a.state === 'ok').length;
   const myRow = rows.find((r) => r.member.id === me);
   return (
@@ -630,8 +638,11 @@ function TeamView({
               </div>
             )}
             <StatePill state="ok">{t('drift.count.ok', { n: ok })}</StatePill>
-            {warn.length > 0 && (
-              <StatePill state="warn">{t('drift.count.warn', { n: warn.length })}</StatePill>
+            {warnCount > 0 && (
+              <StatePill state="warn">{t('drift.count.warn', { n: warnCount })}</StatePill>
+            )}
+            {staleCount > 0 && (
+              <StatePill state="stale">{t('drift.count.stale', { n: staleCount })}</StatePill>
             )}
           </div>
           {mode === 'list' ? (
@@ -690,9 +701,11 @@ function TeamView({
             {myRow && (
               <div className="flex flex-col gap-1 rounded-control bg-bg px-3.5 py-3">
                 <span className="text-sm font-bold">
-                  {myRow.a.state === 'ok'
-                    ? t('drift.side.youOk', { deg: Math.round(myRow.a.angle) })
-                    : t('drift.side.you', { deg: Math.round(myRow.a.angle) })}
+                  {myRow.a.share === null
+                    ? t('drift.side.noUnits')
+                    : myRow.a.state === 'ok'
+                      ? t('drift.side.youOk', { deg: Math.round(myRow.a.angle) })
+                      : t('drift.side.you', { deg: Math.round(myRow.a.angle) })}
                 </span>
                 <MySentence a={myRow.a} today={today} />
               </div>
@@ -947,16 +960,17 @@ function PersonView({
   const [sent, setSent] = useState(false);
   const { busy, error, attempt } = useAction();
   const target = w?.goals.find((g) => !g.alignedGoalId);
-  const check = (ok: boolean, title: string, text: string) => (
+  /** `neutral`：沒有資料可判定（本週沒有完成的事），不打 ✓（ui-spec v0.24）。 */
+  const check = (ok: boolean, title: string, text: string, neutral = false) => (
     <div className="flex gap-3 border-t border-line py-3">
       <span
         aria-hidden="true"
-        className={`flex size-5.5 shrink-0 items-center justify-center rounded-full text-xs font-bold text-surface ${ok ? 'bg-st-online' : 'bg-warning'}`}
+        className={`flex size-5.5 shrink-0 items-center justify-center rounded-full text-xs font-bold ${neutral ? 'border border-line text-muted' : ok ? 'bg-st-online text-surface' : 'bg-warning text-surface'}`}
       >
-        {ok ? '✓' : '!'}
+        {neutral ? '·' : ok ? '✓' : '!'}
       </span>
       <div className="flex flex-col gap-0.5">
-        <span className={`font-bold ${ok ? '' : 'text-warning'}`}>{title}</span>
+        <span className={`font-bold ${ok || neutral ? '' : 'text-warning'}`}>{title}</span>
         <span className="text-sm leading-normal text-muted">{text}</span>
       </div>
     </div>
@@ -1056,7 +1070,11 @@ function PersonView({
               )}
               {check(
                 !a.elsewhere,
-                a.elsewhere ? t('drift.reason.elsewhere') : t('drift.check.focused'),
+                a.elsewhere
+                  ? t('drift.reason.elsewhere')
+                  : a.share === null
+                    ? t('drift.check.noUnits')
+                    : t('drift.check.focused'),
                 a.share === null
                   ? t('drift.check.noUnitsText')
                   : t('drift.check.shareText', {
@@ -1065,6 +1083,7 @@ function PersonView({
                       pct: Math.round(a.share),
                       min: rules.minAlignedShare,
                     }),
+                a.share === null,
               )}
               {check(
                 !a.behind,

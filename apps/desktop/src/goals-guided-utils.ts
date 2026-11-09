@@ -120,6 +120,8 @@ export function nextPrompt(now: Periods, plans: PlanView[]): Prompt | null {
     mine.find((p) => p.level === level && p.period === period);
   const [y, m, d] = now.day.split('-').map(Number) as [number, number, number];
   const nextYear = String(y + 1);
+  // 0. 今年還沒有年目標（v0.24：年中才開始用的人也能補今年）
+  if (!has('year', String(y))) return { kind: 'planYear', year: String(y) };
   if (m >= 11 && !has('year', nextYear)) return { kind: 'planYear', year: nextYear };
   const quarter = first('quarter', now.quarter);
   if (quarter && !has('month', now.month)) return { kind: 'breakdown', parent: quarter };
@@ -236,4 +238,15 @@ export function emptySlots(slots: Slot[], plans: PlanView[], parentId: string | 
 export function remindMonth(quarterPeriod: string): number {
   const q = Number(quarterPeriod.split('-Q')[1]);
   return q === 1 ? 12 : (q - 1) * 3;
+}
+
+/** 指派選單用：某人手上未完成的任務件數（ui-spec「這一週」v0.24）。 */
+export function openCount(tasks: { assignee: string | null; status: string }[], member: string) {
+  return tasks.filter((x) => x.assignee === member && x.status !== 'done').length;
+}
+
+/** 規劃今年時，「分到四季」從本季開始（已過的季不列）。 */
+export function remainingQuarters(year: string, now: Periods): string[] {
+  const all = [1, 2, 3, 4].map((n) => `${year}-Q${n}`);
+  return year === now.year ? all.filter((q) => q >= now.quarter) : all;
 }

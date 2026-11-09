@@ -17,9 +17,11 @@ import {
   type Visibility,
 } from './api';
 import type { ToastState } from './goals-guided';
+import type { Periods } from './goals-utils';
 import {
   alignOptions,
   childSlots,
+  remainingQuarters,
   remindMonth,
   slotRange,
   suggest,
@@ -309,6 +311,7 @@ function alignChoices(
 
 export function PlanWizard({
   year,
+  now,
   myTeams,
   teams,
   directions,
@@ -317,6 +320,8 @@ export function PlanWizard({
   onDone,
 }: WizardShared & {
   year: string;
+  /** 規劃今年時，已過的季不列（ui-spec v0.24） */
+  now?: Periods;
   onCancel: () => void;
   onDone: (s: ToastState) => void;
 }) {
@@ -342,7 +347,8 @@ export function PlanWizard({
   const [override, setOverride] = useState<number | null>(null);
   const { busy, error, run } = useAction();
   const key = stepKeys[step];
-  const slots = childSlots('year', year);
+  const left = now ? remainingQuarters(year, now) : null;
+  const slots = childSlots('year', year).filter((s) => !left || left.includes(s.period));
   const crit = filled(criteria);
   const suggested = suggest(title, [...goals, ...dirs]);
   const vis: Visibility = priv ? { kind: 'private' } : defaultVisibility(myTeams);
@@ -932,10 +938,13 @@ export function GuidedEditor({
   teams,
   directions,
   teamGoals,
+  onBreakdown,
   onClose,
   onSaved,
 }: WizardShared & {
   item: PlanView;
+  /** 我的年 / 季 / 月目標：隨時分到下一層（ui-spec v0.24） */
+  onBreakdown?: () => void;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -1021,6 +1030,11 @@ export function GuidedEditor({
             if (await attempt(() => api.deletePlan(item.id))) onSaved();
           }}
         />
+        {onBreakdown && (
+          <LinkButton className="text-sm" onClick={onBreakdown}>
+            {t('guide.edit.breakdown')}
+          </LinkButton>
+        )}
         <span className="ml-auto flex gap-2">
           <Button variant="secondary" onClick={onClose}>
             {t('common.cancel')}

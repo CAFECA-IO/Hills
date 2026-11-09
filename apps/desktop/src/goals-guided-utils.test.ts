@@ -5,6 +5,8 @@ import {
   childSlots,
   emptySlots,
   nextPrompt,
+  openCount,
+  remainingQuarters,
   remindMonth,
   similarity,
   slotRange,
@@ -101,28 +103,35 @@ describe('childSlots', () => {
 describe('nextPrompt', () => {
   const nov9 = periodsOfYmd(2026, 11, 9);
 
+  const y26 = plan('y26', 'year', '2026');
+
+  it('今年沒有年目標 → 先規劃今年', () => {
+    expect(nextPrompt(nov9, [])).toEqual({ kind: 'planYear', year: '2026' });
+    expect(nextPrompt(periodsOfYmd(2026, 3, 2), [])).toEqual({ kind: 'planYear', year: '2026' });
+  });
+
   it('11 月起明年沒有年目標 → 規劃明年', () => {
-    expect(nextPrompt(nov9, [])).toEqual({ kind: 'planYear', year: '2027' });
-    expect(nextPrompt(periodsOfYmd(2026, 10, 30), [])).toBeNull();
+    expect(nextPrompt(nov9, [y26])).toEqual({ kind: 'planYear', year: '2027' });
+    expect(nextPrompt(periodsOfYmd(2026, 10, 30), [y26])).toBeNull();
   });
 
   it('依序：這個月 → 這一週 → 下一季', () => {
     const y27 = plan('y27', 'year', '2027');
     const q = plan('q', 'quarter', '2026-Q4');
-    expect(nextPrompt(nov9, [y27, q])).toEqual({ kind: 'breakdown', parent: q });
+    expect(nextPrompt(nov9, [y26, y27, q])).toEqual({ kind: 'breakdown', parent: q });
     const m = plan('m', 'month', '2026-11');
-    expect(nextPrompt(nov9, [y27, q, m])).toEqual({ kind: 'breakdown', parent: m });
+    expect(nextPrompt(nov9, [y26, y27, q, m])).toEqual({ kind: 'breakdown', parent: m });
     const w = plan('w', 'week', '2026-W46');
-    expect(nextPrompt(nov9, [y27, q, m, w])).toBeNull();
+    expect(nextPrompt(nov9, [y26, y27, q, m, w])).toBeNull();
     // 12/20：距 2027-Q1 不到 14 天，2027 年目標存在但 Q1 空著
     const dec20 = periodsOfYmd(2026, 12, 20);
-    const all = [y27, q, plan('m12', 'month', '2026-12'), plan('w51', 'week', dec20.week)];
+    const all = [y26, y27, q, plan('m12', 'month', '2026-12'), plan('w51', 'week', dec20.week)];
     expect(nextPrompt(dec20, all)).toEqual({ kind: 'breakdown', parent: y27 });
     expect(nextPrompt(dec20, [...all, plan('q1', 'quarter', '2027-Q1')])).toBeNull();
   });
 
   it('只看我的目標', () => {
-    expect(nextPrompt(nov9, [plan('y27', 'year', '2027', { mine: false })])).toEqual({
+    expect(nextPrompt(nov9, [y26, plan('y27', 'year', '2027', { mine: false })])).toEqual({
       kind: 'planYear',
       year: '2027',
     });
@@ -202,5 +211,24 @@ describe('其他', () => {
     ]);
     expect(remindMonth('2027-Q4')).toBe(9);
     expect(remindMonth('2027-Q1')).toBe(12);
+  });
+});
+
+describe('指派與規劃今年', () => {
+  it('openCount 只算未完成、負責人是他的', () => {
+    const list = [
+      { assignee: 'a', status: 'todo' },
+      { assignee: 'a', status: 'done' },
+      { assignee: 'a', status: 'doing' },
+      { assignee: 'b', status: 'todo' },
+    ];
+    expect(openCount(list, 'a')).toBe(2);
+    expect(openCount(list, 'c')).toBe(0);
+  });
+
+  it('remainingQuarters：今年從本季開始', () => {
+    const nov9 = periodsOfYmd(2026, 11, 9);
+    expect(remainingQuarters('2026', nov9)).toEqual(['2026-Q4']);
+    expect(remainingQuarters('2027', nov9)).toHaveLength(4);
   });
 });

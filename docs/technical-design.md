@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.26 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.27 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -1165,7 +1165,7 @@ kind = `recover`，流程與加入相同（產生**新的** IK / EK / DK、`Appl
 
 - **組織**：`org.mcp = { allowed: bool }`，預設不存在 = 不允許；只有管理者寫入（Node 檢查 `is_admin`，同 `set_direction_rules`）。
 - **本機**：app data 目錄的 `mcp.json` = `{ enabled: bool, port: 47321 }`（不同步）；token = 32 bytes 隨機值的 base32，存在系統鑰匙圈（`hills.mcp.token`），可重新產生（舊 token 立即失效）。
-- 伺服器只在「組織允許 且 本機開啟 且 Node 已啟動」時監聽；組織改為不允許時（同步到 org 變更）立即停止。
+- 伺服器只在「組織允許 且 本機開啟 且 Node 已啟動」時監聽；組織改為不允許時（同步到 org 變更）立即停止。v0.27：重新開啟 app、Node 載入後即依保存的設定啟動；設定頁讀取狀態時若應執行卻未執行（且沒有監聽錯誤），補啟動一次。
 - 每個請求：`Host` 必須是 `127.0.0.1:<port>` 或 `localhost:<port>`；帶 `Origin` 時必須是 `http://127.0.0.1` / `http://localhost`（任意埠），否則 403；`Authorization: Bearer <token>` 以固定時間比較，錯誤 401。
 
 ### 18.3 工具

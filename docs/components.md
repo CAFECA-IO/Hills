@@ -1,6 +1,6 @@
 # Hills 通用元件
 
-> 版本：v0.5 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.18（D45、D47）
+> 版本：v0.6 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.18（D45、D47）
 > 本文件定義 `apps/desktop/src/ui/` 的通用元件：用途、何時用、變體、狀態、鍵盤與無障礙、API。視覺基礎（token、字級、間距）見 [design-system.md](./design-system.md)。
 > 畫面只能組合這些元件（design-system §1、§11）。需要新元件或新變體時，**先改本文件，再改 `src/ui/`**，並補 `src/ui/ui.test.tsx`。
 
@@ -183,7 +183,49 @@
 
 內容由上而下：標題 → 欄位 → `ErrorText` → 動作列（右對齊，`取消` secondary 在左、主動作 primary 在右）。最高 90vh，超過時對話框內捲動。
 
-用在：新增 / 編輯（目標、知識）、閱讀詳情、指令面板。不要用在：只需要確認一句話（用 `ConfirmButton`）、錨定在按鈕旁的小面板（用 `Popover`）。
+用在：新增 / 編輯（目標、知識）、閱讀詳情、指令面板。不要用在：需要使用者確認或簽署條文（用 `ConfirmDialog`）、通知使用者（用 `NoticeDialog`）、錨定在按鈕旁的小面板（用 `Popover`）。
+
+### ConfirmDialog（v0.6）
+
+**統一的確認對話框**：所有需要使用者確認才執行的動作（刪除、移除、停用、送出前確認），以及需要使用者閱讀並同意的條文（開啟 AI 代理、使用條款），都用它，不在各頁手寫確認框。
+
+| prop | 型別 | 預設 | 說明 |
+|---|---|---|---|
+| `title` | string | — | 一句話問題，例如「刪除『設施清冊』？」 |
+| `body` | string | — | 說明，**Markdown**（`Markdown` 元件：不轉譯原始 HTML，連結以外部瀏覽器開啟）；長內容在對話框內捲動 |
+| `tone` | `primary` \| `danger` | `primary` | `danger`：主按鈕為 danger 樣式，用於不可逆動作 |
+| `confirmLabel` | string | 「確認」 | 主按鈕文字，寫出動作（「刪除」「我了解，開啟」） |
+| `cancelLabel` | string | 「取消」 | |
+| `acknowledge` | string | — | 有值時在說明下方顯示 `Checkbox`（例如「我已閱讀並同意以上內容」），勾選後主按鈕才能按（簽署條文的例外：此時以停用表示「尚未同意」） |
+| `onConfirm` | () => void \| Promise | — | 執行中主按鈕 `busy`、不能關閉；失敗時在對話框內顯示 `ErrorText` 並保持開啟；成功後關閉 |
+| `onCancel` | () => void | — | 取消、Esc、點遮罩 |
+
+- `role="alertdialog"`，`aria-labelledby` = 標題、`aria-describedby` = 說明。
+- 開啟時聚焦：`danger` 聚焦「取消」（避免 Enter 誤刪），`primary` 聚焦主按鈕；有 `acknowledge` 時聚焦勾選框。
+- 版面：寬 `sm`；標題 → 說明 → 勾選框 → `ErrorText` → 動作列（取消在左、主按鈕在右）。
+
+### NoticeDialog（v0.6）
+
+**通知對話框**：使用者必須看到、但不需要做決定的訊息，依等級區分。
+
+| 等級 `level` | 顏色 token | 圖示 | 用在 | role |
+|---|---|---|---|---|
+| `info` | `primary` | ⓘ | 說明、新功能、流程提示 | `dialog` |
+| `success` | `st-online` | ✓ | 重要流程完成（加入組織、匯入完成） | `dialog` |
+| `warning` | `warning` | ! | 需要注意但不影響使用（金鑰交接中、資料將離開端對端加密） | `alertdialog` |
+| `danger` | `danger` | ✕ | 錯誤或失敗、需要處理（無法啟動、同步失敗、申請被拒絕） | `alertdialog` |
+
+| prop | 型別 | 預設 | 說明 |
+|---|---|---|---|
+| `level` | 上表 | `info` | 圖示圓框與標題左側的等級文字（例如「注意」）一起表示等級，不只用顏色 |
+| `title` | string | — | |
+| `body` | string | — | Markdown，同 `ConfirmDialog` |
+| `actionLabel` | string | 「知道了」 | 唯一的主按鈕，按下即關閉 |
+| `secondary` | `{ label, onClick }` | — | 選填的次要動作（例如「查看詳情」） |
+| `onClose` | () => void | — | 主按鈕、Esc、點遮罩 |
+
+- 開啟時聚焦主按鈕；寬 `sm`。
+- 和 `Toast` 的分工：剛完成的一般動作、可忽略的回饋用 `Toast`（不打斷）；一定要讀到的訊息用 `NoticeDialog`。動作失敗、留在原畫面即可修正的錯誤仍用 `ErrorText`。
 
 ### Popover
 
@@ -317,7 +359,8 @@
 | 元件 | 用途 | 重點 |
 |---|---|---|
 | `ErrorText` | 動作失敗的訊息 | `role="alert"`、紅框；`message` 為 null 時不顯示 |
-| `ConfirmButton` | 不可逆動作的二次確認 | 先顯示 danger 按鈕，點擊後原地展開確認框（`role="alertdialog"`），確認鍵自動聚焦；`size` 預設 sm |
+| `ConfirmButton` | 不可逆動作的按鈕入口 | 顯示 danger 按鈕，點擊後開啟 `ConfirmDialog`（`tone="danger"`，`message` 為說明 Markdown，選填 `title`、`confirmLabel`）；`size` 預設 sm（v0.6：原地展開改為統一的對話框） |
+| `Markdown`（v0.6） | 顯示 Markdown 內容 | `react-markdown`、`prose-hills` 樣式，不轉譯原始 HTML，連結以外部瀏覽器開啟；`ConfirmDialog`、`NoticeDialog` 的說明都用它 |
 | `useAction` | 執行非同步動作並追蹤 `busy` / `error` | `run(f)` 回傳結果；`attempt(f)` 成功回傳 true |
 | `Centered` | 初次啟動流程的置中單欄頁 | 標題 24 / 600 |
 | `CodeBox` | 文字碼 + QR + 複製 | QR 一律白底 |
@@ -335,7 +378,8 @@
 | **行內表單** | 卡片或清單內直接編輯：`TextInput size="sm"` + `Button size="sm"`。 |
 | **錨定面板** | 觸發按鈕（`aria-expanded`）+ `Popover anchorRef`，或 `Menu`。 |
 | **空與錯** | 每個列表 `EmptyState`；每個動作 `useAction` + `ErrorText`。 |
-| **確認** | 刪除、移除、撤回用 `ConfirmButton`；AI 產生的動作用「建議動作卡」（M3）。 |
+| **確認** | 需要使用者確認的動作一律用 `ConfirmDialog`（不可逆的用 `ConfirmButton` 開啟，`tone="danger"`）；需要閱讀並同意的條文用 `ConfirmDialog acknowledge`；AI 代理送來的修改用「AI 代理確認卡」，AI 產生的動作用「建議動作卡」（M3）。 |
+| **通知** | 一定要讀到的訊息用 `NoticeDialog`（依等級 info / success / warning / danger）；一般回饋用 `Toast`；可在原畫面修正的錯誤用 `ErrorText`。 |
 
 ## 8. 新增或修改元件
 

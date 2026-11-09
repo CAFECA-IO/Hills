@@ -1,6 +1,6 @@
 # 山丘上的卡菲卡（Hills）功能規劃
 
-> 版本：v1.35 · 2026-11-09 · 狀態：M0 完成，進入 M1
+> 版本：v1.36 · 2026-11-09 · 狀態：M0 完成，進入 M1
 > 本文件是專案的最高層事實來源；修改專案前先修改本文件（見 [AGENTS.md](../AGENTS.md)、[docs/README.md](./README.md)）。
 
 ## 1. 產品定位
@@ -444,6 +444,7 @@ Hills 是 CAFECA 團隊的工作通訊與協作工具，安裝於桌機、筆電
 | v1.31 | 2026-11-09 | components v0.6：統一確認對話框 ConfirmDialog（Markdown、簽署條文勾選）、分級通知對話框 NoticeDialog、Markdown 元件；ui-spec v0.32 共通規則 |
 | v1.32 | 2026-11-09 | design-system v0.6（空狀態插畫、載入骨架動畫）、components v0.7（EmptyState 插畫與 loading、Skeleton）、ui-spec v0.33 共通規則 |
 | v1.33 | 2026-11-09 | 新增 D51：MCP 擴充到小組目標、公司方向、任務狀態與接下、小組管理、知識庫分類與主題；§5.14 範圍修改；訊息確認卡顯示對象與送出提示；technical-design v0.28 §18.3、ui-spec v0.34 |
+| v1.36 | 2026-11-09 | 開發工具鏈改為 Node.js ≥ 24.22.1（CVE-2026-111497）；README 改寫（用途、原理、部署、操作，附 SVG 圖）；technical-design v0.30 §3 |
 | v1.35 | 2026-11-09 | D55 編輯器取消「並排」：左右並排閱讀體驗差，改為編輯 / 預覽切換；ui-spec v0.36、components v0.9 |
 | v1.34 | 2026-11-09 | 新增 D52 文件規格 hills-doc/1、D53 任務執行紀錄與結案報告、D54 AI Agent 成員與 hills-agent（修改 D17 範圍）、D55 統一 Markdown；§5.15、§5.16；technical-design v0.29（§16.8、§16.11、§16.16、§19、§11、§18.3）、ui-spec v0.35、components v0.8 |
 | v1.16 | 2026-11-09 | 新增 D46 任務是目標的最底層（修改 D8）：目標四層、週目標拆成任務、任務進度計入週目標、私人任務、目標頁任務欄；§1、§5.3、§5.4、§8；technical-design v0.19、ui-spec v0.18、backlog |

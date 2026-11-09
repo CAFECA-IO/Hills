@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.29 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.30 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -50,7 +50,7 @@ deploy/
   poc/             # PoC 用的 iroh-relay 部署片段
 ```
 
-工具鏈：Rust stable（`rust-toolchain.toml`）、Node 22、pnpm 10；Tauri 使用 2.x 穩定版。
+工具鏈：Rust stable（`rust-toolchain.toml`）、**Node.js ≥ 24.22.1**（v0.30：CVE-2026-111497 Brotli 解碼漏洞於 24.22.1 修正；`package.json` engines + `.npmrc` engine-strict 強制，CI 使用 Node 24 最新版）、pnpm 10；Tauri 使用 2.x 穩定版。
 
 ## 2. 密碼學基礎
 

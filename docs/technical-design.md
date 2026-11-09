@@ -1046,6 +1046,8 @@ team/<teamId>."keyRotatedFor" = n // 已為第 n 次移出輪替（小組成員�
 - 清理（DOMPurify，存檔前與顯示前各一次）：允許結構、文字、清單、表格、`details`、`figure`、`img`（只限 `data:` 圖片）、`a`（只限 `http(s):`、`mailto:`、`#`）、`class`、`style`、`<style>`、`data-*`；移除 `script`、所有 `on*` 屬性、`iframe` / `object` / `embed` / `form` / `input` / `base` / `link` / `meta`，以及 `style` 中的 `url(...)`（`data:` 除外）與 `@import`。
 - 顯示：`<iframe sandbox="allow-same-origin" srcdoc>`——不允許腳本、表單、彈出視窗；srcdoc 繼承 app 的 CSP（`script-src 'self'`、`img-src 'self' data: blob:`），外部資源一律載入失敗。外層注入 Hills 閱讀樣式（字型、色彩 token、表格、程式碼），讀取內容高度調整 iframe；點擊連結時攔截並以外部瀏覽器開啟。
 - 原始碼檢視以等寬字顯示清理後的 HTML。
+- 經 MCP / hills-agent 寫入的 HTML 不經前端清理：Rust 端（`kb_save`）拒絕含 `<script`、`<iframe`、`javascript:` 或 `on*=` 事件屬性的內容，其餘照存；顯示前一律再清理並放在沙盒中。
+- 測試環境：前端以 jsdom 驗證清理結果（DOMPurify 在不支援的環境下不輸出任何標記，只輸出跳脫後的文字）。
 
 ### 16.9 部署（M0）
 

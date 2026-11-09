@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.22 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.23 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -156,7 +156,7 @@ CAFECA 帳戶（chainId + 身分合約地址 account，由使用者的 Passkey /
 
 | 文件 | 寫入者 | 讀取者 | 金鑰 | 內容 |
 |------|--------|--------|------|------|
-| `org` | 管理者 | 全員 | `GK` | 設定、品牌、成員憑證與 CAFECA 帳戶、小組、假日曆、假別、工作規則、核准規則、公司方向（v0.20，D47） |
+| `org` | 管理者 | 全員 | `GK` | 設定、品牌、成員憑證與 CAFECA 帳戶、小組、假日曆、假別、工作規則、核准規則、公司方向（v0.20，D47）、`mcp.allowed`（v0.23，D48，§18） |
 | `team/<teamId>` | 小組成員 | 小組成員 | `TK_team` | 任務、角色外觀 |
 | `team-goals/<teamId>` | 該小組負責人、管理者 | 全員 | `GK` | 小組目標（v0.20，D47，§16.14） |
 | `member/<id>/plans/private`、`plans/team/<teamId>`、`plans/org` | 本人 | 本人 / 該小組成員 / 全員 | `PK` / `TK_team` / `GK` | 五層計劃（見 §4.3、§16.10） |
@@ -429,6 +429,8 @@ services:
 | 惡意成員寫入他人文件 | single-writer 驗證層拒絕 |
 | 新裝置綁定被調包 | 臨時公鑰寫在 CAFECA 簽署的 nonce 中，mailbox 無法替換 |
 | 公開 repo 洩漏機密 | GitHub secret scanning、pre-commit 掃描、`.env` 範本化 |
+| 本機其他程式或網頁呼叫 MCP（D48） | 只綁 127.0.0.1；Bearer token（鑰匙圈）；檢查 `Host`、拒絕非本機 `Origin`；寫入一律待確認（§18） |
+| Agent 把資料送到外部模型服務（D48） | 預設關閉；需管理者開放 + 本人開啟並看過警告；明示這部分資料離開端對端加密 |
 
 ## 12. M0 技術驗證（PoC）
 
@@ -1101,3 +1103,47 @@ kind = `recover`，流程與加入相同（產生**新的** IK / EK / DK、`Appl
   - mailbox：環境變數 `HILLS_DEV_LOGIN=1` 才使用 `Verifier::Dev`，啟動時記錄警告；`Config` 回應帶 `dev_login: true`。未設定時鏈 ID 0 的證明一律因鏈 ID 不符而被拒。
   - 桌機：只有 debug 建置（`cfg(debug_assertions)`：`tauri dev`、CI 的 `tauri build --debug`）會顯示測試帳號欄位，並在 mailbox 回報 `dev_login` 時接受測試證明（包含管理者核准與本人裝置自動授權）；release 建置不接受。
 - **風險**：測試帳號沒有任何簽章保護，知道名稱就能以該帳號申請加入、替該帳號加入新裝置（本人其他裝置會自動授權）。只能用於測試資料，正式伺服器不得設定 `HILLS_DEV_LOGIN`。
+
+## 18. 本機 MCP 介面（v0.23，D48）
+
+### 18.1 架構
+
+- 桌機 app 的 Rust 端（`apps/desktop/src-tauri/src/mcp/`）內建 MCP 伺服器，直接呼叫 app 持有的 `Node`；不另做讀同一資料夾的程式（避免兩個行程同時寫 Automerge / SQLite）。
+- 傳輸：MCP Streamable HTTP（協定版本 `2025-06-18`），端點 `POST http://127.0.0.1:47321/mcp`；只回 `application/json`（不開 SSE），不使用 `Mcp-Session-Id`；`GET` 回 405。
+- 支援的方法：`initialize`、`notifications/initialized`（回 202）、`ping`、`tools/list`、`tools/call`；其他回 JSON-RPC `-32601`。工具錯誤以 `result.isError = true` 回傳文字說明。
+- 只支援 stdio 的用戶端以 `npx mcp-remote http://127.0.0.1:47321/mcp --header "Authorization: Bearer <token>"` 轉接。
+
+### 18.2 開關與驗證
+
+- **組織**：`org.mcp = { allowed: bool }`，預設不存在 = 不允許；只有管理者寫入（Node 檢查 `is_admin`，同 `set_direction_rules`）。
+- **本機**：app data 目錄的 `mcp.json` = `{ enabled: bool, port: 47321 }`（不同步）；token = 32 bytes 隨機值的 base32，存在系統鑰匙圈（`hills.mcp.token`），可重新產生（舊 token 立即失效）。
+- 伺服器只在「組織允許 且 本機開啟 且 Node 已啟動」時監聽；組織改為不允許時（同步到 org 變更）立即停止。
+- 每個請求：`Host` 必須是 `127.0.0.1:<port>` 或 `localhost:<port>`；帶 `Origin` 時必須是 `http://127.0.0.1` / `http://localhost`（任意埠），否則 403；`Authorization: Bearer <token>` 以固定時間比較，錯誤 401。
+
+### 18.3 工具
+
+讀取（回傳 JSON 文字；只含本人在 app 內本來就讀得到的資料）：
+
+| 工具 | 參數 | 內容 |
+|------|------|------|
+| `whoami` | — | 我（id、名稱、是否管理者）、組織名稱、所屬小組、組織時區與目前時間（ms），以及期間代碼格式（年 `2026`、季 `2026-Q4`、月 `2026-11`、ISO 週 `2026-W46`、日 `2026-11-09`，依組織時區） |
+| `list_members` | — | 成員、所屬小組、狀態、回來 / 休假至 |
+| `list_goals` | `level?`、`period?`、`mine_only?` | 目標（含進度、對齊、上層） |
+| `get_directions` | — | 公司方向、小組目標（含進度）、這週重點 |
+| `get_direction_summaries` | — | 每人的方向週摘要與偏離門檻（四項檢查由呼叫端依 §16.14 判定） |
+| `list_tasks` | `assignee?`、`status?`、`team?`、`due_before?` | 任務與步驟 |
+| `get_scrum` | `date` | 我的 Scrum 與小組的 Scrum |
+| `get_report` | `kind`（daily / weekly）、`period` | 我的與小組的報表 |
+| `list_conversations` | — | 對話列表 |
+| `read_messages` | `conv`、`limit?`（≤ 50） | 最近的訊息 |
+| `search_knowledge` | `query`、`limit?` | 標題與內文包含關鍵字的知識 |
+
+寫入（只建立待確認變更，回傳 `{status: "pending", id, summary}`）：`propose_goal`（PlanInput，有 `id` 為修改）、`propose_task`（team + TaskInput，有 `task` 為修改）、`propose_step_done`、`propose_scrum_draft`、`propose_message`、`propose_kb_item`；查詢：`get_change_status(id)` → `pending | approved | rejected | expired | failed`（failed 附錯誤訊息）。
+
+### 18.4 待確認變更
+
+- 只存在本機記憶體（app 重啟即作廢）；欄位：id（ULID）、client（`initialize` 的 `clientInfo.name`）、工具、參數、人看得懂的摘要、建立時間、狀態。
+- 同時最多 50 筆待確認；建立後 24 小時未處理即 `expired`。
+- 建立時發出前端事件 `hills://mcp`；確認卡「核准」→ 以同一組 Node API 執行（與使用者自己操作相同的驗證與權限），結果寫回狀態；「拒絕」→ `rejected`。
+- 稽核：本機保留最近 200 筆 `{時間, client, 工具, 結果}`，不記參數與回傳內容。
+

@@ -780,6 +780,16 @@
         "area:ui"
       ],
       "body": "## 目標\n\n群聚提示、公司羅盤、配對拉回、負荷外圈、說明狀態、進場動畫。\n\n## 工作項目\n\n- [ ] 群聚＝新方向\n- [ ] 公司羅盤\n- [ ] 配對拉回\n- [ ] 負荷外圈\n- [ ] 說明狀態\n- [ ] 進場動畫（遵守減少動態）\n\n## 驗收條件\n\n- 說明狀態期間羅盤不顯示橘色\n\n## 參考\n\nfeature-plan D47\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M1] 本機 MCP 介面（D48）",
+      "milestone": "M1 計劃、Scrum、對話與檔案（MVP）",
+      "labels": [
+        "type:feature",
+        "area:core",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n讓使用者自己的 AI Agent 透過本機 MCP 協助操作 Hills；寫入一律在 Hills 內確認（D17）。\n\n## 工作項目\n\n- [ ] org `mcp.allowed`（管理者）\n- [ ] 本機 MCP 伺服器（Streamable HTTP、127.0.0.1、token、Host / Origin 檢查）\n- [ ] 讀取工具：目標、方向、任務、Scrum、報表、訊息、知識庫\n- [ ] 寫入工具 → 待確認變更與確認卡\n- [ ] 設定頁：組織開關、個人開關、token、連線範例、最近的請求\n\n## 驗收條件\n\n- Claude Code 以 `claude mcp add --transport http` 連上後能列出目標\n- Agent 提議的任務在 Hills 核准前不會寫入\n- 管理者關閉後 Agent 立即無法連線\n\n## 參考\n\nfeature-plan D48、§5.14；technical-design §18；ui-spec「AI 代理（MCP）」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
     }
   ]
 }

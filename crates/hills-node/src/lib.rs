@@ -14,6 +14,7 @@ pub mod kb;
 mod lifecycle;
 mod local;
 mod mailbox;
+pub mod mcp_policy;
 mod node;
 pub mod onboarding;
 pub mod org;

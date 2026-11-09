@@ -120,6 +120,18 @@ async fn directions_team_goals_and_alignment() {
         .await
     );
 
+    // D48：AI 代理（MCP）只有管理者能開放，同步後全員讀得到
+    assert!(!alice.mcp_allowed().unwrap());
+    assert!(alice.set_mcp_allowed(true).await.is_err());
+    admin.set_mcp_allowed(true).await.unwrap();
+    assert!(
+        eventually(Duration::from_secs(10), || async {
+            let _ = alice.sync_now().await;
+            alice.mcp_allowed().unwrap()
+        })
+        .await
+    );
+
     // 刪除小組目標後，對齊視為不存在（讀取端略過）
     admin.delete_team_goal(DEFAULT_TEAM, &goal).await.unwrap();
     assert!(!admin.alignable_goal_exists(&goal).unwrap());

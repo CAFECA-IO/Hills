@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.27 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.28 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -1185,8 +1185,29 @@ kind = `recover`，流程與加入相同（產生**新的** IK / EK / DK、`Appl
 | `list_conversations` | — | 對話列表 |
 | `read_messages` | `conv`、`limit?`（≤ 50） | 最近的訊息 |
 | `search_knowledge` | `query`、`limit?` | 標題與內文包含關鍵字的知識 |
+| `list_teams` | — | v0.28（D51）：小組（id、名稱、成員、負責人、封存時間、本人能否管理） |
+| `list_knowledge_tree` | — | v0.28（D51）：知識庫分類與主題（含 `resolved`：合併後的最終項目），不含內文 |
 
 寫入（只建立待確認變更，回傳 `{status: "pending", id, summary}`）：`propose_goal`（PlanInput，有 `id` 為修改）、`propose_task`（team + TaskInput，有 `task` 為修改）、`propose_step_done`、`propose_scrum_draft`、`propose_message`、`propose_kb_item`；刪除（v0.24）：`propose_delete_goal(id)`（只限本人的目標）、`propose_delete_task(team, task)`、`propose_delete_kb_item(key)`，權限與使用者在 app 內刪除相同；查詢：`get_change_status(id)` → `pending | approved | rejected | expired | failed`（failed 附錯誤訊息）。
+
+寫入（v0.28，D51；同樣只建立待確認變更，準備階段先檢查權限，核准時以同一組 Node API 再檢查一次）：
+
+| 工具 | 參數 | 核准後 | 權限 |
+|------|------|--------|------|
+| `propose_team_goal` | `id?`、`team`、`year`、`title`、`directionId?`、`keyResults?`、`criteria?` | `save_team_goal`（修改時未給的欄位沿用原值） | 該小組負責人（或管理者，同 §16.14） |
+| `propose_delete_team_goal` | `team`、`id` | `delete_team_goal` | 同上 |
+| `propose_week_note` | `team`、`week`、`text` | `set_week_note` | 同上 |
+| `propose_direction` | `id?`、`year`、`title`、`keyResults?` | `save_direction` | 管理者 |
+| `propose_delete_direction` | `id` | `delete_direction` | 管理者 |
+| `propose_task_status` | `team`、`task`、`status` | 只改狀態的 `update_task` | 與在 app 內改任務相同 |
+| `propose_task_ack` | `team`、`task`、`state`（accepted / concern）、`note?`（concern 必填，≤ 200 字） | `set_task_ack`（§16.8；不會自動私訊，通知指派者請另用 `propose_message`） | 目前負責人本人 |
+| `propose_team` | `id?`、`name`、`members`、`leads` | 新增 `create_team`；修改時名稱有變 `rename_team`、名單有變 `set_team_members`（§16.15） | 新增、改名：管理者；名單：管理者或該小組負責人 |
+| `propose_archive_team` | `id`、`archived` | `archive_team` | 管理者 |
+| `propose_kb_category` | `name` | `kb_create_category` | 全員；名稱不可與現有分類重複 |
+| `propose_kb_topic` | `categoryId`、`name` | `kb_create_topic` | 全員；同分類內名稱不可重複 |
+| `propose_kb_rename` | `kind`（category / topic）、`id`、`name` | `kb_rename` | 全員（同 app） |
+
+`propose_delete_*` 與 `propose_archive_team` 標 `destructiveHint`。確認卡摘要（preview）：`updateTeam` 附 `removed`（被移出的成員；有值時核准會輪替小組金鑰）；`message` 附 `to`（私訊對象 memberId）或 `conv` 與 `count`（群組人數）。
 
 ### 18.4 待確認變更
 

@@ -1434,6 +1434,11 @@ export const mockBackend = {
     await delay(
       cmd.endsWith('_shard') || cmd === 'read_stripe' || cmd === 'write_partial' ? 5 : 200,
     );
+    // 啟動畫面截圖用：?bootDelay=毫秒 讓 app_info 晚一點回來
+    if (cmd === 'app_info') {
+      const extra = Number(new URLSearchParams(window.location.search).get('bootDelay') ?? 0);
+      if (extra > 0) await delay(extra);
+    }
     if (args instanceof Uint8Array) {
       const h = options?.headers ?? {};
       if (cmd === 'put_shard') shards.set(`${h['x-node']}/${h['x-id']}`, args.slice());

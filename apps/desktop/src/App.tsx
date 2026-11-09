@@ -13,6 +13,7 @@ import {
   type Start,
 } from './onboarding';
 import { Shell } from './shell';
+import { BootScreen } from './boot-screen';
 import { Centered, ErrorText } from './ui';
 
 // 開發用頁面只在 dev build 載入
@@ -88,13 +89,7 @@ function Main() {
       </Centered>
     );
   }
-  if (!info) {
-    return (
-      <Centered title={t('app.name')}>
-        <p className="text-muted">{t('common.loading')}</p>
-      </Centered>
-    );
-  }
+  if (!info) return <BootScreen />;
 
   const step = steps[0];
   const nextStep = () => setSteps((s) => s.slice(1));

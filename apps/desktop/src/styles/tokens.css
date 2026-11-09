@@ -98,6 +98,12 @@
   --hills-radius-card: 16px;
   --hills-radius-control: 12px;
   --hills-motion: 180ms;
+  /* 啟動動畫 F 營火（design-system §2.2 v0.5） */
+  --hills-boot-flame-out: #f97316;
+  --hills-boot-flame-mid: #fbbf24;
+  --hills-boot-flame-in: #fff3c4;
+  --hills-boot-log: #8a5a2b;
+  --hills-boot-glow: #ffd8a8;
   color-scheme: light dark;
 }
 
@@ -140,6 +146,11 @@
     --hills-moon: #f3ebc8;
     --hills-moon-shadow: #2a3646;
     --hills-moon-halo: #1c2a3f;
+    --hills-boot-flame-out: #fb923c;
+    --hills-boot-flame-mid: #fcd34d;
+    --hills-boot-flame-in: #fff7d6;
+    --hills-boot-log: #a8743f;
+    --hills-boot-glow: #5a3a1a;
   }
 }
 

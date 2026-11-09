@@ -1,0 +1,634 @@
+/*
+ * 啟動動畫的 keyframes（design-system §7「插畫動畫」、§9「啟動動畫」v0.5）。
+ * 只用於 boot-art.tsx；色彩一律由 SVG 屬性的 var(--hills-*) 指定。
+ * 減少動態時全部停在完成畫面。
+ */
+
+/* ── 共用：狀態文字後的三個點 ── */
+.boot-dot {
+  animation: boot-dot 1200ms ease-in-out infinite;
+}
+.boot-dot:nth-child(2) {
+  animation-delay: 150ms;
+}
+.boot-dot:nth-child(3) {
+  animation-delay: 300ms;
+}
+@keyframes boot-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+/* ── A 日出山丘 ── */
+.boot-a-hill {
+  transform: translateY(64px);
+  opacity: 0;
+  animation: boot-a-rise 900ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+.boot-a-mid {
+  animation-delay: 180ms;
+}
+.boot-a-near {
+  animation-delay: 360ms;
+}
+.boot-a-sun {
+  transform: translateY(70px);
+  opacity: 0;
+  animation: boot-a-rise 1200ms cubic-bezier(0.2, 0.8, 0.2, 1) 520ms forwards;
+}
+.boot-a-halo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: boot-a-breathe 2400ms ease-in-out 1700ms infinite;
+}
+.boot-a-flag {
+  transform-box: fill-box;
+  transform-origin: left bottom;
+  transform: scaleY(0);
+  animation: boot-a-raise 500ms ease-out 1300ms forwards;
+}
+.boot-a-cloud {
+  animation: boot-a-drift 9s linear infinite;
+}
+.boot-a-cloud2 {
+  animation: boot-a-drift 13s linear -5s infinite;
+}
+@keyframes boot-a-rise {
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes boot-a-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0.45;
+  }
+}
+@keyframes boot-a-raise {
+  to {
+    transform: scaleY(1);
+  }
+}
+@keyframes boot-a-drift {
+  from {
+    transform: translateX(-80px);
+  }
+  to {
+    transform: translateX(420px);
+  }
+}
+
+/* ── B 登頂小旗（角色沿路以 SVG animateMotion 移動） ── */
+.boot-b-reveal {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: boot-b-draw 4.8s linear infinite;
+}
+.boot-b-fade {
+  animation: boot-b-fade 4.8s linear infinite;
+}
+.boot-b-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0);
+}
+.boot-b-n1 {
+  animation: boot-b-pop1 4.8s ease-out infinite;
+}
+.boot-b-n2 {
+  animation: boot-b-pop2 4.8s ease-out infinite;
+}
+.boot-b-n3 {
+  animation: boot-b-pop3 4.8s ease-out infinite;
+}
+.boot-b-flag {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: boot-b-flag 4.8s ease-in-out infinite;
+}
+@keyframes boot-b-draw {
+  0% {
+    stroke-dashoffset: 100;
+  }
+  60%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes boot-b-fade {
+  0%,
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes boot-b-pop1 {
+  0%,
+  17% {
+    transform: scale(0);
+  }
+  21% {
+    transform: scale(1.25);
+  }
+  24%,
+  90% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+@keyframes boot-b-pop2 {
+  0%,
+  27% {
+    transform: scale(0);
+  }
+  31% {
+    transform: scale(1.25);
+  }
+  34%,
+  90% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+@keyframes boot-b-pop3 {
+  0%,
+  45% {
+    transform: scale(0);
+  }
+  49% {
+    transform: scale(1.25);
+  }
+  52%,
+  90% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+@keyframes boot-b-flag {
+  0%,
+  58% {
+    transform: scaleX(0);
+  }
+  64% {
+    transform: scaleX(1);
+  }
+  70% {
+    transform: scaleX(1) skewY(-6deg);
+  }
+  76% {
+    transform: scaleX(1) skewY(4deg);
+  }
+  82% {
+    transform: scaleX(1) skewY(-3deg);
+  }
+  88%,
+  90% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
+/* ── D 知識星座 ── */
+.boot-d-sky {
+  transform-origin: 180px 210px;
+  animation: boot-d-drift 12s ease-in-out infinite;
+}
+.boot-d-star {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0);
+  opacity: 0;
+  animation: boot-d-star 6s cubic-bezier(0.3, 1.7, 0.5, 1) infinite;
+}
+.boot-d-line {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: boot-d-line 6s ease-in-out infinite;
+}
+.boot-d-label {
+  opacity: 0;
+  animation: boot-d-label 6s ease-out infinite;
+}
+.boot-d-glow {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: boot-d-glow 6s ease-in-out infinite;
+}
+.boot-d-spark {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: boot-d-spark 3s linear infinite;
+}
+.boot-d-dust {
+  animation: boot-d-twinkle 2.8s ease-in-out infinite;
+}
+.boot-d-meteor {
+  opacity: 0;
+  animation: boot-d-meteor 6s ease-in infinite;
+}
+@keyframes boot-d-drift {
+  0%,
+  100% {
+    transform: rotate(-3deg);
+  }
+  50% {
+    transform: rotate(3deg);
+  }
+}
+@keyframes boot-d-star {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  5% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  80% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  92%,
+  100% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+}
+@keyframes boot-d-line {
+  0%,
+  6% {
+    stroke-dashoffset: 100;
+    opacity: 1;
+  }
+  22% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  80% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  92%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+@keyframes boot-d-label {
+  0%,
+  18% {
+    opacity: 0;
+  }
+  26%,
+  80% {
+    opacity: 1;
+  }
+  92%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes boot-d-glow {
+  0%,
+  52% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  62% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  80% {
+    opacity: 0.3;
+  }
+  92%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes boot-d-spark {
+  from {
+    transform: rotate(0) scale(1);
+  }
+  50% {
+    transform: rotate(45deg) scale(0.7);
+  }
+  to {
+    transform: rotate(90deg) scale(1);
+  }
+}
+@keyframes boot-d-twinkle {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+@keyframes boot-d-meteor {
+  0%,
+  64% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  66% {
+    opacity: 1;
+  }
+  76%,
+  100% {
+    opacity: 0;
+    transform: translate(-150px, 70px);
+  }
+}
+
+/* ── E 加密分片拼合（每片以 --dx / --dy / --r 指定起點） ── */
+.boot-e-shard {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: boot-e-fly 5.2s cubic-bezier(0.2, 0.9, 0.25, 1) infinite;
+}
+.boot-e-dot {
+  animation: boot-e-dot 5.2s linear infinite;
+}
+.boot-e-badge {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0);
+  animation: boot-e-badge 5.2s cubic-bezier(0.3, 1.6, 0.5, 1) infinite;
+}
+.boot-e-shackle {
+  animation: boot-e-lock 5.2s ease-in-out infinite;
+}
+.boot-e-shine {
+  opacity: 0;
+  animation: boot-e-shine 5.2s ease-in-out infinite;
+}
+@keyframes boot-e-fly {
+  0% {
+    transform: translate(var(--dx), var(--dy)) rotate(var(--r));
+    opacity: 0;
+  }
+  6% {
+    opacity: 0.7;
+  }
+  22% {
+    transform: none;
+    opacity: 1;
+  }
+  80% {
+    transform: none;
+    opacity: 1;
+  }
+  92%,
+  100% {
+    transform: none;
+    opacity: 0;
+  }
+}
+@keyframes boot-e-dot {
+  0%,
+  21% {
+    fill: var(--hills-border);
+    opacity: 1;
+  }
+  22%,
+  80% {
+    fill: var(--hills-primary);
+    opacity: 1;
+  }
+  92%,
+  100% {
+    fill: var(--hills-primary);
+    opacity: 0;
+  }
+}
+@keyframes boot-e-badge {
+  0%,
+  30% {
+    transform: scale(0);
+  }
+  35%,
+  82% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  92%,
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+@keyframes boot-e-lock {
+  0%,
+  38% {
+    transform: translateY(-4px);
+  }
+  44%,
+  100% {
+    transform: translateY(0);
+  }
+}
+@keyframes boot-e-shine {
+  0%,
+  48% {
+    transform: translateX(-150px) skewX(-18deg);
+    opacity: 0;
+  }
+  50% {
+    opacity: 0.4;
+  }
+  62%,
+  100% {
+    transform: translateX(150px) skewX(-18deg);
+    opacity: 0;
+  }
+}
+
+/* ── F 營火集合 ── */
+.boot-f-flame {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: boot-f-flicker 900ms ease-in-out infinite;
+}
+.boot-f-flame2 {
+  animation-duration: 700ms;
+  animation-delay: -200ms;
+}
+.boot-f-flame3 {
+  animation-duration: 560ms;
+  animation-delay: -400ms;
+}
+.boot-f-glow {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: boot-f-glow 1800ms ease-in-out infinite;
+}
+.boot-f-spark {
+  opacity: 0;
+  animation: boot-f-spark 2s ease-out infinite;
+}
+.boot-f-person {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  opacity: 0;
+  transform: translateY(26px);
+  animation: boot-f-arrive 5.6s cubic-bezier(0.3, 1.5, 0.5, 1) infinite;
+}
+.boot-f-on {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0);
+  animation: boot-f-on 5.6s cubic-bezier(0.3, 1.6, 0.5, 1) infinite;
+}
+@keyframes boot-f-flicker {
+  0%,
+  100% {
+    transform: scale(1, 1) skewX(0);
+  }
+  30% {
+    transform: scale(0.94, 1.08) skewX(-3deg);
+  }
+  65% {
+    transform: scale(1.05, 0.95) skewX(3deg);
+  }
+}
+@keyframes boot-f-glow {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.5;
+  }
+}
+@keyframes boot-f-spark {
+  0% {
+    transform: translate(0, 0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--sx), -56px);
+    opacity: 0;
+  }
+}
+@keyframes boot-f-arrive {
+  0% {
+    opacity: 0;
+    transform: translateY(26px);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  84% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  94%,
+  100% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+}
+@keyframes boot-f-on {
+  0%,
+  12% {
+    transform: scale(0);
+  }
+  17%,
+  84% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  94%,
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+/* ── 減少動態：停在完成畫面 ── */
+@media (prefers-reduced-motion: reduce) {
+  .boot-dot,
+  .boot-a-halo,
+  .boot-a-cloud,
+  .boot-a-cloud2,
+  .boot-b-fade,
+  .boot-d-sky,
+  .boot-d-spark,
+  .boot-d-dust,
+  .boot-e-shackle,
+  .boot-f-flame,
+  .boot-f-glow {
+    animation: none;
+  }
+  .boot-a-hill,
+  .boot-a-sun,
+  .boot-a-flag,
+  .boot-b-node,
+  .boot-b-flag,
+  .boot-d-star,
+  .boot-d-label,
+  .boot-e-shard,
+  .boot-e-badge,
+  .boot-f-person,
+  .boot-f-on {
+    animation: none;
+    transform: none;
+    opacity: 1;
+  }
+  .boot-b-reveal,
+  .boot-d-line {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+  .boot-e-dot {
+    animation: none;
+    fill: var(--hills-primary);
+  }
+  .boot-d-glow,
+  .boot-d-meteor,
+  .boot-e-shine,
+  .boot-f-spark {
+    animation: none;
+    opacity: 0;
+  }
+}

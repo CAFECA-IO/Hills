@@ -1,6 +1,6 @@
 # Hills 通用元件
 
-> 版本：v0.4 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.18（D45、D47）
+> 版本：v0.5 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.18（D45、D47）
 > 本文件定義 `apps/desktop/src/ui/` 的通用元件：用途、何時用、變體、狀態、鍵盤與無障礙、API。視覺基礎（token、字級、間距）見 [design-system.md](./design-system.md)。
 > 畫面只能組合這些元件（design-system §1、§11）。需要新元件或新變體時，**先改本文件，再改 `src/ui/`**，並補 `src/ui/ui.test.tsx`。
 
@@ -122,6 +122,32 @@
 ### Slider
 
 原生 range。必須給 `aria-label` 與 `aria-valuetext`（例如時間軸的週次）。
+
+### Switch（v0.5）
+
+左右滑動的功能開關：開或關之後**立即生效**的設定或檢視（不需要再按儲存）。滑軌 36 × 20（`sm` 28 × 16），開 = `primary` 底、圓鈕在右；關 = `line` 底、圓鈕在左；圓鈕 `surface`。圓鈕以 `--hills-motion` 滑動，`prefers-reduced-motion` 時不做動畫。
+
+| prop | 型別 | 說明 |
+|---|---|---|
+| `checked` | boolean | 受控 |
+| `onChange` | `(checked: boolean) => void` | |
+| `label` | ReactNode | 選填；有 label 時文字在左、開關在右，整列可點 |
+| `description` | ReactNode | 選填；label 下方的說明（以 `aria-describedby` 連結） |
+| `size` | `'sm' \| 'md'` | 預設 md |
+| `disabled` | boolean | |
+
+無障礙：`role="switch"`、`aria-checked`；沒有 label 時必須給 `aria-label`。鍵盤：Tab 聚焦、Space / Enter 切換。
+
+**Checkbox、Switch、Chip 怎麼選**：
+
+| 情境 | 元件 | 例子 |
+|---|---|---|
+| 立即生效的設定或檢視 | Switch | 目標頁「進階檢視」、路線圖「只看我的」、報表「小組彙整」 |
+| 表單裡、按「儲存」才生效的選項 | Checkbox | 目標編輯「手動設定進度」、核准加入「設為管理者」 |
+| 多選清單 | Checkbox | 發佈到哪些小組、選擇聊天成員、知識引用 |
+| 標示完成 | Checkbox | 任務步驟、這一週清單 |
+| 確認同意 | Checkbox | 還原頁「我了解」 |
+| 一列選填條件，按了就套用 | Chip | 這一週新增列的「哪一天？」「只有我看得到」 |
 
 ### ChoiceCard（v0.3，D47）
 

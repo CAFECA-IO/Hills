@@ -3,7 +3,7 @@
  */
 import { useState } from 'react';
 import { api, type McpChange, type McpPreview, type MemberView } from './api';
-import { previewLines } from './mcp-utils';
+import { isDangerous, previewLines } from './mcp-utils';
 import { useLoad } from './hooks';
 import { t, type MessageKey } from './i18n';
 import { useMcpEvents } from './mcp-settings';
@@ -22,6 +22,22 @@ const ACTION: Record<McpPreview['action'], MessageKey> = {
   deleteGoal: 'mcp.action.deleteGoal',
   deleteTask: 'mcp.action.deleteTask',
   deleteKb: 'mcp.action.deleteKb',
+  createTeamGoal: 'mcp.action.createTeamGoal',
+  updateTeamGoal: 'mcp.action.updateTeamGoal',
+  deleteTeamGoal: 'mcp.action.deleteTeamGoal',
+  weekNote: 'mcp.action.weekNote',
+  createDirection: 'mcp.action.createDirection',
+  updateDirection: 'mcp.action.updateDirection',
+  deleteDirection: 'mcp.action.deleteDirection',
+  taskStatus: 'mcp.action.taskStatus',
+  taskAck: 'mcp.action.taskAck',
+  createTeam: 'mcp.action.createTeam',
+  updateTeam: 'mcp.action.updateTeam',
+  archiveTeam: 'mcp.action.archiveTeam',
+  unarchiveTeam: 'mcp.action.unarchiveTeam',
+  createKbCategory: 'mcp.action.createKbCategory',
+  createKbTopic: 'mcp.action.createKbTopic',
+  renameKb: 'mcp.action.renameKb',
 };
 
 function ChangeCard({ c, members }: { c: McpChange; members: MemberView[] }) {
@@ -40,6 +56,9 @@ function ChangeCard({ c, members }: { c: McpChange; members: MemberView[] }) {
             {line}
           </p>
         ))}
+      {c.preview.action === 'message' && (
+        <p className="text-xs font-bold text-warning">{t('mcp.preview.sendWarn')}</p>
+      )}
       <ErrorText message={error} />
       <div className="flex justify-end gap-2">
         <Button
@@ -52,7 +71,7 @@ function ChangeCard({ c, members }: { c: McpChange; members: MemberView[] }) {
         </Button>
         <Button
           size="sm"
-          variant={c.preview.action.startsWith('delete') ? 'danger' : 'primary'}
+          variant={isDangerous(c.preview) ? 'danger' : 'primary'}
           busy={busy}
           onClick={() => void attempt(() => api.mcpApprove(c.id))}
         >

@@ -600,7 +600,23 @@ export interface McpPreview {
     | 'updateKb'
     | 'deleteGoal'
     | 'deleteTask'
-    | 'deleteKb';
+    | 'deleteKb'
+    | 'createTeamGoal'
+    | 'updateTeamGoal'
+    | 'deleteTeamGoal'
+    | 'weekNote'
+    | 'createDirection'
+    | 'updateDirection'
+    | 'deleteDirection'
+    | 'taskStatus'
+    | 'taskAck'
+    | 'createTeam'
+    | 'updateTeam'
+    | 'archiveTeam'
+    | 'unarchiveTeam'
+    | 'createKbCategory'
+    | 'createKbTopic'
+    | 'renameKb';
   title?: string | null;
   level?: PlanLevel | null;
   period?: string | null;
@@ -615,6 +631,17 @@ export interface McpPreview {
   conv?: string | null;
   planItemId?: string | null;
   status?: TaskStatus | null;
+  /** 私訊對象（memberId） */
+  to?: string | null;
+  /** 群組人數、小組成員數 */
+  count?: number | null;
+  /** 修改小組時被移出的成員（會輪替小組金鑰） */
+  removed?: string[] | null;
+  leads?: string[] | null;
+  state?: 'accepted' | 'concern' | null;
+  kind?: 'category' | 'topic' | null;
+  from?: string | null;
+  parent?: string | null;
 }
 
 export interface McpChange {

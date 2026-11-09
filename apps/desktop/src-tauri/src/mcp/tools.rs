@@ -130,6 +130,18 @@ pub fn all() -> Vec<ToolDef> {
             ),
         },
         ToolDef {
+            name: "list_teams",
+            kind: Kind::Read,
+            description: "Teams with members, leads (member ids), archived and canManage (the user can change this team's members and leads).",
+            schema: obj(json!({}), &[]),
+        },
+        ToolDef {
+            name: "list_knowledge_tree",
+            kind: Kind::Read,
+            description: "Knowledge base categories and topics (no item bodies). `resolved` is the id an entry was merged into (itself if not merged). Use it to pick a topicId for propose_kb_item.",
+            schema: obj(json!({}), &[]),
+        },
+        ToolDef {
             name: "propose_goal",
             kind: Kind::Write,
             description: "Propose creating or updating a goal. Nothing is written until the user approves it in Hills; returns a pending change id. With `id` it updates that goal.",
@@ -206,7 +218,7 @@ pub fn all() -> Vec<ToolDef> {
         ToolDef {
             name: "propose_kb_item",
             kind: Kind::Write,
-            description: "Propose adding (or with `key`, updating) a knowledge base item under a topic. Needs approval in Hills.",
+            description: "Propose adding (or with `key`, updating) a knowledge base item under a topic. Find the topic with list_knowledge_tree; if none fits, propose_kb_topic first. Needs approval in Hills.",
             schema: obj(
                 json!({
                     "key": { "type": "string" },
@@ -240,6 +252,143 @@ pub fn all() -> Vec<ToolDef> {
             schema: obj(json!({ "key": { "type": "string" } }), &["key"]),
         },
         ToolDef {
+            name: "propose_team_goal",
+            kind: Kind::Write,
+            description: "Propose creating (or with `id`, updating) a team goal for a year. Only that team's leads (or admins) can. Fields left out keep their values when updating. Needs approval in Hills.",
+            schema: obj(
+                json!({
+                    "id": { "type": "string" },
+                    "team": { "type": "string" },
+                    "year": { "type": "string", "description": "e.g. `2026`" },
+                    "title": { "type": "string" },
+                    "directionId": { "type": "string", "description": "Company direction of the same year (get_directions)." },
+                    "keyResults": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "start": { "type": "number" }, "target": { "type": "number" }, "current": { "type": "number" }, "unit": { "type": "string" }, "manual": { "type": "boolean" } }, "required": ["title", "target"] } },
+                    "criteria": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "text": { "type": "string" } }, "required": ["text"] } }
+                }),
+                &["team", "year", "title"],
+            ),
+        },
+        ToolDef {
+            name: "propose_delete_team_goal",
+            kind: Kind::Write,
+            description: "Propose deleting a team goal (team leads or admins). Deleted only after the user approves it in Hills.",
+            schema: obj(
+                json!({ "team": { "type": "string" }, "id": { "type": "string" } }),
+                &["team", "id"],
+            ),
+        },
+        ToolDef {
+            name: "propose_week_note",
+            kind: Kind::Write,
+            description: "Propose writing the team lead's note for a week (team leads or admins). Needs approval in Hills.",
+            schema: obj(
+                json!({
+                    "team": { "type": "string" },
+                    "week": { "type": "string", "description": "ISO week, e.g. `2026-W46`" },
+                    "text": { "type": "string" }
+                }),
+                &["team", "week", "text"],
+            ),
+        },
+        ToolDef {
+            name: "propose_direction",
+            kind: Kind::Write,
+            description: "Propose creating (or with `id`, updating) a company direction for a year. Admins only. Needs approval in Hills.",
+            schema: obj(
+                json!({
+                    "id": { "type": "string" },
+                    "year": { "type": "string" },
+                    "title": { "type": "string" },
+                    "keyResults": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "start": { "type": "number" }, "target": { "type": "number" }, "current": { "type": "number" }, "unit": { "type": "string" }, "manual": { "type": "boolean" } }, "required": ["title", "target"] } }
+                }),
+                &["year", "title"],
+            ),
+        },
+        ToolDef {
+            name: "propose_delete_direction",
+            kind: Kind::Write,
+            description: "Propose deleting a company direction. Admins only. Deleted only after the user approves it in Hills.",
+            schema: obj(json!({ "id": { "type": "string" } }), &["id"]),
+        },
+        ToolDef {
+            name: "propose_task_status",
+            kind: Kind::Write,
+            description: "Propose changing only a task's status (e.g. mark it done) without sending the whole task. Needs approval in Hills.",
+            schema: obj(
+                json!({
+                    "team": { "type": "string" },
+                    "task": { "type": "string" },
+                    "status": { "type": "string", "enum": ["todo", "doing", "review", "done"] }
+                }),
+                &["team", "task", "status"],
+            ),
+        },
+        ToolDef {
+            name: "propose_task_ack",
+            kind: Kind::Write,
+            description: "Propose the user's answer to a task assigned to them: `accepted`, or `concern` with a short note. Only the current assignee can. It does not message the assigner; use propose_message for that. Needs approval in Hills.",
+            schema: obj(
+                json!({
+                    "team": { "type": "string" },
+                    "task": { "type": "string" },
+                    "state": { "type": "string", "enum": ["accepted", "concern"] },
+                    "note": { "type": "string", "maxLength": 200 }
+                }),
+                &["team", "task", "state"],
+            ),
+        },
+        ToolDef {
+            name: "propose_team",
+            kind: Kind::Write,
+            description: "Propose creating a team (admins) or, with `id`, changing its name (admins) and members / leads (admins or that team's leads). Send the full member and lead lists; leads must be members. Removing members rotates the team key. Needs approval in Hills.",
+            schema: obj(
+                json!({
+                    "id": { "type": "string" },
+                    "name": { "type": "string", "maxLength": 40 },
+                    "members": { "type": "array", "items": { "type": "string" } },
+                    "leads": { "type": "array", "items": { "type": "string" } }
+                }),
+                &["name", "members", "leads"],
+            ),
+        },
+        ToolDef {
+            name: "propose_archive_team",
+            kind: Kind::Write,
+            description: "Propose archiving (or with archived=false, restoring) a team. Admins only. Needs approval in Hills.",
+            schema: obj(
+                json!({ "id": { "type": "string" }, "archived": { "type": "boolean" } }),
+                &["id", "archived"],
+            ),
+        },
+        ToolDef {
+            name: "propose_kb_category",
+            kind: Kind::Write,
+            description: "Propose creating a knowledge base category. Needs approval in Hills.",
+            schema: obj(json!({ "name": { "type": "string" } }), &["name"]),
+        },
+        ToolDef {
+            name: "propose_kb_topic",
+            kind: Kind::Write,
+            description: "Propose creating a topic in a knowledge base category (list_knowledge_tree). Needs approval in Hills.",
+            schema: obj(
+                json!({ "categoryId": { "type": "string" }, "name": { "type": "string" } }),
+                &["categoryId", "name"],
+            ),
+        },
+        ToolDef {
+            name: "propose_kb_rename",
+            kind: Kind::Write,
+            description: "Propose renaming a knowledge base category or topic. Needs approval in Hills.",
+            schema: obj(
+                json!({
+                    "kind": { "type": "string", "enum": ["category", "topic"] },
+                    "id": { "type": "string" },
+                    "name": { "type": "string" }
+                }),
+                &["kind", "id", "name"],
+            ),
+        },
+        ToolDef {
             name: "get_change_status",
             kind: Kind::Status,
             description: "Status of a proposed change: pending, approved (with result), rejected, expired (after 24 hours) or failed (with error).",
@@ -263,7 +412,7 @@ pub fn list_json() -> Value {
                 "inputSchema": t.schema,
                 "annotations": {
                     "readOnlyHint": t.kind != Kind::Write,
-                    "destructiveHint": t.name.starts_with("propose_delete_"),
+                    "destructiveHint": t.name.starts_with("propose_delete_") || t.name == "propose_archive_team",
                     "openWorldHint": false
                 }
             })

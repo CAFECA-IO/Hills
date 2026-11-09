@@ -315,6 +315,37 @@ pub(crate) mod tests {
             .collect();
         assert!(names.contains(&"list_goals") && names.contains(&"propose_task"));
         assert!(names.contains(&"propose_delete_goal") && names.contains(&"propose_delete_task"));
+        // D51：小組、方向、任務狀態與接下、知識庫結構
+        for n in [
+            "list_teams",
+            "list_knowledge_tree",
+            "propose_team_goal",
+            "propose_delete_team_goal",
+            "propose_week_note",
+            "propose_direction",
+            "propose_delete_direction",
+            "propose_task_status",
+            "propose_task_ack",
+            "propose_team",
+            "propose_archive_team",
+            "propose_kb_category",
+            "propose_kb_topic",
+            "propose_kb_rename",
+        ] {
+            assert!(names.contains(&n), "missing {n}");
+        }
+        let hint = |n: &str| {
+            r["result"]["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|t| t["name"] == n)
+                .unwrap()["annotations"]["destructiveHint"]
+                .clone()
+        };
+        assert_eq!(hint("propose_archive_team"), true);
+        assert_eq!(hint("propose_delete_direction"), true);
+        assert_eq!(hint("propose_team"), false);
         // 刪除類工具也是寫入：readOnlyHint 為 false
         let del = r["result"]["tools"]
             .as_array()

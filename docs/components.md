@@ -1,6 +1,6 @@
 # Hills 通用元件
 
-> 版本：v0.6 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.18（D45、D47）
+> 版本：v0.7 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.18（D45、D47）
 > 本文件定義 `apps/desktop/src/ui/` 的通用元件：用途、何時用、變體、狀態、鍵盤與無障礙、API。視覺基礎（token、字級、間距）見 [design-system.md](./design-system.md)。
 > 畫面只能組合這些元件（design-system §1、§11）。需要新元件或新變體時，**先改本文件，再改 `src/ui/`**，並補 `src/ui/ui.test.tsx`。
 
@@ -336,6 +336,28 @@
 ### EmptyState
 
 列表沒有資料時的說明（14 / muted），可附**一個**主要動作（`action`）。每個列表都要有（ui-spec「共通規則」）。
+
+v0.7：
+
+| prop | 型別 | 預設 | 說明 |
+|---|---|---|---|
+| `art` | `generic` \| `goals` \| `tasks` \| `chat` \| `knowledge` \| `team` \| `report` \| `none` | `generic` | 說明上方的插畫（design-system §9「空狀態插畫」）；空間很小的行內空狀態（例如表單內一行）用 `none` |
+| `loading` | boolean | false | 資料還沒載入：改顯示 `Skeleton`，不顯示說明與動作，避免先閃「還沒有…」 |
+| `skeleton` | `Skeleton` 的 `variant` | `list` | `loading` 時的骨架形狀 |
+
+版面：插畫、說明、動作置中排列（`art="none"` 時靠左，同 v0.6 以前）。
+
+### Skeleton（v0.7）
+
+載入中的骨架（design-system §7「載入骨架」）。
+
+| prop | 型別 | 預設 | 說明 |
+|---|---|---|---|
+| `variant` | `lines` \| `list` \| `cards` \| `board` | `list` | 文字列 / 清單列（圓形 + 兩行）/ 卡片格 / 看板欄 |
+| `count` | number | 3 | 列數、卡片數或欄數 |
+| `label` | string | 「載入中」 | `role="status"`、`aria-busy="true"` 的名稱 |
+
+整個骨架是一張 SVG，寬度填滿容器；掃光以 CSS 動畫實作，減少動態時停止。
 
 ### ProgressBar
 

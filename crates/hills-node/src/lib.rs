@@ -8,6 +8,7 @@ mod chat;
 pub mod config;
 pub mod conv;
 pub mod direction;
+pub mod doc_spec;
 pub mod drift;
 mod gossip;
 pub mod kb;

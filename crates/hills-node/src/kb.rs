@@ -15,6 +15,7 @@ use hills_sync::DocKind;
 use serde::{Deserialize, Serialize};
 
 use crate::conv::{self, MAX_ATTACHMENTS_JSON};
+use crate::doc_spec::{self, DocFormat, DocKind as SpecKind};
 use crate::node::{Node, now_ms};
 use crate::org::{get_int, get_obj, get_str};
 
@@ -111,6 +112,11 @@ struct ItemBody {
     v: u8,
     title: String,
     body: String,
+    /// v0.29（D52）
+    #[serde(default)]
+    format: DocFormat,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    spec: Option<String>,
     #[serde(default)]
     tags: Vec<String>,
     topic_id: String,
@@ -131,6 +137,8 @@ pub struct KbItem {
     pub author: MemberId,
     pub title: String,
     pub body: String,
+    pub format: DocFormat,
+    pub spec: Option<String>,
     pub tags: Vec<String>,
     pub topic_id: String,
     pub refs: Vec<String>,
@@ -159,6 +167,12 @@ pub struct KbInput {
     pub key: Option<String>,
     pub title: String,
     pub body: String,
+    /// v0.29（D52）：markdown（預設）| html；html 由前端清理後送入
+    #[serde(default)]
+    pub format: DocFormat,
+    /// v0.29（D52）："hills-doc/1" 時檢查必填段落
+    #[serde(default)]
+    pub spec: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
     pub topic_id: String,
@@ -249,6 +263,8 @@ pub fn read_items(doc: &AutoCommit) -> Vec<KbItem> {
                 author,
                 title: b.title,
                 body: b.body,
+                format: b.format,
+                spec: b.spec,
                 tags: b.tags,
                 topic_id: b.topic_id,
                 refs: b.refs,
@@ -259,6 +275,22 @@ pub fn read_items(doc: &AutoCommit) -> Vec<KbItem> {
             })
         })
         .collect()
+}
+
+/// 前端應已清理；這裡擋下明顯未清理的內容（腳本、事件屬性、javascript: 連結）。
+fn has_active_html(body: &str) -> bool {
+    let l = body.to_ascii_lowercase();
+    l.contains("<script")
+        || l.contains("javascript:")
+        || l.contains("<iframe")
+        || l.split(|c: char| c.is_whitespace() || c == '<' || c == '/')
+            .any(|w| {
+                w.starts_with("on")
+                    && w.contains('=')
+                    && w[2..].split('=').next().is_some_and(|n| {
+                        !n.is_empty() && n.bytes().all(|b| b.is_ascii_alphabetic())
+                    })
+            })
 }
 
 fn check_name(name: &str) -> Result<String> {
@@ -285,6 +317,11 @@ fn validate(input: &KbInput) -> Result<()> {
             .any(|t| t.trim().is_empty() || t.chars().count() > MAX_TAG)
     {
         bail!("標籤最多 {MAX_TAGS} 個，每個 1–{MAX_TAG} 字");
+    }
+    let spec = input.spec.as_deref().filter(|s| !s.is_empty());
+    doc_spec::check(spec, SpecKind::Knowledge, input.format, &input.body)?;
+    if input.format == DocFormat::Html && has_active_html(&input.body) {
+        bail!("HTML 內容含有不允許的腳本或事件");
     }
     if input.refs.len() > MAX_REFS {
         bail!("引用最多 {MAX_REFS} 則");
@@ -435,6 +472,8 @@ impl Node {
             v: 1,
             title: input.title.trim().to_owned(),
             body: input.body.clone(),
+            format: input.format,
+            spec: input.spec.clone().filter(|s| !s.is_empty()),
             tags: input.tags.iter().map(|t| t.trim().to_owned()).collect(),
             topic_id: input.topic_id.clone(),
             refs,
@@ -504,6 +543,8 @@ impl Node {
             key: None,
             title: title.to_owned(),
             body: msg.body,
+            format: Default::default(),
+            spec: None,
             tags: vec![],
             topic_id: topic_id.to_owned(),
             refs: vec![],
@@ -563,6 +604,8 @@ mod tests {
             v: 1,
             title: "D39".into(),
             body: "內容".into(),
+            format: DocFormat::Markdown,
+            spec: None,
             tags: vec!["儲存".into()],
             topic_id: "t1".into(),
             refs: vec![],
@@ -597,12 +640,27 @@ mod tests {
             key: None,
             title: "t".into(),
             body: String::new(),
+            format: Default::default(),
+            spec: None,
             tags: vec![],
             topic_id: "x".into(),
             refs: vec![],
             source: None,
         };
         assert!(validate(&base).is_ok());
+        let mut spec = base.clone();
+        spec.spec = Some(doc_spec::SPEC_V1.into());
+        assert!(validate(&spec).is_err());
+        spec.body = "## 摘要 {#summary}\n一句\n\n## 內容 {#content}\n內文".into();
+        assert!(validate(&spec).is_ok());
+        let mut html = base.clone();
+        html.format = DocFormat::Html;
+        html.body = "<p onclick=\"x()\">hi</p>".into();
+        assert!(validate(&html).is_err());
+        html.body = "<p>online=yes</p><a href=\"javascript:x\">a</a>".into();
+        assert!(validate(&html).is_err());
+        html.body = "<p>online</p>".into();
+        assert!(validate(&html).is_ok());
         let mut bad = base.clone();
         bad.title = " ".into();
         assert!(validate(&bad).is_err());

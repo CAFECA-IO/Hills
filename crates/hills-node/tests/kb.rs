@@ -11,6 +11,8 @@ fn input(topic: &str, title: &str) -> KbInput {
         key: None,
         title: title.into(),
         body: "**內容**".into(),
+        format: Default::default(),
+        spec: None,
         tags: vec!["儲存".into()],
         topic_id: topic.into(),
         refs: vec![],

@@ -14,6 +14,7 @@ import {
   IconButton,
   ListButton,
   Markdown,
+  applyEdit,
   Menu,
   MenuItem,
   NoticeDialog,
@@ -258,6 +259,53 @@ describe('ui 元件（docs/components.md）', () => {
     const bad = html(<NoticeDialog title="無法啟動" level="danger" body="x" onClose={noop} />);
     expect(bad).toContain('role="alertdialog"');
     expect(bad).toContain(t('notice.level.danger'));
+  });
+
+  it('Markdown：表格、勾選清單、提示框、段落 key、程式碼複製、外部圖片改連結', () => {
+    const md = [
+      '## 摘要 {#summary}',
+      '| a | b |',
+      '|---|---|',
+      '| 1 | 2 |',
+      '',
+      '- [x] 完成',
+      '',
+      '> [!WARNING]',
+      '> 小心',
+      '',
+      '```sql',
+      'select 1;',
+      '```',
+      '',
+      '![圖](https://e.com/a.png)',
+    ].join('\n');
+    const h = html(<Markdown>{md}</Markdown>);
+    expect(h).toContain('<table>');
+    expect(h).toContain('type="checkbox"');
+    expect(h).toContain('id="sec-summary"');
+    expect(h).not.toContain('{#summary}');
+    expect(h).toContain('callout-warning');
+    expect(h).toContain('sql');
+    expect(h).not.toContain('<img');
+    expect(h).toContain('href="https://e.com/a.png"');
+  });
+
+  it('Markdown 目錄只在 doc 且有兩個以上的 key 段落時出現', () => {
+    const md = '## 摘要 {#summary}\nA\n\n## 內容 {#content}\nB';
+    expect(html(<Markdown toc>{md}</Markdown>)).toContain('href="#sec-content"');
+    expect(
+      html(
+        <Markdown toc variant="chat">
+          {md}
+        </Markdown>,
+      ),
+    ).not.toContain('href="#sec-content"');
+  });
+
+  it('MarkdownEditor 的 applyEdit：包住、行首、插入區塊', () => {
+    expect(applyEdit('abc', 1, 2, { wrap: ['**', '**'] })).toEqual(['a**b**c', 3, 4]);
+    expect(applyEdit('a\nb', 0, 3, { line: '- ' })[0]).toBe('- a\n- b');
+    expect(applyEdit('x', 1, 1, { block: () => 'T' })[0]).toBe('x\n\nT');
   });
 
   it('Markdown 不轉譯原始 HTML，連結開新視窗', () => {

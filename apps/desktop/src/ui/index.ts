@@ -11,3 +11,4 @@ export * from './feedback';
 export * from './dialogs';
 export * from './markdown';
 export * from './empty';
+export * from './doc';

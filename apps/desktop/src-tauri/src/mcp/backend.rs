@@ -349,6 +349,25 @@ impl McpBackend for RealBackend {
             }
             "list_conversations" => to_v(commands::conversations(self.state()).await),
             "list_teams" => to_v(commands::teams_info(self.state()).await),
+            "get_knowledge" => {
+                let key = need(&args, "key")?;
+                let snap = commands::kb(self.state()).await?;
+                let it = snap
+                    .items
+                    .into_iter()
+                    .find(|i| i.key == key)
+                    .ok_or("no knowledge item with this key")?;
+                let want = strs(&args["sections"]);
+                let secs: Vec<_> = hills_node::doc_spec::sections(it.format, &it.body)
+                    .into_iter()
+                    .filter(|s| want.is_empty() || s.key.as_ref().is_some_and(|k| want.contains(k)))
+                    .collect();
+                Ok(json!({
+                    "key": it.key, "title": it.title, "format": it.format, "spec": it.spec,
+                    "author": it.author.to_string(), "source": it.source, "tags": it.tags,
+                    "topicId": it.topic_id, "updatedAt": it.updated_at, "sections": secs
+                }))
+            }
             "list_knowledge_tree" => {
                 let snap = to_v(commands::kb(self.state()).await)?;
                 Ok(json!({ "categories": snap["categories"], "topics": snap["topics"] }))
@@ -584,13 +603,22 @@ impl McpBackend for RealBackend {
                 Ok((json!({ "key": key }), preview))
             }
             "propose_kb_item" => {
-                let input = Value::Object(overlay(
+                let mut input = overlay(
                     Map::new(),
                     &args,
-                    &["key", "title", "body", "tags", "topicId"],
-                ));
-                serde_json::from_value::<hills_node::kb::KbInput>(input.clone())
+                    &["key", "title", "body", "tags", "topicId", "format"],
+                );
+                input.insert("spec".into(), json!(hills_node::doc_spec::SPEC_V1));
+                let input = Value::Object(input);
+                let parsed = serde_json::from_value::<hills_node::kb::KbInput>(input.clone())
                     .map_err(|e| format!("invalid knowledge item: {e}"))?;
+                hills_node::doc_spec::check(
+                    parsed.spec.as_deref(),
+                    hills_node::doc_spec::DocKind::Knowledge,
+                    parsed.format,
+                    &parsed.body,
+                )
+                .map_err(|e| format!("{e} (hills-doc/1 needs sections summary and content)"))?;
                 let preview = json!({
                     "action": if s(&args, "key").is_some() { "updateKb" } else { "createKb" },
                     "title": input["title"]

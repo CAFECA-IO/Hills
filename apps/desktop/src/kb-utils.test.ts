@@ -28,6 +28,8 @@ const item = (key: string, topicId: string, extra: Partial<KbItem> = {}): KbItem
   author: 'a',
   title: key,
   body: '',
+  format: 'markdown',
+  spec: null,
   tags: [],
   topicId,
   refs: [],

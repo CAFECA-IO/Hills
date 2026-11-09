@@ -1,7 +1,6 @@
 /** 日 / 週報（ui-spec「報表」，feature-plan §5.5、D32、D16；technical-design §16.13）。 */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import Markdown from 'react-markdown';
 import {
   api,
   type MemberView,
@@ -33,6 +32,7 @@ import {
   Checkbox,
   ErrorText,
   IconButton,
+  Markdown,
   Pressable,
   SegmentedControl,
   Select,
@@ -310,9 +310,7 @@ function MyReport({
           <h3 className="text-sm font-semibold">{t(`report.section.${k}` as MessageKey)}</h3>
           {preview ? (
             <div className="prose-hills rounded-control border border-line p-3 text-sm">
-              <Markdown skipHtml components={{ img: () => null }}>
-                {form.sections[k]}
-              </Markdown>
+              <Markdown>{form.sections[k]}</Markdown>
             </div>
           ) : (
             <TextArea
@@ -383,11 +381,7 @@ function printMarkdown(md: string) {
   const area = document.createElement('div');
   area.className = 'print-area prose-hills';
   // react-markdown 不轉譯原始 HTML（skipHtml），輸出可安全放入
-  area.innerHTML = renderToStaticMarkup(
-    <Markdown skipHtml components={{ img: () => null }}>
-      {md}
-    </Markdown>,
-  );
+  area.innerHTML = renderToStaticMarkup(<Markdown>{md}</Markdown>);
   document.body.appendChild(area);
   const done = () => {
     area.remove();
@@ -535,9 +529,7 @@ function SectionsView({ sections }: { sections: ReportSections }) {
             {t(`report.section.${k}` as MessageKey)}
           </h3>
           <div className="prose-hills text-sm">
-            <Markdown skipHtml components={{ img: () => null }}>
-              {sections[k]}
-            </Markdown>
+            <Markdown>{sections[k]}</Markdown>
           </div>
         </div>
       ))}

@@ -262,6 +262,145 @@ body {
   color: var(--color-muted);
 }
 
+/* v0.8（D55）：文件閱讀樣式（doc）與精簡樣式（chat） */
+.prose-hills h1,
+.prose-hills h2,
+.prose-hills h3,
+.prose-hills h4 {
+  font-weight: 700;
+  line-height: 1.35;
+  scroll-margin-top: 0.5rem;
+}
+.prose-doc h1 {
+  font-size: 1.25rem;
+  margin: 0.75rem 0 0.5rem;
+}
+.prose-doc h2 {
+  font-size: 1.05rem;
+  margin: 1.25rem 0 0.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--color-line);
+}
+.prose-doc h3 {
+  font-size: 0.95rem;
+  margin: 1rem 0 0.25rem;
+}
+.prose-doc p {
+  margin: 0.5rem 0;
+  line-height: 1.7;
+}
+.prose-doc li {
+  line-height: 1.7;
+}
+.prose-chat h1,
+.prose-chat h2,
+.prose-chat h3,
+.prose-chat h4 {
+  font-size: 1em;
+  margin: 0.25rem 0;
+}
+.prose-hills > :first-child,
+.prose-hills > div > :first-child {
+  margin-top: 0;
+}
+.prose-hills hr {
+  border: 0;
+  border-top: 1px solid var(--color-line);
+  margin: 1rem 0;
+}
+.prose-hills del {
+  color: var(--color-muted);
+}
+.prose-hills table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  font-size: 0.92em;
+}
+.prose-hills th,
+.prose-hills td {
+  border: 1px solid var(--color-line);
+  padding: 0.3rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+.prose-hills th {
+  background: var(--color-bg);
+  font-weight: 600;
+}
+.prose-hills li:has(> input[type='checkbox']) {
+  list-style: none;
+  margin-left: -1.25rem;
+}
+.prose-hills li > input[type='checkbox'] {
+  margin-right: 0.4rem;
+  vertical-align: -0.1em;
+  accent-color: var(--color-primary);
+}
+.prose-hills .md-code {
+  margin: 0.5rem 0;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+.prose-hills .md-code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.2rem 0.5rem;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-line);
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+.prose-hills .md-code-copy {
+  font: inherit;
+  border: 0;
+  background: transparent;
+  color: var(--color-primary);
+  cursor: pointer;
+  padding: 0.1rem 0.25rem;
+  border-radius: 0.25rem;
+}
+.prose-hills .md-code-copy:focus-visible {
+  outline: 2px solid var(--color-primary);
+}
+.prose-hills .md-code pre {
+  margin: 0;
+  border-radius: 0;
+  background: var(--color-surface);
+}
+.prose-hills pre code {
+  background: transparent;
+  padding: 0;
+}
+.prose-hills .callout {
+  margin: 0.5rem 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-control);
+  background: var(--color-primary-soft);
+  border-left: 3px solid var(--color-primary);
+}
+.prose-hills .callout-title {
+  display: block;
+  font-size: 0.8em;
+  color: var(--color-primary);
+}
+.prose-hills .callout-warning,
+.prose-hills .callout-caution {
+  background: var(--color-bg);
+  border-left-color: var(--color-warning);
+}
+.prose-hills .callout-warning .callout-title,
+.prose-hills .callout-caution .callout-title {
+  color: var(--color-warning);
+}
+.prose-hills .callout > p:first-of-type {
+  margin-top: 0.15rem;
+}
+
 /* 面板內捲動條（ui-spec「版面」）：4 px，滑過或聚焦時才顯示 */
 .scroll-panel {
   overflow-y: auto;

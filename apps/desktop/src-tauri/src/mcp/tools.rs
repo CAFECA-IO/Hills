@@ -142,6 +142,18 @@ pub fn all() -> Vec<ToolDef> {
             schema: obj(json!({}), &[]),
         },
         ToolDef {
+            name: "get_knowledge",
+            kind: Kind::Read,
+            description: "One knowledge item split into its hills-doc/1 sections ({key, title, text} as plain text). Pass `sections` (e.g. [\"summary\"]) to get only those; `lead` is the text before the first section.",
+            schema: obj(
+                json!({
+                    "key": { "type": "string" },
+                    "sections": { "type": "array", "items": { "type": "string" } }
+                }),
+                &["key"],
+            ),
+        },
+        ToolDef {
             name: "propose_goal",
             kind: Kind::Write,
             description: "Propose creating or updating a goal. Nothing is written until the user approves it in Hills; returns a pending change id. With `id` it updates that goal.",
@@ -218,11 +230,12 @@ pub fn all() -> Vec<ToolDef> {
         ToolDef {
             name: "propose_kb_item",
             kind: Kind::Write,
-            description: "Propose adding (or with `key`, updating) a knowledge base item under a topic. Find the topic with list_knowledge_tree; if none fits, propose_kb_topic first. Needs approval in Hills.",
+            description: "Propose adding (or with `key`, updating) a knowledge base item under a topic. Find the topic with list_knowledge_tree; if none fits, propose_kb_topic first. The body must follow the hills-doc/1 spec: required sections summary and content, optional points and sources, plus any custom sections. Markdown: `## 摘要 {#summary}` headings (custom: no key or `{#x-...}`). HTML: `<article data-hills-doc=\"1\"><section data-section=\"summary\"><h2>摘要</h2>...</section>...</article>`; no scripts, event attributes or external resources (inline styles and one <style> block are fine). Needs approval in Hills.",
             schema: obj(
                 json!({
                     "key": { "type": "string" },
                     "title": { "type": "string" },
+                    "format": { "type": "string", "enum": ["markdown", "html"], "description": "Default markdown." },
                     "body": { "type": "string" },
                     "tags": { "type": "array", "items": { "type": "string" } },
                     "topicId": { "type": "string" }

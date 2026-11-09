@@ -1,6 +1,5 @@
 /** 知識庫「星空」（ui-spec「知識庫」，D42；technical-design §16.11）。 */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import Markdown from 'react-markdown';
 import {
   api,
   type ConvRow,
@@ -11,6 +10,15 @@ import {
   type KbTopic,
   type MemberView,
 } from './api';
+import {
+  missingRequired,
+  parseSections,
+  sectionLabel,
+  SPEC_V1,
+  summaryOf,
+  templateFor,
+  type DocFormat,
+} from './doc-spec';
 import { Moon } from './figures';
 import { useLoad, useSize } from './hooks';
 import { formatTime, t, type MessageKey } from './i18n';
@@ -22,7 +30,6 @@ import {
   matches,
   placeOf,
   relations,
-  summary,
   upToWeek,
   weekOf,
   weekly,
@@ -30,16 +37,19 @@ import {
 } from './kb-utils';
 import { PageHead } from './layout';
 import {
+  Badge,
   Button,
   Checkbox,
   Chip,
   ConfirmButton,
   Dialog,
+  DocView,
   EmptyState,
   ErrorText,
   Field,
   LinkButton,
   ListButton,
+  MarkdownEditor,
   Pressable,
   SegmentedControl,
   Select,
@@ -91,12 +101,23 @@ export function Knowledge({ members, isAdmin, timezone, onOpenConv }: Props) {
   const thisWeek = weekOf(now, timezone);
   const blank = (): KbInput => {
     const topic = activeTopics(data.topics)[0];
-    return { key: null, title: '', body: '', tags: [], topicId: topic?.id ?? '', refs: [] };
+    return {
+      key: null,
+      title: '',
+      body: templateFor('knowledge', 'markdown'),
+      format: 'markdown',
+      spec: SPEC_V1,
+      tags: [],
+      topicId: topic?.id ?? '',
+      refs: [],
+    };
   };
   const toInput = (i: KbItem): KbInput => ({
     key: i.key,
     title: i.title,
     body: i.body,
+    format: i.format,
+    spec: i.spec,
     tags: i.tags,
     topicId: i.topicId,
     refs: i.refs,
@@ -473,7 +494,9 @@ function PreviewCard({
     <aside className="scroll-panel flex w-72 shrink-0 flex-col gap-2 rounded-card bg-surface p-4 shadow-sm wide:w-80">
       <span className="text-xs text-muted">{pathOf(item, data)}</span>
       <h2 className="text-lg leading-snug font-bold">{item.title}</h2>
-      <p className="text-sm text-muted">{summary(item.body, 90) || t('kb.noBody')}</p>
+      <p className="text-sm text-muted">
+        {summaryOf(item.format, item.body, 90) || t('kb.noBody')}
+      </p>
       <span className="text-xs text-muted">
         {t('kb.cited', { count: cited })} · {t('kb.relCount', { count: rels.length })}
       </span>
@@ -552,7 +575,7 @@ function ShareToConv({
           className="h-8 px-3 py-0"
           disabled={busy || !conv || done}
           onClick={async () => {
-            const body = `${t('kb.share.prefix')}**${item.title}**\n\n${summary(item.body, 140)}`;
+            const body = `${t('kb.share.prefix')}**${item.title}**\n\n${summaryOf(item.format, item.body, 140)}`;
             if (await attempt(() => api.sendMessage(conv, body, []))) setDone(true);
           }}
         >
@@ -895,8 +918,11 @@ function KbEditor({
 }) {
   const [v, setV] = useState<KbInput>(initial);
   const [tags, setTags] = useState(initial.tags.join(', '));
-  const [preview, setPreview] = useState(false);
   const [refQ, setRefQ] = useState('');
+  const [htmlPreview, setHtmlPreview] = useState(false);
+  const format: DocFormat = v.format ?? 'markdown';
+  const lacking = v.spec ? missingRequired('knowledge', parseSections(format, v.body)) : [];
+  const [showLacking, setShowLacking] = useState(false);
   const [missing, setMissing] = useState<{ title?: boolean; topic?: boolean }>({});
   const titleRef = useRef<HTMLInputElement>(null);
   const { busy, error, attempt } = useAction();
@@ -912,8 +938,9 @@ function KbEditor({
       onSubmit={async () => {
         const m = { title: !v.title.trim(), topic: !v.topicId };
         setMissing(m);
+        setShowLacking(true);
         if (m.title) titleRef.current?.focus();
-        if (m.title || m.topic) return;
+        if (m.title || m.topic || lacking.length > 0) return;
         let key = '';
         const ok = await attempt(async () => {
           key = await api.kbSave({
@@ -947,26 +974,62 @@ function KbEditor({
           {t('kb.topic.required')}
         </p>
       )}
-      <div className="flex flex-col gap-1 text-sm">
-        <span className="flex items-center justify-between text-xs text-muted">
-          {t('kb.field.body')}
-          <LinkButton onClick={() => setPreview((p) => !p)}>
-            {preview ? t('kb.field.write') : t('kb.field.preview')}
-          </LinkButton>
-        </span>
-        {preview ? (
-          <div className="prose-hills min-h-32 rounded-control border border-line p-3 text-sm">
-            <Markdown skipHtml components={{ img: () => null }}>
-              {v.body}
-            </Markdown>
-          </div>
+      <div className="flex flex-col gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted">{t('kb.field.bodyDoc')}</span>
+          <SegmentedControl
+            label={t('kb.format')}
+            value={format}
+            onChange={(f) => {
+              const untouched = !v.body.trim() || v.body === templateFor('knowledge', format);
+              set({ format: f, body: untouched ? templateFor('knowledge', f) : v.body });
+            }}
+            options={[
+              { value: 'markdown', label: t('kb.format.markdown') },
+              { value: 'html', label: t('kb.format.html') },
+            ]}
+          />
+          {v.spec && !v.body.trim() && (
+            <LinkButton
+              className="text-xs"
+              onClick={() => set({ body: templateFor('knowledge', format) })}
+            >
+              {t('kb.template')}
+            </LinkButton>
+          )}
+          {format === 'html' && (
+            <LinkButton className="ml-auto text-xs" onClick={() => setHtmlPreview((p) => !p)}>
+              {htmlPreview ? t('kb.field.write') : t('kb.field.preview')}
+            </LinkButton>
+          )}
+        </div>
+        {format === 'markdown' ? (
+          <MarkdownEditor
+            label={t('kb.field.bodyDoc')}
+            rows={12}
+            value={v.body}
+            invalid={showLacking && lacking.length > 0}
+            onChange={(body) => set({ body })}
+          />
+        ) : htmlPreview ? (
+          <DocView
+            format="html"
+            body={v.body}
+            className="min-h-32 rounded-control border border-line p-3"
+          />
         ) : (
           <TextArea
-            rows={7}
+            rows={12}
             value={v.body}
-            aria-label={t('kb.field.body')}
+            className="font-mono text-xs"
+            aria-label={t('kb.field.bodyDoc')}
+            invalid={showLacking && lacking.length > 0}
             onChange={(e) => set({ body: e.target.value })}
           />
+        )}
+        {v.spec && <p className="text-xs text-muted">{t('doc.spec.hint')}</p>}
+        {showLacking && lacking.length > 0 && (
+          <ErrorText message={t('doc.missing', { names: lacking.map(sectionLabel).join('、') })} />
         )}
       </div>
       <Field label={t('kb.field.tags')}>
@@ -1042,6 +1105,7 @@ function KbReader({
   onDeleted: () => void;
 }) {
   const { error, attempt } = useAction();
+  const [source, setSource] = useState(false);
   if (!item) return null;
   const rels = relations(item, data.items, data.topics);
   const src = item.source;
@@ -1056,26 +1120,24 @@ function KbReader({
           {t('kb.byline', { name: nameOf(item.author), time: formatTime(item.updatedAt) })}
           {item.tags.length > 0 && ` · ${item.tags.map((x) => `#${x}`).join(' ')}`}
         </span>
-        <div className="prose-hills text-sm break-words">
-          <Markdown
-            skipHtml
-            components={{
-              a: ({ href, children }) => (
-                <a
-                  href={href}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="text-primary underline"
-                >
-                  {children}
-                </a>
-              ),
-              img: () => null,
-            }}
-          >
-            {item.body || t('kb.noBody')}
-          </Markdown>
+        <div className="flex items-center gap-2">
+          {item.format === 'html' && <Badge>{t('kb.format.html')}</Badge>}
+          <SegmentedControl
+            className="ml-auto"
+            label={t('kb.view.mode')}
+            value={source ? 'source' : 'preview'}
+            onChange={(x) => setSource(x === 'source')}
+            options={[
+              { value: 'preview', label: t('kb.view.preview') },
+              { value: 'source', label: t('kb.view.source') },
+            ]}
+          />
         </div>
+        {item.body ? (
+          <DocView format={item.format} body={item.body} source={source} toc className="text-sm" />
+        ) : (
+          <p className="text-sm text-muted">{t('kb.noBody')}</p>
+        )}
         <div className="text-xs text-muted">
           {t(`kb.source.${src.kind}` as MessageKey)}
           {convId &&

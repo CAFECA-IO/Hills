@@ -2,7 +2,6 @@ import { AttachMenu, AttachmentCard, PendingUploads, UploadQueue } from './attac
 import { cancel, loadPending, parseAttachments, resume } from './share';
 /** M1 對話（ui-spec「聊天」M1 畫面、technical-design §14）。 */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import Markdown from 'react-markdown';
 import {
   api,
   type ConvRow,
@@ -41,6 +40,7 @@ import {
   Field,
   LinkButton,
   ListButton,
+  Markdown,
   Radio,
   TextArea,
   useAction,
@@ -438,27 +438,9 @@ function MessageItem({
         </span>{' '}
         {formatTime(m.createdAt)}
       </p>
-      <div className="prose-hills text-sm break-words">
-        {/* react-markdown 預設不轉譯原始 HTML（skipHtml），連結以新視窗開啟 */}
-        <Markdown
-          skipHtml
-          components={{
-            a: ({ href, children }) => (
-              <a
-                href={href}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="text-primary underline"
-              >
-                {children}
-              </a>
-            ),
-            img: () => null,
-          }}
-        >
-          {m.body}
-        </Markdown>
-      </div>
+      <Markdown variant="chat" className="text-sm">
+        {m.body}
+      </Markdown>
       {attachments.map((a, i) => (
         <div key={i} className="flex flex-col items-start gap-1">
           <AttachmentCard a={a} author={author} createdAt={m.createdAt} />

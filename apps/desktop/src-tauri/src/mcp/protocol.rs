@@ -319,6 +319,7 @@ pub(crate) mod tests {
         for n in [
             "list_teams",
             "list_knowledge_tree",
+            "get_knowledge",
             "propose_team_goal",
             "propose_delete_team_goal",
             "propose_week_note",

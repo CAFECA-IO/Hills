@@ -2,6 +2,7 @@
  * 與 Rust 端（hills-node）溝通的唯一入口。前端不接觸金鑰，只呼叫 command、接收事件。
  * 在瀏覽器（非 Tauri）開發時使用 dev/mockBackend 的假資料，正式建置不包含。
  */
+import type { DocFormat } from './doc-spec';
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { listen as tauriListen, type UnlistenFn } from '@tauri-apps/api/event';
 
@@ -249,6 +250,9 @@ export interface KbItem {
   author: string;
   title: string;
   body: string;
+  /** v0.29（D52） */
+  format: DocFormat;
+  spec: string | null;
   tags: string[];
   topicId: string;
   refs: string[];
@@ -268,6 +272,8 @@ export interface KbInput {
   key?: string | null;
   title: string;
   body: string;
+  format?: DocFormat;
+  spec?: string | null;
   tags: string[];
   topicId: string;
   refs: string[];

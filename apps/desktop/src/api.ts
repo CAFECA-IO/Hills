@@ -716,28 +716,33 @@ interface Backend {
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
-let backend: Promise<Backend>;
-if (isTauri) {
-  backend = Promise.resolve({
-    invoke: (cmd, args, options) => tauriInvoke(cmd, args, options),
-    listen: (event, cb) => tauriListen(event, (e) => cb(e.payload as never)),
-  });
-} else if (import.meta.env.DEV) {
-  backend = import('./dev/mockBackend').then((m) => m.mockBackend);
-} else {
-  backend = Promise.reject(new Error('not running inside Tauri'));
+/**
+ * 第一次呼叫時才決定後端：Tauri 內用 IPC；瀏覽器開發模式載入 mock。
+ * 延後載入讓單元測試（Node，沒有 window）匯入本檔時不會去載 mock。
+ */
+let backendPromise: Promise<Backend> | null = null;
+function backend(): Promise<Backend> {
+  backendPromise ??= isTauri
+    ? Promise.resolve({
+        invoke: (cmd, args, options) => tauriInvoke(cmd, args, options),
+        listen: (event, cb) => tauriListen(event, (e) => cb(e.payload as never)),
+      })
+    : import.meta.env.DEV && typeof window !== 'undefined'
+      ? import('./dev/mockBackend').then((m) => m.mockBackend)
+      : Promise.reject(new Error('not running inside Tauri'));
+  return backendPromise;
 }
 
 const call = async <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
-  (await backend).invoke<T>(cmd, args);
+  (await backend()).invoke<T>(cmd, args);
 
 /** 二進位內容 + 標頭（Tauri raw request）。 */
 const callRaw = async <T>(cmd: string, body: Uint8Array, headers: Record<string, string>) =>
-  (await backend).invoke<T>(cmd, body, { headers });
+  (await backend()).invoke<T>(cmd, body, { headers });
 
 /** Rust 端以 tauri::ipc::Response 回傳的二進位。 */
 const callBytes = async (cmd: string, args: Record<string, unknown>): Promise<Uint8Array> => {
-  const r = await (await backend).invoke<ArrayBuffer | Uint8Array | number[]>(cmd, args);
+  const r = await (await backend()).invoke<ArrayBuffer | Uint8Array | number[]>(cmd, args);
   return r instanceof Uint8Array ? r : new Uint8Array(r as ArrayBuffer);
 };
 
@@ -769,7 +774,7 @@ export interface StoredUploadJob {
 }
 
 export const listen = async <T>(event: string, cb: (payload: T) => void) =>
-  (await backend).listen<T>(event, cb);
+  (await backend()).listen<T>(event, cb);
 
 /** 把後端錯誤轉為字串（Tauri command 以字串回傳錯誤）。 */
 export const errorMessage = (e: unknown): string =>

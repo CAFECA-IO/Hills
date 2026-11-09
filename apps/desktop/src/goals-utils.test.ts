@@ -1,18 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import type { PlanView, Task } from './api';
+import type { PlanView } from './api';
 import {
-  columnItems,
   containsPeriod,
   isoWeek,
   joinPeriod,
   parentOptions,
-  periodLabel,
   periodsAt,
   periodsFromAny,
   periodsOfYmd,
-  select,
   splitPeriod,
-  taskColumn,
   weekGoalOptions,
   weekRange,
   weeksInYear,
@@ -70,12 +66,6 @@ describe('periods', () => {
     expect(periodsAt(ms, 'UTC').day).toBe('2026-11-07');
     expect(periodsAt(ms, 'Not/AZone').day).toMatch(/^2026-11-0[78]$/);
   });
-  it('labels periods', () => {
-    expect(periodLabel('quarter', '2026-Q4')).toBe('Q4');
-    expect(periodLabel('month', '2026-03')).toBe('3');
-    expect(periodLabel('week', '2026-W05')).toBe('W05');
-    expect(periodLabel('day', '2026-11-08')).toBe('11/8');
-  });
   it('checks containment, weeks belong where their Thursday is', () => {
     expect(containsPeriod('2026-Q4', 'quarter', '2026-11', 'month')).toBe(true);
     expect(containsPeriod('2026-11', 'month', '2026-W45', 'week')).toBe(true);
@@ -86,8 +76,7 @@ describe('periods', () => {
   });
 });
 
-describe('selection', () => {
-  const p = periodsOfYmd(2026, 11, 8);
+describe('parentOptions', () => {
   const items = [
     plan('y1', 'year', '2026'),
     plan('q1', 'quarter', '2026-Q4', 'y1'),
@@ -95,58 +84,9 @@ describe('selection', () => {
     plan('q3', 'quarter', '2026-Q3', 'y1'),
     plan('m1', 'month', '2026-11', 'q1'),
   ];
-  it('filters the next column by the selected parent', () => {
-    expect(columnItems(items, 'quarter', p, {}).map((i) => i.id)).toEqual(['q1', 'q2']);
-    expect(columnItems(items, 'quarter', p, { year: 'y1' }).map((i) => i.id)).toEqual(['q1']);
-    expect(columnItems(items, 'month', p, { year: 'y1' }).map((i) => i.id)).toEqual(['m1']);
-  });
-  it('clears deeper levels when selecting', () => {
-    expect(select({ year: 'y1', quarter: 'q1', month: 'm1' }, 'quarter', 'q2')).toEqual({
-      year: 'y1',
-      quarter: 'q2',
-    });
-    expect(select({ year: 'y1', quarter: 'q1' }, 'year', null)).toEqual({});
-  });
   it('offers parents from the containing upper period', () => {
     expect(parentOptions(items, 'month', '2026-11').map((i) => i.id)).toEqual(['q1', 'q2']);
     expect(parentOptions(items, 'year', '2026')).toEqual([]);
-  });
-});
-
-describe('taskColumn（D46）', () => {
-  const task = (id: string, dueAt: number | null, extra: Partial<Task> = {}): Task => ({
-    doneAt: null,
-    id,
-    team: 'g',
-    planItemId: null,
-    title: id,
-    assignee: 'me',
-    status: 'todo',
-    dueAt,
-    steps: [],
-    createdBy: null,
-    createdAt: 0,
-    updatedAt: 0,
-    ...extra,
-  });
-  // 2026-W46 = 11/9–11/15
-  const mon = Date.UTC(2026, 10, 9, 3);
-  const list = [
-    task('a', mon),
-    task('b', mon + 7 * 86_400_000),
-    task('c', null),
-    task('d', mon, { status: 'done' }),
-    task('e', mon, { assignee: 'other' }),
-    task('f', mon + 8 * 86_400_000, { assignee: 'other' }),
-    task('g', mon, { planItemId: 'w1', status: 'done' }),
-    task('h', null, { planItemId: 'w1' }),
-  ];
-  const opts = { week: '2026-W46', selectedWeek: null, me: 'me', focusId: 'f', tz: 'UTC' };
-  it('未選取週目標：本週或沒有期限、指派給我、未完成，加上焦點', () => {
-    expect(taskColumn(list, opts).map((t) => t.id)).toEqual(['a', 'f', 'c', 'h']);
-  });
-  it('選取週目標：連結到它的任務，已完成排最後', () => {
-    expect(taskColumn(list, { ...opts, selectedWeek: 'w1' }).map((t) => t.id)).toEqual(['h', 'g']);
   });
 });
 

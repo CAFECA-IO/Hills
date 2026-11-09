@@ -1,5 +1,5 @@
-/** 目標「階梯」的純函式（ui-spec「目標」、technical-design §16.10）。 */
-import type { PlanLevel, PlanView, Task } from './api';
+/** 目標期間與層級的純函式（ui-spec「目標」、technical-design §16.10）。 */
+import type { PlanLevel, PlanView } from './api';
 
 /** 目標的四層（D46：日層級取消，週目標之下為任務）。 */
 export const LEVELS: PlanLevel[] = ['year', 'quarter', 'month', 'week'];
@@ -57,94 +57,11 @@ export function periodsAt(ms: number, tz: string): Periods {
   return periodsOfYmd(y, m, d);
 }
 
-/** 期間的短標籤（欄頭用）。 */
-export function periodLabel(level: PlanLevel, period: string): string {
-  const parts = period.split('-');
-  switch (level) {
-    case 'year':
-      return parts[0] ?? period;
-    case 'quarter':
-      return parts[1] ?? period;
-    case 'month':
-      return String(Number(parts[1]));
-    case 'week':
-      return parts[1] ?? period;
-    case 'day':
-      return `${Number(parts[1])}/${Number(parts[2])}`;
-  }
-}
-
-export function nextLevel(level: PlanLevel): PlanLevel | null {
-  return LEVELS[LEVELS.indexOf(level) + 1] ?? null;
-}
-
 export function prevLevel(level: PlanLevel): PlanLevel | null {
   const i = LEVELS.indexOf(level);
   return i > 0 ? (LEVELS[i - 1] ?? null) : null;
 }
 
-/** 每一層目前選取的項目 id（選取某層時清除更下層）。 */
-export type Selection = Partial<Record<PlanLevel, string>>;
-
-export function select(sel: Selection, level: PlanLevel, id: string | null): Selection {
-  const out: Selection = {};
-  for (const l of LEVELS) {
-    if (l === level) {
-      if (id) out[l] = id;
-      break;
-    }
-    if (sel[l]) out[l] = sel[l];
-  }
-  return out;
-}
-
-/**
- * 一欄要顯示的項目：該層、該期間；上一層有選取時只列出對齊它的子目標（ui-spec「目標」）。
- */
-export function columnItems(
-  items: PlanView[],
-  level: PlanLevel,
-  periods: Periods,
-  sel: Selection,
-): PlanView[] {
-  const prev = prevLevel(level);
-  const parent = prev ? sel[prev] : undefined;
-  return items.filter(
-    (i) => i.level === level && i.period === periods[level] && (!parent || i.parentId === parent),
-  );
-}
-
-/**
- * 任務欄（ui-spec「目標」v0.18，D46）：選取週目標時列出連結到它的任務（含已完成）；
- * 否則列出這一週到期或沒有期限、指派給我且未完成的任務，加上焦點任務。
- */
-export function taskColumn(
-  tasks: Task[],
-  opts: {
-    week: string;
-    selectedWeek: string | null;
-    me: string;
-    focusId: string | null;
-    tz: string;
-  },
-): Task[] {
-  const { week, selectedWeek, me, focusId, tz } = opts;
-  const list = selectedWeek
-    ? tasks.filter((t) => t.planItemId === selectedWeek)
-    : tasks.filter((t) => {
-        if (t.id === focusId && t.status !== 'done') return true;
-        if (t.status === 'done' || t.assignee !== me) return false;
-        return t.dueAt === null || periodsAt(t.dueAt, tz).week === week;
-      });
-  return [...list].sort(
-    (a, b) =>
-      Number(a.status === 'done') - Number(b.status === 'done') ||
-      (a.dueAt ?? Infinity) - (b.dueAt ?? Infinity) ||
-      a.createdAt - b.createdAt,
-  );
-}
-
-/** 編輯對話框「對齊上層」的選項：上一層中包含此期間的項目（我的）。 */
 export function parentOptions(items: PlanView[], level: PlanLevel, period: string): PlanView[] {
   const prev = prevLevel(level);
   if (!prev) return [];

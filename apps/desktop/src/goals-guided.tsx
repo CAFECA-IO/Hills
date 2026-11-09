@@ -20,7 +20,7 @@ import {
   type TeamGoal,
 } from './api';
 import { chain, nextPrompt, type ChainRow, type Prompt } from './goals-guided-utils';
-import type { GoalsProps } from './goals-ladder';
+import type { GoalsProps } from './goals-roadmap';
 import { periodsAt, weekRange, splitPeriod, type Periods } from './goals-utils';
 import { BreakdownWizard, GuidedEditor, PlanWizard, TeamGoalWizard } from './goals-wizard';
 import { useLoad } from './hooks';

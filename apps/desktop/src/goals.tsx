@@ -1,10 +1,10 @@
 /**
- * 目標頁（ui-spec「目標」v0.19，D47）：預設為引導式，右上角「進階檢視」切換到階梯
- * （第 3 批改為路線圖）。切換記在本機，同介面語言的做法。
+ * 目標頁（ui-spec「目標」v0.21，D47）：預設為引導式，右上角「進階檢視」切換到路線圖。
+ * 切換記在本機，同介面語言的做法。
  */
 import { useState } from 'react';
 import { GuidedGoals } from './goals-guided';
-import { GoalsLadder, type GoalsProps } from './goals-ladder';
+import { GoalsRoadmap, type GoalsProps } from './goals-roadmap';
 import { t } from './i18n';
 import { Checkbox } from './ui';
 
@@ -40,7 +40,7 @@ export function Goals(props: GoalsProps) {
     />
   );
   return advanced ? (
-    <GoalsLadder {...props} headExtra={toggle} />
+    <GoalsRoadmap {...props} headExtra={toggle} />
   ) : (
     <GuidedGoals
       {...props}

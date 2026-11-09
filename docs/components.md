@@ -1,6 +1,6 @@
 # Hills 通用元件
 
-> 版本：v0.8 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.18（D45、D47）
+> 版本：v0.9 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.18（D45、D47）
 > 本文件定義 `apps/desktop/src/ui/` 的通用元件：用途、何時用、變體、狀態、鍵盤與無障礙、API。視覺基礎（token、字級、間距）見 [design-system.md](./design-system.md)。
 > 畫面只能組合這些元件（design-system §1、§11）。需要新元件或新變體時，**先改本文件，再改 `src/ui/`**，並補 `src/ui/ui.test.tsx`。
 
@@ -383,7 +383,7 @@ v0.7：
 | `ErrorText` | 動作失敗的訊息 | `role="alert"`、紅框；`message` 為 null 時不顯示 |
 | `ConfirmButton` | 不可逆動作的按鈕入口 | 顯示 danger 按鈕，點擊後開啟 `ConfirmDialog`（`tone="danger"`，`message` 為說明 Markdown，選填 `title`、`confirmLabel`）；`size` 預設 sm（v0.6：原地展開改為統一的對話框） |
 | `Markdown`（v0.6；v0.8 D55） | 顯示 Markdown 內容（全 app 唯一入口） | `react-markdown` + remark-gfm、`prose-hills` 樣式；不轉譯原始 HTML；連結以外部瀏覽器開啟；`variant`：`doc`（預設，標題層級、目錄 `toc` 選填）/ `chat`（精簡、無目錄）；提示框 `> [!NOTE]` / `[!TIP]` / `[!WARNING]`；`## 標題 {#key}` 移除 key 並作為錨點；程式碼區塊顯示語言與「複製」；圖片只顯示 `data:`，其他改為連結 |
-| `MarkdownEditor`（v0.8，D55） | 輸入 Markdown | 工具列（粗體、斜體、標題、清單、勾選、連結、程式碼、表格、提示框）、模式 `SegmentedControl`（編輯 / 預覽 / 並排）、⌘B / ⌘I / ⌘K；`value`、`onChange`、`rows`、`aria-label`；預覽用 `Markdown` |
+| `MarkdownEditor`（v0.8，D55） | 輸入 Markdown | 工具列（粗體、斜體、標題、清單、勾選、連結、程式碼、表格、提示框）、模式 `SegmentedControl`（編輯 / 預覽；v0.9 取消並排）；切換時預覽與編輯區同寬，回到編輯時保留游標，⌘⇧P 切換、⌘B / ⌘I / ⌘K；`value`、`onChange`、`rows`、`aria-label`；預覽用 `Markdown` |
 | `HtmlView`（v0.8，D52） | 顯示知識 / 報告的 HTML | 先清理（`sanitizeHtml`），在 `sandbox="allow-same-origin"` 的 iframe 以 `srcdoc` 顯示，注入閱讀樣式，依內容調整高度，攔截連結以外部瀏覽器開啟；下方固定說明「安全顯示」 |
 | `DocView`（v0.8，D52） | 依格式顯示文件 | `format` 為 markdown → `Markdown`，html → `HtmlView`；`source` 為 true 時顯示原始碼（等寬、可複製） |
 | `useAction` | 執行非同步動作並追蹤 `busy` / `error` | `run(f)` 回傳結果；`attempt(f)` 成功回傳 true |

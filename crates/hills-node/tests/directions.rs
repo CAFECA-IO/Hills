@@ -97,6 +97,29 @@ async fn directions_team_goals_and_alignment() {
     assert_eq!(item.criteria.len(), 1);
     assert!(!item.criteria[0].id.is_empty());
 
+    // 這週重點：只有負責人能寫，全員讀得到
+    assert!(
+        alice
+            .set_week_note(DEFAULT_TEAM, "2026-W46", "x")
+            .await
+            .is_err()
+    );
+    admin
+        .set_week_note(DEFAULT_TEAM, "2026-W46", "全力 M1 驗收")
+        .await
+        .unwrap();
+    assert!(
+        eventually(Duration::from_secs(10), || async {
+            let _ = alice.sync_now().await;
+            alice
+                .week_notes()
+                .unwrap()
+                .iter()
+                .any(|n| n.week == "2026-W46" && n.text == "全力 M1 驗收")
+        })
+        .await
+    );
+
     // 刪除小組目標後，對齊視為不存在（讀取端略過）
     admin.delete_team_goal(DEFAULT_TEAM, &goal).await.unwrap();
     assert!(!admin.alignable_goal_exists(&goal).unwrap());

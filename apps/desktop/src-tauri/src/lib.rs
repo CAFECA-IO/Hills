@@ -95,6 +95,8 @@ pub fn run() {
             commands::delete_direction,
             commands::save_team_goal,
             commands::delete_team_goal,
+            commands::week_notes,
+            commands::set_week_note,
             commands::direction_summaries,
             commands::my_suggestions,
             commands::publish_direction,

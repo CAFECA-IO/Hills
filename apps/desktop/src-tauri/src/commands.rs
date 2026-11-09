@@ -994,6 +994,23 @@ pub async fn save_team_goal(
 }
 
 #[tauri::command]
+pub async fn week_notes(
+    state: State<'_, AppState>,
+) -> CmdResult<Vec<hills_node::direction::WeekNote>> {
+    with_node!(state, n => n.week_notes().map_err(e))
+}
+
+#[tauri::command]
+pub async fn set_week_note(
+    state: State<'_, AppState>,
+    team: String,
+    week: String,
+    text: String,
+) -> CmdResult<()> {
+    with_node!(state, n => n.set_week_note(&team, &week, &text).await.map_err(e))
+}
+
+#[tauri::command]
 pub async fn delete_team_goal(
     state: State<'_, AppState>,
     team: String,

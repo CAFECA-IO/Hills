@@ -21,6 +21,10 @@ use crate::plans::{
 
 const DIRECTION_PREFIX: &str = "direction:";
 const GOAL_PREFIX: &str = "goal:";
+const NOTE_PREFIX: &str = "weekNote:";
+/// 這週重點最多幾字、保留幾週
+const MAX_NOTE: usize = 200;
+const KEEP_NOTES: usize = 8;
 const MAX_TITLE: usize = 80;
 /// 每年公司方向的上限（介面建議 1–3 個）
 const MAX_DIRECTIONS_PER_YEAR: usize = 5;
@@ -232,6 +236,81 @@ pub fn write_team_goal(
     write_criteria(doc, &o, &input.criteria, kr_id)
 }
 
+/// 負責人的這週重點（technical-design §16.14 v0.22）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeekNote {
+    #[serde(default)]
+    pub team: String,
+    #[serde(default)]
+    pub week: String,
+    pub text: String,
+    pub author: String,
+    pub updated_at: Timestamp,
+}
+
+fn valid_week(w: &str) -> bool {
+    let b = w.as_bytes();
+    b.len() == 8
+        && b[..4].iter().all(u8::is_ascii_digit)
+        && &b[4..6] == b"-W"
+        && (1..=53).contains(&w[6..].parse::<u32>().unwrap_or(0))
+}
+
+pub fn read_week_notes(doc: &AutoCommit, team: &str) -> Vec<WeekNote> {
+    let mut v: Vec<WeekNote> = doc
+        .keys(ROOT)
+        .filter_map(|k| {
+            let week = k.strip_prefix(NOTE_PREFIX)?.to_owned();
+            let mut n: WeekNote = serde_json::from_str(&get_str(doc, &ROOT, &k)?).ok()?;
+            n.team = team.to_owned();
+            n.week = week;
+            Some(n)
+        })
+        .collect();
+    v.sort_by(|a, b| b.week.cmp(&a.week));
+    v
+}
+
+/// 寫入（或清空）某週的重點，並只保留最近 [`KEEP_NOTES`] 週。
+pub fn write_week_note(
+    doc: &mut AutoCommit,
+    week: &str,
+    text: &str,
+    author: &MemberId,
+    now: Timestamp,
+) -> Result<()> {
+    if !valid_week(week) {
+        bail!("週次格式需為 YYYY-Www");
+    }
+    let text = text.trim();
+    if text.chars().count() > MAX_NOTE {
+        bail!("這週重點最多 {MAX_NOTE} 字");
+    }
+    let key = format!("{NOTE_PREFIX}{week}");
+    if text.is_empty() {
+        return delete_key(doc, &key);
+    }
+    let note = WeekNote {
+        team: String::new(),
+        week: String::new(),
+        text: text.to_owned(),
+        author: author.to_string(),
+        updated_at: now,
+    };
+    doc.put(ROOT, key.as_str(), serde_json::to_string(&note)?)?;
+    let mut keys: Vec<String> = doc
+        .keys(ROOT)
+        .filter(|k| k.starts_with(NOTE_PREFIX))
+        .collect();
+    keys.sort();
+    keys.reverse();
+    for k in keys.into_iter().skip(KEEP_NOTES) {
+        doc.delete(ROOT, k.as_str())?;
+    }
+    Ok(())
+}
+
 fn delete_key(doc: &mut AutoCommit, key: &str) -> Result<()> {
     if doc.get(ROOT, key)?.is_some() {
         doc.delete(ROOT, key)?;
@@ -398,6 +477,35 @@ impl Node {
         Ok(id)
     }
 
+    /// 所有小組的這週重點（全員可讀）。
+    pub fn week_notes(&self) -> Result<Vec<WeekNote>> {
+        let teams: Vec<String> = self.org().teams.keys().cloned().collect();
+        let ids = self.inner.store.doc_ids()?;
+        let mut out = Vec::new();
+        for t in teams {
+            let doc = team_goals_doc(&t);
+            if ids.contains(&doc) {
+                out.extend(self.read_doc(&doc, |d| read_week_notes(d, &t))?);
+            }
+        }
+        Ok(out)
+    }
+
+    pub async fn set_week_note(&self, team: &str, week: &str, text: &str) -> Result<()> {
+        let me = self.member_id();
+        if !self.org().teams.contains_key(team) {
+            bail!("找不到這個小組");
+        }
+        if !self.can_write_team_goals(team, &me) {
+            bail!("只有小組負責人可以寫這週重點");
+        }
+        let now = now_ms();
+        self.change(&team_goals_doc(team), |doc| {
+            write_week_note(doc, week, text, &me, now)
+        })
+        .await
+    }
+
     pub async fn delete_team_goal(&self, team: &str, id: &str) -> Result<()> {
         if !self.can_write_team_goals(team, &self.member_id()) {
             bail!("只有小組負責人可以設定小組目標");
@@ -476,6 +584,24 @@ mod tests {
         assert_eq!(read_team_goals(&g, "t1")[0].created_at, 7);
         delete_key(&mut g, "goal:g1").unwrap();
         assert!(read_team_goals(&g, "t1").is_empty());
+    }
+
+    #[test]
+    fn week_notes() {
+        let mut doc = AutoCommit::new();
+        let me = MemberId([1; 16]);
+        for n in 37..=46 {
+            write_week_note(&mut doc, &format!("2026-W{n:02}"), " 全力 M1 驗收 ", &me, n).unwrap();
+        }
+        let notes = read_week_notes(&doc, "t1");
+        assert_eq!(notes.len(), KEEP_NOTES);
+        assert_eq!(notes[0].week, "2026-W46");
+        assert_eq!(notes[0].text, "全力 M1 驗收");
+        assert_eq!(notes[0].team, "t1");
+        write_week_note(&mut doc, "2026-W46", "  ", &me, 1).unwrap();
+        assert_eq!(read_week_notes(&doc, "t1")[0].week, "2026-W45");
+        assert!(write_week_note(&mut doc, "2026-46", "x", &me, 1).is_err());
+        assert!(write_week_note(&mut doc, "2026-W46", &"字".repeat(201), &me, 1).is_err());
     }
 
     #[test]

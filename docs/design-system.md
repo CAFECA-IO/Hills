@@ -1,6 +1,6 @@
 # Hills 設計系統
 
-> 版本：v0.4 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.18（D22、D40、D43、D45、D47）
+> 版本：v0.5 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.18（D22、D40、D43、D45、D47）
 > 本文件定義視覺基礎：原則、token、字級、間距、圓角、陰影、層級、動態、無障礙、圖示與列印。通用元件的規格見 [components.md](./components.md)；畫面結構與流程見 [ui-spec.md](./ui-spec.md)。
 > 實作來源：`apps/desktop/src/styles/tokens.css`（token）、`apps/desktop/src/ui/`（元件）。三者不一致時以本文件為準，並修正程式碼。
 
@@ -45,6 +45,7 @@
 | 知識關聯 | `--hills-rel-ref/-topic/-task/-conv` | 星座連線、關聯膠囊邊框 | 一律搭配線型（實線 / 虛線 / 點線）與圖例 |
 | 目標層級 | `--hills-level-year/-quarter/-month/-week/-day`（`bg-level-*`、`text-level-*`） | 層級標記、進度環、進度條；`-day` 用於任務欄（D46 取消日目標） | 一律搭配層級文字 |
 | 狀態 | `--hills-st-<狀態>`（徽章色）、`--hills-st-<狀態>-text`（文字色，對 surface ≥ 4.5 : 1） | Presence 徽章、狀態文字、成功 / 進行中標示 | 搭配徽章形狀與文字（ui-spec 狀態表） |
+| 啟動動畫 | `--hills-boot-flame-out/-mid/-in`、`--hills-boot-log`、`--hills-boot-glow`（v0.5） | 啟動動畫 F 的營火、木柴、火光（§9） | 只用於啟動動畫；其餘版本重用山景、星空、羅盤、角色、狀態 token |
 | 方向羅盤 | `--hills-drift-floor`、`--hills-drift-floor-edge`、`--hills-drift-zone`（`fill-drift-*`） | 方向羅盤的地面、地面厚度、「在路上」扇形（§9） | 狀態另用 `primary`（在路上）、`warning`（可能偏離）、`muted`（太久沒更新）、`level-year`（小組方向），一律搭配形狀與文字 |
 | 角色 | `--hills-ink*`、`--hills-cloud`、`--hills-sun*`、`--hills-moon*`、`--hills-roof`、`--hills-laptop*`、`--hills-hair-0…7`、`--hills-shirt-0…7`、`--hills-skin-0…7` | 原創簡筆角色與天空裝飾 | 只用於 `figures.tsx` 等插畫；成員從色盤選擇（`team.rs` 的 `LOOK_PALETTE` = 8） |
 
@@ -106,7 +107,12 @@ SVG 插畫用 `var(--hills-*)` 指定 `fill` / `stroke`（`figures.tsx`、`home.
 ## 7. 動態
 
 - 時間一律 `duration-(--hills-motion)`（180 ms）；系統開啟「減少動態效果」時為 0。
-- 只對顏色、寬度（進度條）、位移（山路角色）做過渡；不做彈跳、縮放進場。
+- **介面元件**（按鈕、對話框、選單、Toast、列表、卡片）：只對顏色、寬度（進度條）、位移做過渡；不做彈跳、縮放進場。理由：整天使用的工作工具要俐落，元件反覆出現時彈跳會讓人覺得慢；縮放與彈跳最容易引起前庭不適；縮放中的文字在 WebView 會短暫模糊。
+- **插畫動畫**（v0.5）：只出現一次、不擋操作的裝飾插畫，目前有啟動動畫（§9「啟動動畫」）、登頂彩帶與方向羅盤進場（D47 第 5 批），可以使用彈跳、縮放與循環。限制：
+  - 不用在任何互動元件上；
+  - 不為了播放動畫延長等待（例如啟動完成就立即切換）；
+  - 有文字的部分（字標、標籤、狀態文字）不縮放；
+  - 系統開啟「減少動態效果」時顯示靜態的完成畫面。
 - 慶祝效果（登頂彩帶）可在設定關閉，減少動態時改為靜態圖示（ui-spec「視覺語言」）。
 
 ## 8. 無障礙
@@ -133,6 +139,21 @@ SVG 插畫用 `var(--hills-*)` 指定 `fill` / `stroke`（`figures.tsx`、`home.
 | `app-icon.svg` | Windows（`icon.ico`、`Square*Logo.png`、`StoreLogo.png`）、Linux（`*.png`） | 1024 畫布，主體四周留 64，圓角 176，不加陰影（由系統處理） |
 
 重新產生：`pnpm --filter @hills/desktop tauri icon src-tauri/icons/source/app-icon.svg -o <暫存>` 後把頂層檔案（不含 android、ios）複製到 `icons/`，再以 `app-icon-macos.svg` 產生一次並只取 `icon.icns` 覆蓋。修改圖案時兩份來源一起改。
+
+### 啟動動畫（v0.5）
+
+ui-spec「啟動畫面」使用的插畫動畫（§7「插畫動畫」），共六個版本，每次啟動隨機一個（不重複上次）：
+
+| 版本 | 內容 | 狀態文字 |
+|---|---|---|
+| A 日出山丘 | 遠、中、近三層山丘依序升起，太陽浮出後光暈呼吸，中山升起小旗，雲飄過 | 正在同步你的組織 |
+| B 登頂小旗 | 虛線山徑從山腳畫到山頂，角色沿路往上，步驟點 1–3 依序亮起，到頂升旗 | 正在準備今天的山 |
+| C 方向羅盤 | 傾斜的羅盤地面（同下方「方向羅盤」投影），四位成員的人像依序落下並擺進綠色扇形，畫出大家實際走向，地面泛起紫色波紋 | 依階段：正在連線組織 → 正在同步每個人的方向 → 大家都在路上 |
+| D 知識星座 | 星圖（天球圈與經線）緩慢擺動，三個分類星座依序亮星、連線、浮現分類名，流星劃過；底色用知識庫星空 token，深淺色相同 | 正在整理大家的知識 |
+| E 加密分片拼合 | Hills 圖示切成 8 條分片從四周飛回，第 5 片到位時鎖扣上，光掃過，附「8 片分片，取回任意 5 片即可還原」 | 正在解密並同步 |
+| F 營火集合 | 山頂營火晃動、冒火星，五位成員依序從坡下彈上圍坐並亮起上線點 | 正在聚集你的團隊 |
+
+共通規格：插畫 360 × 220（C 為 400 × 260）、圓角 20，下方 Hills 字標（28 / 700）、「山丘上的卡菲卡」（14，`muted`）與狀態文字（13，`muted`，後接三個依序閃爍的點）；循環 4–6 秒；插畫 `aria-hidden`，狀態文字 `role="status"`。
 
 ### 方向羅盤（v0.4，D47）
 

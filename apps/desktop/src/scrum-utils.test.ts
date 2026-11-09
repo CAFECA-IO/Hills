@@ -95,6 +95,7 @@ describe('team status and reminders', () => {
   const m = (id: string): MemberView => ({
     id,
     name: id,
+    rosterName: id,
     isAdmin: false,
     isMe: false,
     joinedAt: 0,
@@ -125,5 +126,10 @@ describe('team status and reminders', () => {
     expect(shouldRemind(MON, TZ, '09:30')).toBe(true);
     expect(shouldRemind(MON, TZ, '17:30')).toBe(false);
     expect(shouldRemind(Date.UTC(2026, 10, 8, 12), TZ, '09:30')).toBe(false);
+  });
+  it('follows the member work days when given (D57)', () => {
+    expect(shouldRemind(MON, TZ, '09:30', [2, 3])).toBe(false);
+    expect(shouldRemind(Date.UTC(2026, 10, 8, 12), TZ, '09:30', [7])).toBe(true);
+    expect(shouldRemind(MON, TZ, '09:30', [])).toBe(false);
   });
 });

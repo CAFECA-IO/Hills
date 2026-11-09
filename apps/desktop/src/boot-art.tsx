@@ -163,7 +163,7 @@ function SummitTrail({ still }: { still: boolean }) {
         />
         <path className="boot-b-flag" d="M177 30 L202 38 L177 46 Z" fill={v('primary')} />
         <g className="boot-b-fade" transform={still ? 'translate(176 66)' : undefined}>
-          <circle cx="0" cy="-15" r="5" fill={v('skin-1')} />
+          <circle cx="0" cy="-15" r="5" fill={v('look-man-c-0')} />
           <path d="M-6 -2 Q0 -12 6 -2 Z" fill={v('shirt-2')} />
           {!still && (
             <animateMotion
@@ -321,7 +321,7 @@ function DirectionCompass({ still }: { still: boolean }) {
               <circle r="14" fill={v('surface')} />
               <circle r="11" fill={c} opacity=".22" />
               <g clipPath="url(#boot-c-bust)">
-                <circle cy="-2" r="4.5" fill={v('skin-1')} />
+                <circle cy="-2" r="4.5" fill={v('look-man-c-0')} />
                 <path d="M-8 11 Q0 1 8 11 Z" fill={c} />
               </g>
               <circle r="12.5" fill="none" stroke={c} strokeWidth="2" />
@@ -632,7 +632,7 @@ function Campfire() {
               <circle r="15" fill={v('surface')} />
               <g clipPath="url(#boot-f-bust)">
                 <circle r="13" fill={v('sky-bottom')} />
-                <circle cy="-3" r="5.5" fill={v('skin-1')} />
+                <circle cy="-3" r="5.5" fill={v('look-man-c-0')} />
                 <path d="M-11 14 Q0 1 11 14 Z" fill={v(shirt)} />
               </g>
             </g>

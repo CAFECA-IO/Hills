@@ -24,6 +24,9 @@ export const PRESENCE_STATES: readonly PresenceState[] = [
 export type LocationCode = string;
 
 export interface Look {
+  /** 角色種類 0–6（男性、女性、貓、狗、大象、羊、老虎；D56）；舊資料沒有時視為 0 */
+  kind: number;
+  /** 部位 1 色號 0–5（頭髮 / 毛色 / 皮膚 / 羊毛） */
   hair: number;
   shirt: number;
   skin: number;
@@ -43,7 +46,10 @@ export interface AppInfo {
 
 export interface MemberView {
   id: string;
+  /** 顯示名稱（個人資料優先，否則名冊姓名；D57） */
   name: string;
+  /** 組織名冊上的姓名 */
+  rosterName: string;
   isAdmin: boolean;
   isMe: boolean;
   joinedAt: number;
@@ -53,6 +59,35 @@ export interface MemberView {
   until: number | null;
   location: LocationCode;
   look: Look | null;
+  /** 前端依對方的工作時段計算（D57，technical-design §16.17）；後端不回傳 */
+  offHours?: boolean;
+}
+
+/** 工作時段（technical-design §16.17）：days 1 = 週一 … 7 = 週日。 */
+export interface WorkHours {
+  days: number[];
+  start: string;
+  end: string;
+}
+
+/** 個人資料（D57）。displayName / timezone 空字串表示沿用名冊姓名 / 裝置時區。 */
+export interface MemberProfile {
+  displayName: string;
+  timezone: string;
+  workHours: WorkHours;
+  updatedAt: number;
+}
+
+export interface MemberProfileView extends MemberProfile {
+  member: string;
+}
+
+/** 通知偏好（D57）；新裝置加入的安全通知不受影響。 */
+export interface NotifyPrefs {
+  messages: boolean;
+  assigned: boolean;
+  blockers: boolean;
+  scrumReminder: boolean;
 }
 
 export interface OfficeView {
@@ -835,6 +870,11 @@ export const api = {
   focus: () => call<FocusView>('focus'),
   setFocus: (team: string | null, task: string | null) => call<void>('set_focus', { team, task }),
   setProfile: (look: Look) => call<void>('set_profile', { look }),
+  myProfile: () => call<MemberProfile>('my_profile'),
+  setMyProfile: (profile: MemberProfile) => call<void>('set_my_profile', { profile }),
+  memberProfiles: () => call<MemberProfileView[]>('member_profiles'),
+  notifyPrefs: () => call<NotifyPrefs>('notify_prefs'),
+  setNotifyPrefs: (prefs: NotifyPrefs) => call<void>('set_notify_prefs', { prefs }),
   upsertOffice: (id: string | null, name: string) => call<string>('upsert_office', { id, name }),
   removeOffice: (id: string) => call<void>('remove_office', { id }),
   setLunchBreak: (start: string, end: string) => call<void>('set_lunch_break', { start, end }),

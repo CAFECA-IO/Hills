@@ -551,7 +551,8 @@ function Person({
   onPick: (m: MemberView, x: number, y: number) => void;
 }) {
   const name = m.isMe ? t('home.you') : compact ? m.name.slice(-2) : m.name;
-  const text = note ? `${name} · ${note}` : name;
+  const extra = note ?? (m.offHours ? t('home.offHours') : undefined);
+  const text = extra ? `${name} · ${extra}` : name;
   const activate = () => onPick(m, x, y);
   return (
     <g
@@ -607,7 +608,7 @@ function MemberCard({
 }) {
   const { member: m } = picked;
   const { busy, error, run } = useAction();
-  const knock = defersNotifications(m.presence, m.until, now);
+  const knock = defersNotifications(m.presence, m.until, now) || !!m.offHours;
   const office = overview.offices.find((o) => `office:${o.id}` === m.location);
   const place =
     office?.name ?? (m.location === 'remote' ? t('location.remote') : t('location.hidden'));

@@ -7,7 +7,9 @@ import type {
   Code,
   DeviceInfo,
   JoinRequestView,
+  MemberProfile,
   MemberView,
+  NotifyPrefs,
   OnboardArgs,
   OnboardStatus,
   Overview,
@@ -60,7 +62,7 @@ const state = {
 };
 
 const now0 = Date.now();
-const look = (hair: number, shirt: number, skin: number) => ({ hair, shirt, skin });
+const look = (hair: number, shirt: number, skin: number, kind = 0) => ({ kind, hair, shirt, skin });
 const person = (
   id: string,
   name: string,
@@ -72,6 +74,7 @@ const person = (
 ): MemberView => ({
   id,
   name,
+  rosterName: name,
   isAdmin: false,
   isMe: false,
   joinedAt: 0,
@@ -83,13 +86,13 @@ const person = (
 });
 // 示範角色（虛構人物，與設計稿第四輪相同）
 const others: MemberView[] = [
-  person('mem-a', '王小明', 'Online', 'office:tpe', look(0, 0, 0)),
-  person('mem-b', '陳小華', 'Meeting', 'office:tpe', look(1, 1, 1), now0 + 50 * 60_000, '週會'),
-  person('mem-c', '周子安', 'Lunch', 'office:tpe', look(2, 2, 2), now0 + 50 * 60_000),
-  person('mem-d', '林小美', 'Online', 'office:hsz', look(3, 3, 0), null, 'Windows 驗收'),
-  person('mem-e', '黃宜靜', 'Away', 'office:hsz', look(1, 4, 3), now0 + 15 * 60_000),
-  person('mem-f', '張大同', null, 'hidden', look(1, 7, 1)),
-  person('mem-g', '李雅婷', 'Leave', 'office:tpe', look(2, 6, 0), now0 + 4 * 86400_000),
+  person('mem-a', '王小明', 'Online', 'office:tpe', look(0, 0, 0, 0)),
+  person('mem-b', '陳小華', 'Meeting', 'office:tpe', look(1, 1, 1, 2), now0 + 50 * 60_000, '週會'),
+  person('mem-c', '周子安', 'Lunch', 'office:tpe', look(2, 2, 2, 1), now0 + 50 * 60_000),
+  person('mem-d', '林小美', 'Online', 'office:hsz', look(3, 3, 0, 3), null, 'Windows 驗收'),
+  person('mem-e', '黃宜靜', 'Away', 'office:hsz', look(1, 4, 3, 4), now0 + 15 * 60_000),
+  person('mem-f', '張大同', null, 'hidden', look(1, 5, 1, 5)),
+  person('mem-g', '李雅婷', 'Leave', 'office:tpe', look(2, 0, 0, 6), now0 + 4 * 86400_000),
 ];
 // 小組（D49）：mock 中「我」是管理者
 let mockTeams: TeamInfo[] = [
@@ -756,7 +759,19 @@ let reports: Report[] = [
 ];
 const reportDrafts: Record<string, string> = {};
 let manualFocus: string | null = null;
-let myLook = look(0, 5, 2);
+let myLook = look(0, 5, 2, 1);
+let myProfile: MemberProfile = {
+  displayName: '',
+  timezone: '',
+  workHours: { days: [1, 2, 3, 4, 5], start: '09:00', end: '18:00' },
+  updatedAt: 0,
+};
+let notifyPrefs: NotifyPrefs = {
+  messages: true,
+  assigned: true,
+  blockers: false,
+  scrumReminder: true,
+};
 const syncStatus = (t: MockTask) => {
   if (t.steps.length && t.steps.every((x) => x.done)) t.status = 'done';
   else if (t.steps.some((x) => x.done)) t.status = t.status === 'review' ? 'review' : 'doing';
@@ -942,7 +957,8 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     members: [
       {
         id: state.me,
-        name: '我',
+        name: myProfile.displayName || '我',
+        rosterName: '我',
         isAdmin: state.isAdmin,
         isMe: true,
         joinedAt: 0,
@@ -1398,6 +1414,33 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   },
   set_profile: (a) => {
     myLook = a.look as typeof myLook;
+    touch();
+  },
+  my_profile: () => myProfile,
+  set_my_profile: (a) => {
+    myProfile = { ...(a.profile as MemberProfile), updatedAt: Date.now() };
+    touch();
+  },
+  member_profiles: () => [
+    { member: state.me, ...myProfile },
+    {
+      member: 'mem-d',
+      displayName: '',
+      timezone: 'Asia/Taipei',
+      workHours: { days: [1, 2, 3, 4, 5], start: '09:00', end: '18:00' },
+      updatedAt: 0,
+    },
+    {
+      member: 'mem-e',
+      displayName: '',
+      timezone: 'America/Los_Angeles',
+      workHours: { days: [1, 2, 3, 4, 5], start: '09:00', end: '17:00' },
+      updatedAt: 0,
+    },
+  ],
+  notify_prefs: () => notifyPrefs,
+  set_notify_prefs: (a) => {
+    notifyPrefs = a.prefs as NotifyPrefs;
     touch();
   },
   upsert_office: (a) => {

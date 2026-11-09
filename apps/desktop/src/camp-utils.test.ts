@@ -46,6 +46,7 @@ const member = (
 ): MemberView => ({
   id,
   name: id,
+  rosterName: id,
   isAdmin: false,
   isMe: id === 'me',
   joinedAt: 0,

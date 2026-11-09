@@ -5,6 +5,7 @@
 import { useId } from 'react';
 import type { Look, PresenceState } from './api';
 import { t, type MessageKey } from './i18n';
+import { Character, CharacterHead, type Pose, SCENE_HEAD_Y, SCENE_SCALE } from './characters';
 import { moonLitPath, moonPhase } from './summit';
 
 const v = (name: string) => `var(--hills-${name})`;
@@ -192,10 +193,8 @@ export function Figure({
   scale?: number;
   me?: boolean;
 }) {
-  const sk = v(`skin-${look.skin}`);
-  const leg = v('ink-soft');
   const ink = v('ink');
-  const walking = state === 'Away';
+  const hy = SCENE_HEAD_Y;
   return (
     <g transform={`translate(${x} ${y}) scale(${scale})`} opacity={state === 'Offline' ? 0.5 : 1}>
       {me && (
@@ -208,102 +207,50 @@ export function Figure({
           strokeDasharray="3 3"
         />
       )}
-      <ellipse rx={15} ry={4} fill={v('ink')} opacity={0.14} />
-      {walking ? (
-        <>
-          <path d="M-5 -18L-11 -1M5 -18L10 -2" stroke={leg} strokeWidth={5} strokeLinecap="round" />
-          <path
-            d="M-22 -34h-9M-20 -26h-12M-22 -18h-7"
-            stroke={v('border')}
-            strokeWidth={2}
-            strokeLinecap="round"
-          />
-        </>
-      ) : (
-        <path d="M-5 -18V-1M5 -18V-1" stroke={leg} strokeWidth={5} strokeLinecap="round" />
-      )}
-      <path
-        d={
-          state === 'Online' || state === 'Busy' || state === 'Lunch'
-            ? 'M-10 -37l-3 9M10 -37l3 9'
-            : walking
-              ? 'M-10 -37l-6 9M10 -37l6 7'
-              : state === 'Leave'
-                ? 'M-10 -37l-8 -8M10 -37l8 -8'
-                : 'M-10 -37l-3 13M10 -37l3 13'
-        }
-        stroke={sk}
-        strokeWidth={4}
-        strokeLinecap="round"
-      />
-      <rect x={-11} y={-43} width={22} height={27} rx={10} fill={v(`shirt-${look.shirt}`)} />
-      <circle cy={-53} r={10} fill={sk} />
-      <path
-        d="M-10.5 -54a10.5 10.5 0 0 1 21 0q-5 -5 -10 -4q-6 1 -11 4z"
-        fill={v(`hair-${look.hair}`)}
-      />
-      {state === 'Leave' ? (
+      {state === 'Away' && (
         <path
-          d="M-8 -55h6.5v3a2 2 0 0 1 -2 2h-2.5a2 2 0 0 1 -2 -2zM1.5 -55h6.5v3a2 2 0 0 1 -2 2h-2.5a2 2 0 0 1 -2 -2zM-1.5 -54h3"
+          d="M-14 -40h-9M-12 -32h-12M-14 -24h-7"
+          stroke={v('border')}
+          strokeWidth={2}
+          strokeLinecap="round"
+        />
+      )}
+      <Character look={look} pose={POSE[state]} />
+      {state === 'Leave' && (
+        <path
+          d={`M-2.6 ${hy - 0.9}h2.1v1.2a.6 .6 0 0 1 -.6 .6h-.9a.6 .6 0 0 1 -.6 -.6zM.5 ${hy - 0.9}h2.1v1.2a.6 .6 0 0 1 -.6 .6h-.9a.6 .6 0 0 1 -.6 -.6zM-.5 ${hy - 0.6}h1`}
           fill={ink}
           stroke={ink}
-          strokeWidth={0.8}
+          strokeWidth={0.4}
         />
-      ) : (
-        <>
-          <circle cx={-3.5} cy={-52} r={1.3} fill={ink} />
-          <circle cx={3.5} cy={-52} r={1.3} fill={ink} />
-          <path
-            d={state === 'Busy' ? 'M-2.5 -47q2.5 -2 5 0' : 'M-2.5 -48q2.5 2 5 0'}
-            stroke={ink}
-            strokeWidth={1.2}
-            fill="none"
-            strokeLinecap="round"
-          />
-        </>
-      )}
-      {(state === 'Online' || state === 'Busy') && (
-        <>
-          <rect
-            x={-13}
-            y={-32}
-            width={26}
-            height={15}
-            rx={2.5}
-            fill={v('laptop')}
-            stroke={v('laptop-line')}
-            strokeWidth={1.5}
-          />
-          <circle cy={-24.5} r={1.8} fill={v('primary')} />
-        </>
       )}
       {state === 'Meeting' && (
         <g stroke={v('st-busy')} strokeWidth={1.6}>
-          <rect x={8} y={-86} width={26} height={17} rx={8.5} fill={v('surface')} />
-          <path d="M13 -69.5l-3 5 7-5" fill={v('surface')} strokeLinejoin="round" />
-          {[15, 21, 27].map((cx) => (
-            <circle key={cx} cx={cx} cy={-77.5} r={1.7} fill={v('st-busy')} stroke="none" />
+          <rect x={5} y={-84} width={26} height={17} rx={8.5} fill={v('surface')} />
+          <path d="M10 -67.5l-3 5 7-5" fill={v('surface')} strokeLinejoin="round" />
+          {[12, 18, 24].map((cx) => (
+            <circle key={cx} cx={cx} cy={-75.5} r={1.7} fill={v('st-busy')} stroke="none" />
           ))}
         </g>
       )}
       {state === 'Lunch' && (
         <>
           <path
-            d="M8 -41l10 -13M11 -40l10 -13"
+            d={`M2 ${HAND_Y - 2}l6 -8M4 ${HAND_Y - 1.4}l6 -8`}
             stroke={v('st-away-text')}
-            strokeWidth={1.5}
+            strokeWidth={1}
             strokeLinecap="round"
           />
           <path
-            d="M-12 -29h24a12 9 0 0 1 -24 0z"
+            d={`M-5 ${HAND_Y - 1}h10a5 4 0 0 1 -10 0z`}
             fill={v('laptop')}
             stroke={v('st-lunch')}
-            strokeWidth={1.8}
+            strokeWidth={1.2}
           />
           <path
-            d="M-5 -33q-3 -4 0 -7M1 -33q-3 -4 0 -7"
+            d={`M-2 ${HAND_Y - 3}q-2 -2.5 0 -4.5M1 ${HAND_Y - 3}q-2 -2.5 0 -4.5`}
             stroke={v('st-lunch')}
-            strokeWidth={1.4}
+            strokeWidth={1}
             fill="none"
             strokeLinecap="round"
           />
@@ -312,21 +259,21 @@ export function Figure({
       {state === 'Focus' && (
         <>
           <path
-            d="M-11.5 -55a11.5 11.5 0 0 1 23 0"
+            d={`M-4.4 ${hy}a4.4 4.4 0 0 1 8.8 0`}
             stroke={v('st-focus')}
-            strokeWidth={3}
+            strokeWidth={1.4}
             fill="none"
           />
-          <rect x={-15} y={-58} width={6} height={10} rx={3} fill={v('st-focus')} />
-          <rect x={9} y={-58} width={6} height={10} rx={3} fill={v('st-focus')} />
+          <rect x={-5.4} y={hy - 1} width={2} height={3.4} rx={1} fill={v('st-focus')} />
+          <rect x={3.4} y={hy - 1} width={2} height={3.4} rx={1} fill={v('st-focus')} />
         </>
       )}
       {state === 'Offline' && (
         <>
-          <text x={12} y={-66} fontSize={12} fontWeight={700} fill={v('ink-soft')}>
+          <text x={6} y={-64} fontSize={10} fontWeight={700} fill={v('ink-soft')}>
             z
           </text>
-          <text x={20} y={-74} fontSize={10} fontWeight={700} fill={v('ink-soft')}>
+          <text x={12} y={-71} fontSize={8} fontWeight={700} fill={v('ink-soft')}>
             z
           </text>
         </>
@@ -334,6 +281,20 @@ export function Figure({
     </g>
   );
 }
+
+/** 各狀態的姿勢（ui-spec 狀態表）：上線 / 忙碌 / 專注捧筆電，午休端碗，休假舉手，暫離走路。 */
+const POSE: Record<St, Pose> = {
+  Online: 'laptop',
+  Busy: 'laptop',
+  Focus: 'laptop',
+  Meeting: 'rest',
+  Lunch: 'hold',
+  Away: 'walk',
+  Leave: 'wave',
+  Offline: 'rest',
+};
+/** 場景座標中雙手的高度（端碗位置）。 */
+const HAND_Y = (105 - 226) * SCENE_SCALE;
 
 export function Cloud({ x, y, scale = 1 }: { x: number; y: number; scale?: number }) {
   return (
@@ -441,7 +402,7 @@ export function Portrait({
   label: string;
 }) {
   return (
-    <svg width={size} height={size} viewBox="-40 -96 80 104" role="img" aria-label={label}>
+    <svg width={size} height={size} viewBox="-30 -84 60 90" role="img" aria-label={label}>
       <Figure x={0} y={0} state={state ?? 'Offline'} look={look} />
     </svg>
   );
@@ -465,8 +426,6 @@ export function Bust({
   faded?: boolean;
 }) {
   const clip = useId();
-  const sk = v(`skin-${look.skin}`);
-  const ink = v('ink');
   return (
     <svg
       width={size}
@@ -484,22 +443,7 @@ export function Bust({
       <circle r={20.5} fill={v(ring)} />
       <circle r={18} fill={v('bg')} />
       <g clipPath={`url(#${clip})`}>
-        <path d="M-17 20Q-16 7 0 7Q16 7 17 20Z" fill={v(`shirt-${look.shirt}`)} />
-        <rect x={-3} y={2} width={6} height={7} fill={sk} />
-        <circle cy={-3} r={9} fill={sk} />
-        <path
-          d="M-9.6 -3.5a9.6 9.6 0 0 1 19.2 0q-4.5 -4.6 -9.6 -3.8q-5.2 .7 -9.6 3.8z"
-          fill={v(`hair-${look.hair}`)}
-        />
-        <circle cx={-3.2} cy={-2} r={1.2} fill={ink} />
-        <circle cx={3.2} cy={-2} r={1.2} fill={ink} />
-        <path
-          d="M-2.3 2.2q2.3 1.8 4.6 0"
-          stroke={ink}
-          strokeWidth={1.1}
-          fill="none"
-          strokeLinecap="round"
-        />
+        <CharacterHead look={look} />
       </g>
       {badge === 'warn' && (
         <>

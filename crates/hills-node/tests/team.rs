@@ -71,6 +71,7 @@ async fn tasks_profiles_offices_and_presence_sync() {
 
     // 角色外觀
     let look = Look {
+        kind: 3,
         hair: 2,
         shirt: 5,
         skin: 1,
@@ -82,6 +83,28 @@ async fn tasks_profiles_offices_and_presence_sync() {
         })
         .await
     );
+
+    // 個人資料（D57）：本人寫、全員讀；通知偏好只在本人裝置
+    let profile = hills_node::profile::MemberProfile {
+        display_name: "小艾".into(),
+        timezone: "Asia/Taipei".into(),
+        ..Default::default()
+    };
+    alice.set_my_profile(profile).await.unwrap();
+    assert!(
+        eventually(Duration::from_secs(2), || async {
+            admin.display_name(&a) == "小艾"
+                && admin.member_profiles().unwrap()[&a].timezone == "Asia/Taipei"
+        })
+        .await
+    );
+    let off = hills_node::profile::NotifyPrefs {
+        assigned: false,
+        ..Default::default()
+    };
+    alice.set_notify_prefs(off).await.unwrap();
+    assert!(!alice.notify_prefs().assigned);
+    assert!(admin.notify_prefs().assigned);
 
     // 辦公室（只有管理者）
     let office = admin.upsert_office(None, "台北辦公室").await.unwrap();

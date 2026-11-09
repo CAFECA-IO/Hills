@@ -4,8 +4,10 @@
  */
 import type { Look, MemberView, OfficeView, PresenceState, Task, TaskStep } from './api';
 
-/** 外觀色盤大小（team.rs LOOK_PALETTE、tokens.css --hills-hair-0…7）。 */
-export const LOOK_PALETTE = 8;
+/** 外觀色盤大小（team.rs LOOK_PALETTE、tokens.css --hills-look-*-0…5，D56）。 */
+export const LOOK_PALETTE = 6;
+/** 角色種類數（team.rs LOOK_KINDS；characters.tsx CHARACTER_KINDS）。 */
+export const LOOK_KINDS = 7;
 
 /** 尚未設定外觀的成員：由 ID 決定（每個人看到的都一樣）。 */
 export function defaultLook(id: string): Look {
@@ -15,6 +17,7 @@ export function defaultLook(id: string): Look {
     h = Math.imul(h, 16777619) >>> 0;
   }
   return {
+    kind: 0,
     hair: h % LOOK_PALETTE,
     shirt: (h >>> 8) % LOOK_PALETTE,
     skin: (h >>> 16) % 4,

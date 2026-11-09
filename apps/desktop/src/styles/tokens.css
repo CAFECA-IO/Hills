@@ -56,7 +56,7 @@
   --hills-st-leave-text: #5b3fd6;
   --hills-st-offline: #8a94a3;
   --hills-st-offline-text: #576375;
-  /* 角色（D40）：插畫用色，淺 / 深模式相同；成員從色盤選擇（team.rs LOOK_PALETTE = 8） */
+  /* 角色（D40、D56）：插畫用色，淺 / 深模式相同；成員從色盤選擇（team.rs LOOK_PALETTE = 6） */
   --hills-ink: #16202e;
   --hills-ink-soft: #3b4656;
   --hills-cloud: #ffffff;
@@ -69,30 +69,127 @@
   --hills-roof: #f07a3a;
   --hills-laptop: #ffffff;
   --hills-laptop-line: #8a94a3;
-  --hills-hair-0: #3b2a1e;
-  --hills-hair-1: #16202e;
-  --hills-hair-2: #5a3a22;
-  --hills-hair-3: #2b1d14;
-  --hills-hair-4: #8a5a3a;
-  --hills-hair-5: #c9973a;
-  --hills-hair-6: #7a8fb8;
-  --hills-hair-7: #b4483c;
-  --hills-shirt-0: #1f6feb;
-  --hills-shirt-1: #e5484d;
-  --hills-shirt-2: #1e9e6a;
-  --hills-shirt-3: #f2b32b;
-  --hills-shirt-4: #7c5cfc;
-  --hills-shirt-5: #0f6e63;
-  --hills-shirt-6: #f07a3a;
-  --hills-shirt-7: #8a94a3;
-  --hills-skin-0: #f6d2b0;
-  --hills-skin-1: #edbe94;
-  --hills-skin-2: #f3c9a5;
-  --hills-skin-3: #e2ae84;
-  --hills-skin-4: #c98f63;
-  --hills-skin-5: #a8714a;
-  --hills-skin-6: #8a5a3a;
-  --hills-skin-7: #f9dcc4;
+  /* 衣服（D56，所有角色共用，6 色） */
+  --hills-shirt-0: #6f93ad;
+  --hills-shirt-1: #e2788a;
+  --hills-shirt-2: #76a98a;
+  --hills-shirt-3: #e9a95c;
+  --hills-shirt-4: #9583c4;
+  --hills-shirt-5: #4d5a6b;
+  /* 七種角色的部位 1（a：頭髮 / 毛色 / 皮膚 / 羊毛）與部位 3（c：膚色 / 花紋 / 耳朵 / 耳內 / 臉 / 條紋），D56 */
+  --hills-look-man-a-0: #5e4651;
+  --hills-look-man-a-1: #3a2f33;
+  --hills-look-man-a-2: #7a4e34;
+  --hills-look-man-a-3: #c2925a;
+  --hills-look-man-a-4: #9ea6b0;
+  --hills-look-man-a-5: #6b8fb5;
+  --hills-look-man-c-0: #f3cba4;
+  --hills-look-man-c-1: #e8b07c;
+  --hills-look-man-c-2: #d39a6a;
+  --hills-look-man-c-3: #b97a52;
+  --hills-look-man-c-4: #8f5a3c;
+  --hills-look-man-c-5: #f7dcc4;
+  --hills-look-woman-a-0: #5e4651;
+  --hills-look-woman-a-1: #3a2f33;
+  --hills-look-woman-a-2: #7a4e34;
+  --hills-look-woman-a-3: #c2925a;
+  --hills-look-woman-a-4: #9ea6b0;
+  --hills-look-woman-a-5: #6b8fb5;
+  --hills-look-woman-c-0: #f3cba4;
+  --hills-look-woman-c-1: #e8b07c;
+  --hills-look-woman-c-2: #d39a6a;
+  --hills-look-woman-c-3: #b97a52;
+  --hills-look-woman-c-4: #8f5a3c;
+  --hills-look-woman-c-5: #f7dcc4;
+  --hills-look-cat-a-0: #e9a463;
+  --hills-look-cat-a-1: #6f9fd4;
+  --hills-look-cat-a-2: #a7adb6;
+  --hills-look-cat-a-3: #4a4446;
+  --hills-look-cat-a-4: #cdb48e;
+  --hills-look-cat-a-5: #8a6448;
+  --hills-look-cat-c-0: #b8662f;
+  --hills-look-cat-c-1: #33415a;
+  --hills-look-cat-c-2: #6a717c;
+  --hills-look-cat-c-3: #2e2a2c;
+  --hills-look-cat-c-4: #7a5636;
+  --hills-look-cat-c-5: #f4eee6;
+  --hills-look-dog-a-0: #e5c49b;
+  --hills-look-dog-a-1: #cf9a52;
+  --hills-look-dog-a-2: #8a5a36;
+  --hills-look-dog-a-3: #7fa3c6;
+  --hills-look-dog-a-4: #4a4446;
+  --hills-look-dog-a-5: #a7adb6;
+  --hills-look-dog-c-0: #8a5a36;
+  --hills-look-dog-c-1: #3a3d4a;
+  --hills-look-dog-c-2: #cf9a52;
+  --hills-look-dog-c-3: #e5c49b;
+  --hills-look-dog-c-4: #a7adb6;
+  --hills-look-dog-c-5: #a5474e;
+  --hills-look-elephant-a-0: #a3adba;
+  --hills-look-elephant-a-1: #bfc6d0;
+  --hills-look-elephant-a-2: #858f9c;
+  --hills-look-elephant-a-3: #c9bcd9;
+  --hills-look-elephant-a-4: #9fbdd2;
+  --hills-look-elephant-a-5: #d9c6b4;
+  --hills-look-elephant-c-0: #f2a7b5;
+  --hills-look-elephant-c-1: #f3cba4;
+  --hills-look-elephant-c-2: #c9bcd9;
+  --hills-look-elephant-c-3: #e5c49b;
+  --hills-look-elephant-c-4: #f7f4ee;
+  --hills-look-elephant-c-5: #bfc6d0;
+  --hills-look-sheep-a-0: #f7f2e8;
+  --hills-look-sheep-a-1: #eedfc4;
+  --hills-look-sheep-a-2: #dcd6ce;
+  --hills-look-sheep-a-3: #f3d7dd;
+  --hills-look-sheep-a-4: #55504c;
+  --hills-look-sheep-a-5: #c9d9e6;
+  --hills-look-sheep-c-0: #55504c;
+  --hills-look-sheep-c-1: #8a6448;
+  --hills-look-sheep-c-2: #cda47e;
+  --hills-look-sheep-c-3: #a7adb6;
+  --hills-look-sheep-c-4: #3a3634;
+  --hills-look-sheep-c-5: #bf8a72;
+  --hills-look-tiger-a-0: #ec9447;
+  --hills-look-tiger-a-1: #f1cc7e;
+  --hills-look-tiger-a-2: #e9e4dc;
+  --hills-look-tiger-a-3: #c8723a;
+  --hills-look-tiger-a-4: #a7adb6;
+  --hills-look-tiger-a-5: #d9a87c;
+  --hills-look-tiger-c-0: #2e2a2c;
+  --hills-look-tiger-c-1: #5c3a28;
+  --hills-look-tiger-c-2: #7a5636;
+  --hills-look-tiger-c-3: #4a5568;
+  --hills-look-tiger-c-4: #9a3e26;
+  --hills-look-tiger-c-5: #34486e;
+  /* 角色固定色（D56） */
+  --hills-char-pants: #4a5466;
+  --hills-char-shoe: #2f3542;
+  --hills-char-laptop: #e6eaf0;
+  --hills-char-laptop-mark: #cbd2dc;
+  --hills-char-cream: #f4eee6;
+  --hills-char-eye: #2f2a33;
+  --hills-char-eye-white: #f7f4ee;
+  --hills-char-blush: #e88a8f;
+  --hills-char-nose: #3a3238;
+  --hills-char-mouth: #8a4a4a;
+  --hills-char-lip: #d9607a;
+  --hills-char-ear-inner: #f2b8bd;
+  --hills-char-shade: #000000;
+  /* 晨光山丘（設定頁背景，D56） */
+  --hills-dawn-top: #ffd9b8;
+  --hills-dawn-upper: #f9e6d2;
+  --hills-dawn-lower: #cfe3f5;
+  --hills-dawn-bottom: #b9d8ef;
+  --hills-dawn-sun: #fff3d6;
+  --hills-dawn-hill-far: #b8dcc4;
+  --hills-dawn-hill-mid: #9ccdb0;
+  --hills-dawn-hill-near: #86c09d;
+  /* 毛玻璃（D56） */
+  --hills-glass: rgb(255 255 255 / 0.72);
+  --hills-glass-strong: rgb(255 255 255 / 0.86);
+  --hills-glass-line: rgb(255 255 255 / 0.8);
+  --hills-glass-shadow: 0 10px 30px rgb(30 60 100 / 0.15);
+  --hills-glass-blur: 18px;
   /* QR Code 一律白底，確保可掃描 */
   --hills-qr-bg: #ffffff;
   --hills-radius-card: 16px;
@@ -109,6 +206,18 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --hills-dawn-top: #0d1626;
+    --hills-dawn-upper: #16253a;
+    --hills-dawn-lower: #1c2f4a;
+    --hills-dawn-bottom: #22385a;
+    --hills-dawn-sun: #f3ebc8;
+    --hills-dawn-hill-far: #1f3b3f;
+    --hills-dawn-hill-mid: #1a3334;
+    --hills-dawn-hill-near: #152b2b;
+    --hills-glass: rgb(24 33 45 / 0.7);
+    --hills-glass-strong: rgb(24 33 45 / 0.88);
+    --hills-glass-line: rgb(255 255 255 / 0.12);
+    --hills-glass-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
     --hills-primary: #4c8df6;
     --hills-primary-soft: #1b2b45;
     --hills-bg: #0f1620;
@@ -464,5 +573,63 @@ body {
   .hills-shimmer {
     animation: none;
     display: none;
+  }
+}
+
+/* 降低透明度：毛玻璃改為實色（design-system §2.2 v0.7，D56） */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --hills-glass: var(--hills-surface);
+    --hills-glass-strong: var(--hills-surface);
+    --hills-glass-blur: 0px;
+  }
+}
+
+/* 角色原地踏步（design-system §7 v0.7，D56）；減少動態時靜止 */
+@keyframes hills-step-a {
+  0%,
+  50%,
+  100% {
+    transform: translateY(0);
+  }
+  25% {
+    transform: translateY(-8px);
+  }
+}
+@keyframes hills-step-b {
+  0%,
+  50%,
+  100% {
+    transform: translateY(0);
+  }
+  75% {
+    transform: translateY(-8px);
+  }
+}
+@keyframes hills-step-body {
+  0%,
+  50%,
+  100% {
+    transform: translateY(0);
+  }
+  25%,
+  75% {
+    transform: translateY(2px);
+  }
+}
+.hills-step-a {
+  animation: hills-step-a 1s ease-in-out infinite;
+}
+.hills-step-b {
+  animation: hills-step-b 1s ease-in-out infinite;
+}
+.hills-step-body {
+  animation: hills-step-body 1s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hills-step-a,
+  .hills-step-b,
+  .hills-step-body {
+    animation: none;
   }
 }

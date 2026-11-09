@@ -27,6 +27,7 @@ const step = (id: string, done = false): TaskStep => ({
 const member = (id: string, over: Partial<MemberView> = {}): MemberView => ({
   id,
   name: id,
+  rosterName: id,
   isAdmin: false,
   isMe: false,
   joinedAt: 0,

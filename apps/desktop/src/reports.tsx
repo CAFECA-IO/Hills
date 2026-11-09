@@ -14,6 +14,7 @@ import {
 } from './api';
 import { periodsAt } from './goals-utils';
 import { useLoad } from './hooks';
+import { effectiveTimezone } from './profile-utils';
 import { formatTime, t, type MessageKey } from './i18n';
 import { PageHead } from './layout';
 import {
@@ -537,16 +538,20 @@ function SectionsView({ sections }: { sections: ReportSections }) {
   );
 }
 
-/** 週五提醒產生週報（technical-design §16.13；沿用 Scrum 提醒時間）。 */
-export function useWeeklyReportReminder(timezone: string | null) {
+/** 週五提醒產生週報（technical-design §16.13；沿用 Scrum 提醒時間與本人的工作日、時區，§16.17）。 */
+export function useWeeklyReportReminder(orgTimezone: string | null) {
   const reminder = useLoad(api.scrumReminder, ['org']);
+  const profile = useLoad(api.myProfile, ['doc']);
   const time = reminder.data ? (reminder.data.mine ?? reminder.data.org) : null;
+  const tz = effectiveTimezone(profile.data);
+  const days = (profile.data?.workHours.days ?? []).join(',');
   useEffect(() => {
-    if (!timezone || !time) return;
+    if (!orgTimezone || !time || !profile.data) return;
+    const workDays = days ? days.split(',').map(Number) : [];
     const check = () => {
       const now = Date.now();
-      const day = periodsAt(now, timezone).day;
-      if (weekday(day) === 5 && shouldRemind(now, timezone, time)) {
+      const day = periodsAt(now, orgTimezone).day;
+      if (weekday(day) === 5 && shouldRemind(now, tz, time, workDays)) {
         void api
           .reportRemind(periodOf('weekly', day), t('report.remind.title'), t('report.remind.body'))
           .catch(() => undefined);
@@ -555,5 +560,5 @@ export function useWeeklyReportReminder(timezone: string | null) {
     check();
     const id = setInterval(check, 60_000);
     return () => clearInterval(id);
-  }, [timezone, time]);
+  }, [orgTimezone, time, tz, days, profile.data]);
 }

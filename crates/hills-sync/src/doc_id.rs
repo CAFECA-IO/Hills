@@ -52,6 +52,8 @@ pub enum MemberSection {
     Tasks,
     /// 方向摘要與對齊建議：`direction`（technical-design §16.14 v0.21，D47），全員可讀
     Direction,
+    /// 個人資料：`profile`（顯示名稱、時區、工作時段；technical-design §16.17 v0.31，D57），全員可讀
+    Profile,
 }
 
 /// 計劃文件的可見度：`plans/private`、`plans/team/<teamId>`、`plans/org`（technical-design §4.3 v0.15）。
@@ -141,6 +143,7 @@ impl DocKind {
                     ["secrets"] => MemberSection::Secrets,
                     ["tasks"] => MemberSection::Tasks,
                     ["direction"] => MemberSection::Direction,
+                    ["profile"] => MemberSection::Profile,
                     _ => return None,
                 };
                 DocKind::Member { owner, section }
@@ -172,6 +175,14 @@ mod tests {
             Some(DocKind::TeamRoster("t-1".into()))
         );
         assert_eq!(DocKind::parse("team-roster/a/b"), None);
+        assert!(matches!(
+            DocKind::parse(&format!("member/{m}/profile")),
+            Some(DocKind::Member {
+                section: MemberSection::Profile,
+                ..
+            })
+        ));
+        assert!(DocKind::parse(&format!("member/{m}/profile/x")).is_none());
         assert!(matches!(
             DocKind::parse(&format!("member/{m}/direction")),
             Some(DocKind::Member {

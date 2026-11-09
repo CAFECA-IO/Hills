@@ -58,7 +58,9 @@ export function knockTargets(
     conv.kind === 'dm'
       ? conv.members.filter((id) => id !== me)
       : mentioned.filter((id) => id !== me);
-  return members.filter((m) => ids.includes(m.id) && defersNotifications(m.presence, m.until, now));
+  return members.filter(
+    (m) => ids.includes(m.id) && (defersNotifications(m.presence, m.until, now) || !!m.offHours),
+  );
 }
 
 /** 「變成任務」的預設標題：訊息第一個非空行，去掉常見 Markdown 標記，最多 100 字。 */

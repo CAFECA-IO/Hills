@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use hills_node::profile::{MemberProfile, NotifyPrefs};
 use hills_node::{
     ConvKind, CreateOrg, Event, LegacyData, Location, Look, MemberId, MemberStatus, Message, Node,
     NodeOptions, OnboardKind, OnboardStep, Onboarding, PresenceState, Pub32, SecretStore,
@@ -137,7 +138,7 @@ fn notify_message(app: &AppHandle, node: &Node, conv: &str, author: &MemberId, p
         .lock()
         .map(|a| a.as_deref() == Some(conv))
         .unwrap_or(false);
-    if focused && viewing {
+    if (focused && viewing) || !node.notify_prefs().messages {
         return;
     }
     if my_presence_defers(node) {
@@ -146,12 +147,7 @@ fn notify_message(app: &AppHandle, node: &Node, conv: &str, author: &MemberId, p
         }
         return;
     }
-    let title = node
-        .org()
-        .members
-        .get(author)
-        .map(|m| m.name.clone())
-        .unwrap_or_else(|| author.to_string());
+    let title = node.display_name(author);
     let _ = app
         .notification()
         .builder()
@@ -163,13 +159,11 @@ fn notify_message(app: &AppHandle, node: &Node, conv: &str, author: &MemberId, p
 /// 小組成員回報阻礙（technical-design §16.12）：通知負責人。
 fn notify_scrum_blocker(app: &AppHandle, node: &Node, member: &MemberId, text: &str) {
     use tauri_plugin_notification::NotificationExt;
+    if !node.notify_prefs().blockers {
+        return;
+    }
     let zh = !node.org().locale.starts_with("en");
-    let name = node
-        .org()
-        .members
-        .get(member)
-        .map(|m| m.name.clone())
-        .unwrap_or_default();
+    let name = node.display_name(member);
     let title = if zh {
         format!("{name} 回報了阻礙")
     } else {
@@ -186,13 +180,11 @@ fn notify_scrum_blocker(app: &AppHandle, node: &Node, member: &MemberId, text: &
 /// 別人指派了任務給我（technical-design §16.8 v0.26，D50）。
 fn notify_task_assigned(app: &AppHandle, node: &Node, by: &MemberId, task: &str) {
     use tauri_plugin_notification::NotificationExt;
+    if !node.notify_prefs().assigned {
+        return;
+    }
     let zh = !node.org().locale.starts_with("en");
-    let name = node
-        .org()
-        .members
-        .get(by)
-        .map(|m| m.name.clone())
-        .unwrap_or_default();
+    let name = node.display_name(by);
     let title = if zh {
         format!("{name} 指派了任務給你")
     } else {
@@ -584,7 +576,10 @@ pub async fn export_org_root_backup(
 #[serde(rename_all = "camelCase")]
 pub struct MemberView {
     id: String,
+    /// 顯示名稱（個人資料優先，否則名冊姓名；technical-design §16.17）
     name: String,
+    /// 組織名冊上的姓名
+    roster_name: String,
     is_admin: bool,
     is_me: bool,
     joined_at: i64,
@@ -661,13 +656,19 @@ pub async fn overview(state: State<'_, AppState>) -> CmdResult<Overview> {
         let presence = n.presence();
         let me = n.member_id();
         let looks = n.profiles().unwrap_or_default();
+        let profiles = n.member_profiles().unwrap_or_default();
         let members = org
             .active_members()
             .map(|(id, m)| {
                 let p = presence.get(id);
                 MemberView {
                     id: id.to_string(),
-                    name: m.name.clone(),
+                    name: profiles
+                        .get(id)
+                        .map(|p| p.display_name.clone())
+                        .filter(|d| !d.is_empty())
+                        .unwrap_or_else(|| m.name.clone()),
+                    roster_name: m.name.clone(),
                     is_admin: roles.get(id).copied().unwrap_or(false),
                     is_me: *id == me,
                     joined_at: m.joined_at,
@@ -1293,7 +1294,7 @@ pub async fn report_remind(
             .my_report(hills_node::reports::ReportKind::Weekly, &week)
             .map_err(e)?
             .is_some();
-        if published || !n.mark_report_reminded(&week).map_err(e)? {
+        if published || !n.notify_prefs().scrum_reminder || !n.mark_report_reminded(&week).map_err(e)? {
             return Ok(false);
         }
         let _ = app.notification().builder().title(title).body(body).show();
@@ -1403,7 +1404,10 @@ pub async fn scrum_remind(
 ) -> CmdResult<bool> {
     use tauri_plugin_notification::NotificationExt;
     with_node!(state, n => {
-        if n.my_scrum(&date).map_err(e)?.is_some() || !n.mark_scrum_reminded(&date).map_err(e)? {
+        if n.my_scrum(&date).map_err(e)?.is_some()
+            || !n.notify_prefs().scrum_reminder
+            || !n.mark_scrum_reminded(&date).map_err(e)?
+        {
             return Ok(false);
         }
         let _ = app.notification().builder().title(title).body(body).show();
@@ -1438,6 +1442,45 @@ pub async fn set_focus(
 #[tauri::command]
 pub async fn set_profile(state: State<'_, AppState>, look: Look) -> CmdResult<()> {
     with_node!(state, n => n.set_profile(look).await.map_err(e))
+}
+
+/// 個人資料（technical-design §16.17，D57）：顯示名稱、時區、工作時段。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileView {
+    member: String,
+    #[serde(flatten)]
+    profile: MemberProfile,
+}
+
+#[tauri::command]
+pub async fn my_profile(state: State<'_, AppState>) -> CmdResult<MemberProfile> {
+    with_node!(state, n => n.my_profile().map_err(e))
+}
+
+#[tauri::command]
+pub async fn set_my_profile(state: State<'_, AppState>, profile: MemberProfile) -> CmdResult<()> {
+    with_node!(state, n => n.set_my_profile(profile).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn member_profiles(state: State<'_, AppState>) -> CmdResult<Vec<ProfileView>> {
+    with_node!(state, n => Ok(n
+        .member_profiles()
+        .map_err(e)?
+        .into_iter()
+        .map(|(m, profile)| ProfileView { member: m.to_string(), profile })
+        .collect()))
+}
+
+#[tauri::command]
+pub async fn notify_prefs(state: State<'_, AppState>) -> CmdResult<NotifyPrefs> {
+    with_node!(state, n => Ok(n.notify_prefs()))
+}
+
+#[tauri::command]
+pub async fn set_notify_prefs(state: State<'_, AppState>, prefs: NotifyPrefs) -> CmdResult<()> {
+    with_node!(state, n => n.set_notify_prefs(prefs).await.map_err(e))
 }
 
 #[tauri::command]

@@ -1,6 +1,7 @@
 /** 顯示類元件（docs/components.md「顯示」）。 */
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { FOCUS_RING } from './button';
+import { GlassLayer, useGlass } from './glass';
 import { EmptyIllustration, Skeleton, type EmptyArt, type SkeletonVariant } from './empty';
 
 /** 內容卡片：一個主題一張（摘要圖卡規則見 ui-spec「視覺語言」）。 */
@@ -14,6 +15,15 @@ export function Card({
   padding?: 'sm' | 'md' | 'none';
 }) {
   const p = { sm: 'p-4', md: 'p-5', none: '' }[padding];
+  const glass = useGlass();
+  if (glass) {
+    return (
+      <section className={`relative z-0 rounded-card ${p} ${className}`}>
+        <GlassLayer radius="rounded-card" />
+        {children}
+      </section>
+    );
+  }
   return (
     <section className={`rounded-card bg-surface shadow-sm ${p} ${className}`}>{children}</section>
   );

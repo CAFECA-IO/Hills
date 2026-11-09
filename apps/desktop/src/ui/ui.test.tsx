@@ -4,6 +4,13 @@ import { t } from '../i18n';
 import {
   Badge,
   Button,
+  CharacterStage,
+  GlassNav,
+  GlassPanel,
+  GlassScope,
+  Card,
+  ScopeTag,
+  SwatchGroup,
   Checkbox,
   ChoiceCard,
   ConfirmDialog,
@@ -34,6 +41,81 @@ const html = (el: React.ReactElement) => renderToStaticMarkup(el);
 const noop = () => undefined;
 
 describe('ui 元件（docs/components.md）', () => {
+  it('GlassPanel 標題與範圍標籤；GlassScope 內的 Card 改用毛玻璃底層', () => {
+    const h = html(
+      <GlassPanel title="通知" scope={{ scope: 'me', label: '只有我' }}>
+        x
+      </GlassPanel>,
+    );
+    expect(h).toContain('<h2');
+    expect(h).toContain('只有我');
+    expect(h).toContain('aria-hidden="true"');
+    expect(html(<Card>a</Card>)).toContain('bg-surface');
+    expect(
+      html(
+        <GlassScope>
+          <Card>a</Card>
+        </GlassScope>,
+      ),
+    ).not.toContain('bg-surface');
+    expect(html(<ScopeTag scope="device" label="這台電腦" />)).toContain('這台電腦');
+  });
+
+  it('SwatchGroup 是 radiogroup，只有選取的色票可 tab 到', () => {
+    const h = html(
+      <SwatchGroup
+        label="頭髮"
+        colors={['red', 'blue']}
+        value={1}
+        onChange={noop}
+        optionLabel={(i) => `頭髮 第 ${i + 1} 色`}
+      />,
+    );
+    expect(h).toContain('role="radiogroup"');
+    expect(h).toContain('aria-label="頭髮"');
+    expect(h).toContain('aria-checked="true"');
+    expect(h.match(/tabindex="0"/g)).toHaveLength(1);
+    expect(h).toContain('aria-label="頭髮 第 2 色"');
+  });
+
+  it('CharacterStage 有前後箭頭、aria-live 與圓點', () => {
+    const h = html(
+      <CharacterStage
+        count={7}
+        index={2}
+        onChange={noop}
+        label="我的角色：貓"
+        prevLabel="上一個角色"
+        nextLabel="下一個角色"
+      >
+        <svg />
+      </CharacterStage>,
+    );
+    expect(h).toContain('aria-label="上一個角色"');
+    expect(h).toContain('aria-label="下一個角色"');
+    expect(h).toContain('aria-live="polite"');
+    expect(h).toContain('aria-label="我的角色：貓"');
+    expect(h.match(/rounded-full transition-all/g)).toHaveLength(7);
+  });
+
+  it('GlassNav 標示目前分組、數字徽章與提醒圓點', () => {
+    const h = html(
+      <GlassNav
+        label="設定分組"
+        value="b"
+        onChange={noop}
+        items={[
+          { value: 'a', label: 'A', dotLabel: '有待處理' },
+          { value: 'b', label: 'B', count: 2, countLabel: '2 筆待核准' },
+        ]}
+      />,
+    );
+    expect(h).toContain('aria-label="設定分組"');
+    expect(h).toContain('aria-current="page"');
+    expect(h).toContain('aria-label="有待處理"');
+    expect(h).toContain('aria-label="2 筆待核准"');
+  });
+
   it('Button 預設 type=button，busy 時停用並標示 aria-busy', () => {
     const h = html(<Button busy>存</Button>);
     expect(h).toContain('type="button"');

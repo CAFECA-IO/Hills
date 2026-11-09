@@ -150,8 +150,14 @@ export function clockIn(ms: number, tz: string): string {
   }
 }
 
-/** 是否應提醒：工作日、已到提醒時間（尚未送出由 Rust 端再確認）。 */
-export function shouldRemind(now: number, tz: string, reminder: string): boolean {
+/**
+ * 是否應提醒：工作日、已到提醒時間（尚未送出由 Rust 端再確認）。
+ * `days` 為本人的工作日（1 = 週一 … 7 = 週日，technical-design §16.17 v0.31）；
+ * 沒有傳時沿用週一到週五。`tz` 為本人時區。
+ */
+export function shouldRemind(now: number, tz: string, reminder: string, days?: number[]): boolean {
   const date = periodsAt(now, tz).day;
-  return isWorkday(date) && clockIn(now, tz) >= reminder;
+  const iso = weekday(date) || 7;
+  const work = days ? days.includes(iso) : isWorkday(date);
+  return work && clockIn(now, tz) >= reminder;
 }

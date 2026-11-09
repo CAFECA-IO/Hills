@@ -23,8 +23,10 @@ const MAX_ACK_NOTE: usize = 200;
 const FOCUS_FILE: &str = "focus";
 const MAX_STEPS: usize = 30;
 const MAX_TITLE: usize = 200;
-/// 外觀色盤的大小（前端 `look.ts` 須一致）
-pub const LOOK_PALETTE: u8 = 8;
+/// 外觀色盤的大小（前端 `summit.ts` 須一致；technical-design §16.8 v0.31，D56）
+pub const LOOK_PALETTE: u8 = 6;
+/// 角色種類數：男性、女性、貓、狗、大象、羊、老虎（D56）
+pub const LOOK_KINDS: u8 = 7;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -171,12 +173,34 @@ pub struct StepInput {
     pub done: bool,
 }
 
-/// 角色外觀：固定色盤的索引。
+/// 角色外觀：角色種類與三個部位的色號（technical-design §16.8 v0.31，D56）。
+/// 舊資料沒有 `kind`，視為 0（男性）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct Look {
+    #[serde(default)]
+    pub kind: u8,
     pub hair: u8,
     pub shirt: u8,
     pub skin: u8,
+}
+
+impl Look {
+    pub fn is_valid(&self) -> bool {
+        self.kind < LOOK_KINDS
+            && self.hair < LOOK_PALETTE
+            && self.shirt < LOOK_PALETTE
+            && self.skin < LOOK_PALETTE
+    }
+
+    /// 讀取時的相容換算：色號以色盤大小取餘數，未知的角色視為男性。
+    pub fn normalized(self) -> Look {
+        Look {
+            kind: if self.kind < LOOK_KINDS { self.kind } else { 0 },
+            hair: self.hair % LOOK_PALETTE,
+            shirt: self.shirt % LOOK_PALETTE,
+            skin: self.skin % LOOK_PALETTE,
+        }
+    }
 }
 
 // ---------- 文件讀寫（純函式） ----------
@@ -478,8 +502,7 @@ pub fn read_profiles(doc: &AutoCommit) -> BTreeMap<MemberId, Look> {
             let m = MemberId::parse(k.strip_prefix(PROFILE_PREFIX)?).ok()?;
             let raw = get_str(doc, &ROOT, &k)?;
             let look: Look = serde_json::from_str(&raw).ok()?;
-            (look.hair < LOOK_PALETTE && look.shirt < LOOK_PALETTE && look.skin < LOOK_PALETTE)
-                .then_some((m, look))
+            Some((m, look.normalized()))
         })
         .collect()
 }
@@ -718,7 +741,7 @@ impl Node {
 
     /// 設定自己的外觀，寫入自己所屬的每個小組文件。
     pub async fn set_profile(&self, look: Look) -> Result<()> {
-        if look.hair >= LOOK_PALETTE || look.shirt >= LOOK_PALETTE || look.skin >= LOOK_PALETTE {
+        if !look.is_valid() {
             bail!("外觀選項無效");
         }
         let me = self.member_id();
@@ -1093,20 +1116,40 @@ mod tests {
             &mut doc,
             &A,
             &Look {
+                kind: 2,
                 hair: 1,
                 shirt: 2,
                 skin: 3,
             },
         )
         .unwrap();
+        // 舊資料：沒有 kind、色號 0–7（v0.31 起以 6 取餘數）
         doc.put(
             ROOT,
             format!("profile:{B}").as_str(),
-            "{\"hair\":99,\"shirt\":0,\"skin\":0}",
+            "{\"hair\":7,\"shirt\":0,\"skin\":6}",
         )
         .unwrap();
         let p = read_profiles(&doc);
-        assert_eq!(p.len(), 1);
+        assert_eq!(p.len(), 2);
+        assert_eq!(p[&A].kind, 2);
         assert_eq!(p[&A].skin, 3);
+        assert_eq!(
+            p[&B],
+            Look {
+                kind: 0,
+                hair: 1,
+                shirt: 0,
+                skin: 0
+            }
+        );
+        let bad = Look {
+            kind: 9,
+            hair: 0,
+            shirt: 0,
+            skin: 0,
+        };
+        assert!(!bad.is_valid());
+        assert_eq!(bad.normalized().kind, 0);
     }
 }

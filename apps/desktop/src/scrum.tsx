@@ -11,6 +11,7 @@ import {
 } from './api';
 import { periodsAt } from './goals-utils';
 import { useLoad } from './hooks';
+import { effectiveTimezone } from './profile-utils';
 import { formatTime, t, type MessageKey } from './i18n';
 import { PageHead } from './layout';
 import {
@@ -524,18 +525,25 @@ function TeamOverview({
   );
 }
 
-/** Scrum 提醒（technical-design §16.12）：工作日、到提醒時間、尚未送出時通知一次。 */
-export function useScrumReminder(timezone: string | null) {
+/**
+ * Scrum 提醒（technical-design §16.12、§16.17 v0.31）：本人的工作日、本人時區的提醒時間、
+ * 尚未送出時通知一次。日期仍依組織時區（送出的 Scrum 以組織日期記錄）。
+ */
+export function useScrumReminder(orgTimezone: string | null) {
   const reminder = useLoad(api.scrumReminder, ['org']);
+  const profile = useLoad(api.myProfile, ['doc']);
   const time = reminder.data ? (reminder.data.mine ?? reminder.data.org) : null;
+  const tz = effectiveTimezone(profile.data);
+  const days = (profile.data?.workHours.days ?? []).join(',');
   useEffect(() => {
-    if (!timezone || !time) return;
+    if (!orgTimezone || !time || !profile.data) return;
+    const workDays = days ? days.split(',').map(Number) : [];
     const check = () => {
       const now = Date.now();
-      if (shouldRemind(now, timezone, time)) {
+      if (shouldRemind(now, tz, time, workDays)) {
         void api
           .scrumRemind(
-            periodsAt(now, timezone).day,
+            periodsAt(now, orgTimezone).day,
             t('scrum.remind.title'),
             t('scrum.remind.body'),
           )
@@ -545,5 +553,5 @@ export function useScrumReminder(timezone: string | null) {
     check();
     const id = setInterval(check, 60_000);
     return () => clearInterval(id);
-  }, [timezone, time]);
+  }, [orgTimezone, time, tz, days, profile.data]);
 }

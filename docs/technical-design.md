@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.28 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.29 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -433,6 +433,8 @@ services:
 | 公開 repo 洩漏機密 | GitHub secret scanning、pre-commit 掃描、`.env` 範本化 |
 | 本機其他程式或網頁呼叫 MCP（D48） | 只綁 127.0.0.1；Bearer token（鑰匙圈）；檢查 `Host`、拒絕非本機 `Origin`；寫入一律待確認（§18） |
 | Agent 把資料送到外部模型服務（D48） | 預設關閉；需管理者開放 + 本人開啟並看過警告；明示這部分資料離開端對端加密 |
+| 知識或結案報告中的惡意 HTML（D52） | 存檔前以 DOMPurify 清理（移除腳本、事件屬性、iframe、表單、外部資源）；顯示時再清理一次，放在不允許腳本的沙盒 iframe，繼承 app CSP；連結攔截後以外部瀏覽器開啟（§16.16） |
+| AI Agent 被誘導或失控（D54） | 獨立身分、範圍只限指派給它的任務與所屬小組；不能成為管理者或負責人；寫入頻率上限；每筆寫入留執行紀錄、可退回；負責人可暫停、停用（撤銷裝置 + 輪替小組金鑰）（§19） |
 
 ## 12. M0 技術驗證（PoC）
 
@@ -797,9 +799,13 @@ team/<teamId> = {                                         // v0.11（D40）
                           planItemId?,                    // v0.19（D46）：所屬週目標
                           assignedBy?, assignedAt?,       // v0.26（D50）：負責人改變時寫入
                           teamGoalId?,                    // v0.26（D50）：來源小組目標，只供顯示與建議
+                          brief?,                         // v0.29（D53）：交付說明，Markdown，≤ 8 KB
+                          acceptance?: [ { id, text } ],  // v0.29（D53）：完成條件，≤ 20 條，每條 1–200 字
                           createdBy, createdAt, updatedAt },
   "profile:<memberId>": "{\"hair\":0,\"shirt\":3,\"skin\":1}",   // 角色外觀（JSON 字串，固定色盤的索引）
   "ack:<taskId>:<memberId>": "{\"state\":\"accepted\",\"at\":0}",   // v0.26（D50）：負責人的回應，只有本人可寫
+  "log:<taskId>:<ULID>:<memberId>": "<JSON>",            // v0.29（D53）：執行紀錄，只有本人可寫
+  "report:<taskId>:<memberId>": "<JSON>",                // v0.29（D53）：結案報告，只有本人可寫
 }
 ```
 
@@ -816,6 +822,12 @@ team/<teamId> = {                                         // v0.11（D40）
   - `teamGoalId` 指向同一小組的小組目標（寫入時檢查存在），只用於顯示來源與建議，進度仍經週目標彙總（D46 不變）。
   - **通知**：套用遠端 change 後，本機找出「負責人是我、`assignedBy` 不是我」且 `task/assignedAt` 沒通知過的任務，發桌機通知（伺服器不參與）。
   - **負荷**（介面計算）：未完成 = 負責人是他、狀態不是完成；本週到期 = 其中期限落在組織時區本週；「偏重」= 未完成 ≥ 7 或本週到期 ≥ 4。
+- **執行紀錄與結案報告**（v0.29，D53）：
+  - `log:` = `{kind: "start" | "progress" | "question" | "answer" | "close" | "reopen", text, percent?, refs?: [knowledgeKey], at}`；text ≤ 4 KB（Markdown），percent 0–100；只有作者可寫（驗證層比照 `ack:`：key 以 `:<作者>` 結尾、只能放入字串），寫入後不修改。
+  - 誰可以寫：`start` / `progress` / `question` / `close`：目前負責人；`answer`：任何小組成員；`reopen`：指派者、負責人或小組負責人。
+  - `report:` = `{v: 1, format: "markdown" | "html", spec: "hills-doc/1", body, criteria: [{id, met: bool, note?}], attachments: [§14.2 Attachment], at}`；body ≤ 64 KB 且符合 §16.16 的結案報告規格，附件 JSON ≤ 512 KB；只有負責人可寫，覆寫同一 key（每人一份，最新為準）。
+  - **結案**：寫 `report:` → 任務狀態改為完成 → 寫 `close` 紀錄（refs 可帶產出的知識）。**退回**：任務改回進行中、寫 `reopen` 紀錄（text 為意見，必填）；報告保留，負責人可再結案覆寫。
+  - 附件的 `fileKey` 只存在 `TK` 加密的小組文件中，小組成員都能下載；介面上傳前提示。
 - **私人任務**（v0.19，D46）：存在 `member/<id>/tasks`（`PK_member`，只有本人讀寫），結構與 `team/<id>` 的 `task:` 相同（不含 `profile:`）。介面與命令以 `teamId = "private"` 表示；負責人固定為本人、步驟沒有負責人；不出現在小組頁，不能連結到對話（§14.2）。
 - **焦點**（feature-plan §5.4）：候選（含私人任務）為指派給我、或下一個未完成步驟指派給我的未完成任務；依「期限最近 → 卡住別人（下一步負責人不是我但我負責的步驟未完成）→ 指派給我 → 建立時間」排序。手動選擇的焦點只存在本機（secret 檔 `focus`），任務完成或刪除時回到自動。
 
@@ -863,7 +875,7 @@ kb/meta = {
 kb/items/<yyyy-mm> = {                       // 依知識 id（ULID）的建立月份（UTC）分份
   "<作者 memberId>:<ULID>": "<JSON 字串>"     // 見下
 }
-KbItem JSON = { v: 1, title, body /* Markdown */, tags: string[], topicId,
+KbItem JSON = { v: 1, title, body, format? /* v0.29：markdown（預設）| html */, spec? /* v0.29："hills-doc/1" | 無 */, tags: string[], topicId,
                 refs: string[] /* 其他知識的 key */, source, createdAt, updatedAt, updatedBy }
 source = { kind: "manual" }
        | { kind: "message", convId, messageKey }
@@ -876,6 +888,7 @@ source = { kind: "manual" }
   - `kb/items/*`：任何成員可新增；驗證層規則 `own_keys_or_admin`——每個 op 都必須在根物件上放入字串或刪除 key，且 key 以作者 memberId 開頭；管理者可修改或刪除任何 key。因此「只有作者與管理者能編輯或刪除」在驗證層強制，不只是介面限制。
 - **關聯**（投影層計算，不存入文件）：引用 = `refs`；同主題 = 相同（合併後的）主題；同任務 = 相同來源任務；同對話 = 相同來源對話。被引用次數 = 其他知識 `refs` 指到它的數量。`refs` 指到不存在的知識時忽略。
 - 限制：標題 1–200 字、內容 ≤ 64 KB、標籤 ≤ 10 個、引用 ≤ 20 個、附件 JSON ≤ 512 KB。
+- **格式與規格**（v0.29，D52）：`format = html` 時內容在存檔前清理、只在沙盒顯示（§16.16）；聲明 `spec` 的知識存檔時檢查必填段落（摘要、內容），沒有聲明的舊資料照常顯示。`source.kind = task` 的知識在介面標示來源任務；作者是 AI Agent 時標「AI 產生」（§19）。
 - **隱私**：知識內容與 `source` 全組織可讀。從對話「存成知識」會把該訊息內容與 convId 公開給全組織；從檔案建立會把附件（含 `fileKey`）公開，等於全組織都能下載該檔案，介面在送出前明確提示。伺服器仍只看到 `GK` 密文。
 - M3 的 AI 歸納建議存為本機的待套用項目，使用者按「套用」後才以上述格式寫入（D17）。
 
@@ -1010,6 +1023,29 @@ team/<teamId>."keyRotatedFor" = n // 已為第 n 次移出輪替（小組成員�
 - mailbox 的 `PutKeys` 對小組 TK 只檢查簽署者是有效成員（§16.7）。
 
 **介面資料**：小組列表回傳名稱、成員、負責人、是否封存，以及本人是成員卻還沒有 TK 時的 `awaitingKey`（「金鑰交接中，等小組成員上線」）。
+
+### 16.16 文件規格 hills-doc/1（v0.29，D52）
+
+適用：知識（§16.11）與結案報告（§16.8）。`spec = "hills-doc/1"`，`format = markdown | html`。
+
+**段落**
+
+| 文件 | 必填 | 選填 |
+|------|------|------|
+| 知識 `knowledge` | `summary` 摘要、`content` 內容 | `points` 重點、`sources` 來源 |
+| 結案報告 `report` | `summary` 結果摘要；任務有完成條件時 `criteria` 完成條件對照 | `outputs` 產出、`issues` 問題與風險、`next` 後續建議 |
+
+- 段落 key 為 `[a-z][a-z0-9-]{0,31}`；不在上表的 key 必須以 `x-` 開頭，或不寫 key，都視為**自訂段落**（照原樣顯示，擷取時 key 為 `x-…` 或 `null`）。同一 key 出現兩次時取第一個，其餘視為自訂段落。
+- **Markdown**：第一個 H2 之前為前言；每個 H2 開始一個段落，標題結尾的 `{#key}` 為段落 key（顯示時移除並作為錨點）；H3 以下屬於所在段落。
+- **HTML**：根為 `<article data-hills-doc="1">`（缺少時視為整份是一個前言）；`<section data-section="key">` 為段落，段落標題為其中第一個 `h2`。自訂段落可帶 `class`、`style`，文件可帶一個 `<style>` 區塊（只作用於沙盒內）。
+- **驗證**：寫入端（App、MCP、hills-agent）存檔前檢查必填段落存在且內文非空，Rust 端（`hills_node::doc_spec`）再檢查一次；缺少時回錯並列出缺少的 key。只有聲明 `spec` 的文件才驗證。
+- **擷取**：`sections = [{key, title, text}]`，text 為純文字（Markdown 去除標記、HTML 取 textContent）；列表摘要取 `summary`，沒有時取前言前 140 字。MCP `get_knowledge(key, sections?)` 只回傳要求的段落。
+
+**HTML 清理與顯示**
+
+- 清理（DOMPurify，存檔前與顯示前各一次）：允許結構、文字、清單、表格、`details`、`figure`、`img`（只限 `data:` 圖片）、`a`（只限 `http(s):`、`mailto:`、`#`）、`class`、`style`、`<style>`、`data-*`；移除 `script`、所有 `on*` 屬性、`iframe` / `object` / `embed` / `form` / `input` / `base` / `link` / `meta`，以及 `style` 中的 `url(...)`（`data:` 除外）與 `@import`。
+- 顯示：`<iframe sandbox="allow-same-origin" srcdoc>`——不允許腳本、表單、彈出視窗；srcdoc 繼承 app 的 CSP（`script-src 'self'`、`img-src 'self' data: blob:`），外部資源一律載入失敗。外層注入 Hills 閱讀樣式（字型、色彩 token、表格、程式碼），讀取內容高度調整 iframe；點擊連結時攔截並以外部瀏覽器開啟。
+- 原始碼檢視以等寬字顯示清理後的 HTML。
 
 ### 16.9 部署（M0）
 
@@ -1207,7 +1243,9 @@ kind = `recover`，流程與加入相同（產生**新的** IK / EK / DK、`Appl
 | `propose_kb_topic` | `categoryId`、`name` | `kb_create_topic` | 全員；同分類內名稱不可重複 |
 | `propose_kb_rename` | `kind`（category / topic）、`id`、`name` | `kb_rename` | 全員（同 app） |
 
-`propose_delete_*` 與 `propose_archive_team` 標 `destructiveHint`。確認卡摘要（preview）：`updateTeam` 附 `removed`（被移出的成員；有值時核准會輪替小組金鑰）；`message` 附 `to`（私訊對象 memberId）或 `conv` 與 `count`（群組人數）。
+`propose_delete_*` 與 `propose_archive_team` 標 `destructiveHint`。
+
+v0.29（D52）：`propose_kb_item` 新增 `format`（markdown | html，預設 markdown），一律以 hills-doc/1 驗證（必填段落在準備階段檢查，HTML 先清理）；新增讀取工具 `get_knowledge(key, sections?)`，回傳標題、格式、來源與 `sections`（只含要求的 key；未指定時全部）。D53 的 `propose_task_log`、`propose_task_close` 與 `propose_task` 的 `brief` / `acceptance` 隨第 2 批加入。確認卡摘要（preview）：`updateTeam` 附 `removed`（被移出的成員；有值時核准會輪替小組金鑰）；`message` 附 `to`（私訊對象 memberId）或 `conv` 與 `count`（群組人數）。
 
 ### 18.4 待確認變更
 
@@ -1216,3 +1254,30 @@ kind = `recover`，流程與加入相同（產生**新的** IK / EK / DK、`Appl
 - 建立時發出前端事件 `hills://mcp`；確認卡「核准」→ 以同一組 Node API 執行（與使用者自己操作相同的驗證與權限），結果寫回狀態；「拒絕」→ `rejected`。
 - 稽核：本機保留最近 200 筆 `{時間, client, 工具, 結果}`，不記參數與回傳內容。
 
+## 19. AI Agent 成員與 hills-agent（v0.29，D54，M2）
+
+### 19.1 成員種類
+
+- `org.members.<id>` 新增 `kind: "human" | "agent"`（缺少視為 human）、`sponsor`（負責人 memberId，必填於 agent）、`purpose`、`scopes`（`kb.write`、`chat.team`；任務範圍固定為指派給它的）、`paused?`。
+- agent 不能持有 `Admin` 角色，不能出現在任何 `leadIds` / roster `leads`；驗證層拒絕。組織 `org.agents = { allowed: bool }`，預設不允許，只有管理者可寫。
+- MemberCert 新增 `kind`；agent 的 `cafeca` 欄位為空，改由 sponsor 的簽章背書（`SponsorAttest = Sign_IK_sponsor(agentMemberId, AgentIK.pub, purpose, issuedAt)`），管理者核准時一併驗證。
+
+### 19.2 配對
+
+1. 管理者建立 agent：產生 `pairCode`（96-bit 隨機，base32，10 分鐘有效），在 mailbox 以 `H(pairCode)` 為 key 放一個「等待配對」請求，只存在建立者的裝置與 mailbox。
+2. `hills-agent pair <pairCode>`：產生 Agent 的 IK / DK，把公鑰與 `H(pairCode)` 送到 mailbox；建立者的 App 取回後驗證、簽發 MemberCert（kind agent）與 DeviceCert，封裝 GK 與所屬小組 TK（同 §16.2 加入流程）。
+3. 配對碼一次性，過期或用過即失效；失敗不透露原因。
+
+### 19.3 hills-agent 節點
+
+- `apps/agent`（Rust binary）：使用 hills-node 的 `Node`，資料夾與金鑰存於設定的目錄（金鑰用系統鑰匙圈，沒有時以檔案 + 權限 600，並提示）。
+- 同步與 mailbox 同一般裝置；只解得開 GK 與所屬小組 TK。
+- 本機 MCP（`127.0.0.1`，token 同 §18.2）：工具集合同 D48 / D51 / D53，但**寫入直接生效**（以 Agent 身分），回傳結果而非待確認 id；工具只列出 Agent 有權限的部分。
+- 每次寫入前檢查：未暫停、組織仍允許、目標在範圍內（任務的負責人是自己；對話是所屬小組；知識為新增或自己寫的）；頻率上限每分鐘 30 筆、每天 2,000 筆，超過回錯。
+- 寫入任務時自動補執行紀錄（狀態改變 → `progress` / `close`）。
+
+### 19.4 暫停與停用
+
+- 暫停：sponsor 或管理者把 `paused` 設為 true；節點同步到後拒絕所有寫入（讀取照常），介面顯示「已暫停」。
+- 停用：同成員停用（§16.15）：撤銷 DeviceCert、從所有小組移除並輪替 TK；之後的寫入被驗證層拒絕。
+- 刪除 Agent 不刪除它寫過的紀錄、報告與知識，作者顯示「〈名稱〉（已停用的 AI）」。

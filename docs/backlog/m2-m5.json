@@ -441,6 +441,14 @@
         "area:ai"
       ],
       "body": "## 目標\n\nAI 從對話與檔案歸納待確認的知識、分類與關聯（D42）。\n\n## 工作項目\n\n- [ ] 待歸納清單與預覽卡建議\n- [ ] 套用 / 略過（D17，未經確認不寫入）\n\n## 驗收條件\n\n- 所有建議需使用者按「套用」才寫入知識庫\n\n## 參考\n\nfeature-plan §5.13、D17、D42\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M2] AI Agent 成員與 hills-agent（D54）",
+      "milestone": "M2 通訊進階 + 行動端",
+      "labels": [
+        "type:decision"
+      ],
+      "body": "## 目標\n\nAI Agent 以自己的帳號加入小組，被指派任務後自動執行、回報、結案並回傳知識。\n\n## 工作項目\n\n- [ ] 成員種類 agent、sponsor 背書、org.agents 開關、驗證層限制（不能是管理者 / 負責人）\n- [ ] 配對碼流程（mailbox）\n- [ ] `apps/agent`：hills-agent 節點、本機 MCP 直接寫入模式、範圍檢查、頻率上限\n- [ ] 設定 → AI Agent；分派板 Agent 欄；全 app「AI」標示\n- [ ] 暫停 / 停用（撤銷裝置、輪替小組金鑰）\n\n## 驗收條件\n\n- 配對 → 指派 → Agent 寫紀錄並結案 → 回傳知識，全程在 Hills 看得到\n- 暫停後 Agent 的寫入被拒絕；停用後無法再解密新的小組資料\n\n## 參考\n\nfeature-plan D54、§5.15；technical-design §19；ui-spec「設定 → AI Agent」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
     }
   ]
 }

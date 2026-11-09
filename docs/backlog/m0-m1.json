@@ -799,6 +799,25 @@
         "area:ui"
       ],
       "body": "## 目標\n\n讓使用者自己的 AI Agent 透過本機 MCP 協助操作 Hills；寫入一律在 Hills 內確認（D17）。\n\n## 工作項目\n\n- [ ] org `mcp.allowed`（管理者）\n- [ ] 本機 MCP 伺服器（Streamable HTTP、127.0.0.1、token、Host / Origin 檢查）\n- [ ] 讀取工具：目標、方向、任務、Scrum、報表、訊息、知識庫\n- [ ] 寫入工具 → 待確認變更與確認卡\n- [ ] 設定頁：組織開關、個人開關、token、連線範例、最近的請求\n\n## 驗收條件\n\n- Claude Code 以 `claude mcp add --transport http` 連上後能列出目標\n- Agent 提議的任務在 Hills 核准前不會寫入\n- 管理者關閉後 Agent 立即無法連線\n\n## 參考\n\nfeature-plan D48、§5.14；technical-design §18；ui-spec「AI 代理（MCP）」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M1] 統一 Markdown 與文件規格（D52、D55）",
+      "milestone": "M1 計劃、Scrum、對話與檔案（MVP）",
+      "labels": [
+        "type:feature",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n所有 Markdown 一致好讀；知識庫支援 HTML 並採用固定段落規格，方便閱讀與擷取。\n\n## 工作項目\n\n- [ ] `Markdown` 元件：GFM、提示框、標題層級、程式碼複製、目錄、variant；聊天 / 報表 / 知識庫改用\n- [ ] `MarkdownEditor`：工具列、編輯 / 預覽 / 並排、快捷鍵\n- [ ] hills-doc/1：段落解析、必填驗證（前端 + Rust）、範本\n- [ ] 知識 `format: html`：清理、`HtmlView` 沙盒顯示、原始碼檢視\n- [ ] MCP：`propose_kb_item` 的 format 與規格驗證、`get_knowledge`\n\n## 驗收條件\n\n- 含 `<script>` 或事件屬性的 HTML 存檔後不保留、顯示時不執行\n- 缺少「摘要」的規格文件無法儲存\n- MCP 可只取每則知識的摘要段落\n\n## 參考\n\nfeature-plan D52、D55、§5.16；technical-design §16.11、§16.16；ui-spec 共通規則、「知識庫」；components「Markdown」「MarkdownEditor」「HtmlView」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M1] 任務執行紀錄與結案報告（D53）",
+      "milestone": "M1 計劃、Scrum、對話與檔案（MVP）",
+      "labels": [
+        "type:feature",
+        "area:plan",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n任務有交付說明與完成條件；負責人回報進度、結案時寫報告並附上附件；指派者可退回。\n\n## 工作項目\n\n- [ ] 任務 brief / acceptance\n- [ ] `log:` / `report:`（本人限定，驗證層）\n- [ ] 任務詳情：執行紀錄時間軸、回報進度、問題與回覆\n- [ ] 結案對話框：規格範本、完成條件對照、附件上傳\n- [ ] 退回\n- [ ] MCP：`propose_task_log`、`propose_task_close`、`propose_task` 的 brief / acceptance\n\n## 驗收條件\n\n- 結案 → 退回 → 再結案，紀錄完整、報告為最新\n- 非小組成員無法下載報告附件\n\n## 參考\n\nfeature-plan D53；technical-design §16.8 v0.29；ui-spec「任務 → 執行紀錄與結案」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
     }
   ]
 }

@@ -18,6 +18,7 @@ import { Portrait, StatusBadge, stateLabel } from './figures';
 import { DirectionsCard, DriftRulesCard } from './directions-settings';
 import { McpConfirmStack } from './mcp-confirm';
 import { McpOrgCard, McpPersonalCard } from './mcp-settings';
+import { TeamsCard } from './teams-settings';
 import { useDirectionPublisher } from './drift-publisher';
 import { Goals } from './goals';
 import { Home } from './home';
@@ -1000,8 +1001,14 @@ function MembersTab({
 }) {
   const joins = useLoad(api.pendingJoins, ['joins', 'roster']);
   const { error, attempt } = useAction();
+  const leads = overview?.teams.some((tm) => tm.leads.includes(info.memberId ?? '')) ?? false;
   if (!info.isAdmin) {
-    return <p className="text-sm text-muted">{t('members.adminOnly')}</p>;
+    // 不是管理者的負責人只看到自己負責的小組（D49）
+    return leads ? (
+      <TeamsCard members={members} isAdmin={false} />
+    ) : (
+      <p className="text-sm text-muted">{t('members.adminOnly')}</p>
+    );
   }
   return (
     <>
@@ -1016,6 +1023,7 @@ function MembersTab({
         </ul>
         <ErrorText message={joins.error} />
       </Card>
+      <TeamsCard members={members} isAdmin />
       <Card className="flex flex-col gap-2">
         <h2 className="font-medium">{t('members.title')}</h2>
         <ul className="flex flex-col divide-y divide-line">

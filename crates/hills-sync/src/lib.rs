@@ -87,7 +87,9 @@ pub fn allowed(kind: &DocKind, who: &Verified, dir: &dyn Directory) -> bool {
     match kind {
         DocKind::Org => who.is_admin(),
         DocKind::Team(t) => dir.is_team_member(t, &who.member_id),
-        DocKind::TeamGoals(t) => who.is_admin() || dir.is_team_lead(t, &who.member_id),
+        DocKind::TeamGoals(t) | DocKind::TeamRoster(t) => {
+            who.is_admin() || dir.is_team_lead(t, &who.member_id)
+        }
         DocKind::Member { owner, .. } => *owner == who.member_id,
         DocKind::Approvals(approver) => *approver == who.member_id,
         DocKind::ConvMeta(c) => dir.is_conv_admin(c, &who.member_id),

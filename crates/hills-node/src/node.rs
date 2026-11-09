@@ -278,6 +278,7 @@ impl Inner {
             .iter()
             .map(|(id, c)| (id.clone(), c.joined.clone()))
             .collect();
+        crate::teams::merge_rosters(self, st, &mut snap);
         snap
     }
 

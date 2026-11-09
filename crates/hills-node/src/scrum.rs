@@ -478,6 +478,7 @@ mod tests {
                 name: "A".into(),
                 leads: vec![m(2)],
                 members: vec![m(1), m(2)],
+                ..Default::default()
             },
         );
         org.teams.insert(
@@ -486,6 +487,7 @@ mod tests {
                 name: "B".into(),
                 leads: vec![],
                 members: vec![m(1)],
+                ..Default::default()
             },
         );
         let admins = vec![m(9), m(1)];

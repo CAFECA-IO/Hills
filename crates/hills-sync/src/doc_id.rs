@@ -11,6 +11,8 @@ pub enum DocKind {
     Team(String),
     /// `team-goals/<teamId>`：小組目標，該小組負責人與管理者（technical-design §16.14，D47）
     TeamGoals(String),
+    /// `team-roster/<teamId>`：小組成員與負責人，該小組負責人與管理者（technical-design §16.15，D49）
+    TeamRoster(String),
     /// `member/<id>/…`：只有本人（plans、scrum、attendance、requests、reports）
     Member {
         owner: MemberId,
@@ -104,6 +106,7 @@ impl DocKind {
             ["org"] => DocKind::Org,
             ["team", t] if is_segment(t) => DocKind::Team((*t).into()),
             ["team-goals", t] if is_segment(t) => DocKind::TeamGoals((*t).into()),
+            ["team-roster", t] if is_segment(t) => DocKind::TeamRoster((*t).into()),
             ["approvals", m] => DocKind::Approvals(MemberId::parse(m).ok()?),
             ["kb", "meta"] => DocKind::KbMeta,
             ["kb", "items", ym] if is_month(ym) => DocKind::KbItems((*ym).into()),
@@ -164,6 +167,11 @@ mod tests {
             Some(DocKind::TeamGoals("t-1".into()))
         );
         assert_eq!(DocKind::parse("team-goals/a/b"), None);
+        assert_eq!(
+            DocKind::parse("team-roster/t-1"),
+            Some(DocKind::TeamRoster("t-1".into()))
+        );
+        assert_eq!(DocKind::parse("team-roster/a/b"), None);
         assert!(matches!(
             DocKind::parse(&format!("member/{m}/direction")),
             Some(DocKind::Member {

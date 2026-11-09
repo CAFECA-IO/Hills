@@ -9,9 +9,11 @@ pub fn key_family(doc_id: &str) -> Option<KeyFamily> {
     match DocKind::parse(doc_id)? {
         DocKind::ConvMeta(c) => Some(KeyFamily::ConvMeta(c)),
         DocKind::ConvLog(c) => Some(KeyFamily::Conv(c)),
-        DocKind::Org | DocKind::KbMeta | DocKind::KbItems(_) | DocKind::TeamGoals(_) => {
-            Some(KeyFamily::Org)
-        }
+        DocKind::Org
+        | DocKind::KbMeta
+        | DocKind::KbItems(_)
+        | DocKind::TeamGoals(_)
+        | DocKind::TeamRoster(_) => Some(KeyFamily::Org),
         DocKind::Team(t) => Some(KeyFamily::Team(t)),
         DocKind::Member {
             owner,
@@ -43,7 +45,13 @@ pub fn key_family(doc_id: &str) -> Option<KeyFamily> {
 /// 請求者可否讀取此文件（直連同步回應前檢查）。
 pub fn can_read(doc_id: &str, who: &Verified, dir: &crate::org::OrgSnapshot) -> bool {
     match DocKind::parse(doc_id) {
-        Some(DocKind::Org | DocKind::KbMeta | DocKind::KbItems(_) | DocKind::TeamGoals(_)) => true,
+        Some(
+            DocKind::Org
+            | DocKind::KbMeta
+            | DocKind::KbItems(_)
+            | DocKind::TeamGoals(_)
+            | DocKind::TeamRoster(_),
+        ) => true,
         Some(DocKind::Team(t)) => dir.is_team_member(&t, &who.member_id),
         Some(DocKind::Member {
             owner,

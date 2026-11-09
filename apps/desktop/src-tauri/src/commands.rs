@@ -641,9 +641,11 @@ pub async fn overview(state: State<'_, AppState>) -> CmdResult<Overview> {
                 }
             })
             .collect();
+        // 已封存的小組不出現在選單與小組頁（D49）
         let teams = org
             .teams
             .iter()
+            .filter(|(_, t)| t.archived_at.is_none())
             .map(|(id, t)| TeamView {
                 id: id.clone(),
                 name: t.name.clone(),
@@ -1483,6 +1485,70 @@ pub async fn pending_joins(state: State<'_, AppState>) -> CmdResult<Vec<JoinRequ
             received_at: j.received_at,
         })
         .collect()))
+}
+
+/// 小組卡（ui-spec「設定 → 小組」，D49）。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamInfoView {
+    id: String,
+    name: String,
+    members: Vec<String>,
+    leads: Vec<String>,
+    archived: bool,
+    awaiting_key: bool,
+    can_manage: bool,
+}
+
+#[tauri::command]
+pub async fn teams_info(state: State<'_, AppState>) -> CmdResult<Vec<TeamInfoView>> {
+    with_node!(state, n => Ok(n
+        .teams_info()
+        .into_iter()
+        .map(|t| TeamInfoView {
+            id: t.id,
+            name: t.name,
+            members: t.members.iter().map(ToString::to_string).collect(),
+            leads: t.leads.iter().map(ToString::to_string).collect(),
+            archived: t.archived_at.is_some(),
+            awaiting_key: t.awaiting_key,
+            can_manage: t.can_manage,
+        })
+        .collect()))
+}
+
+#[tauri::command]
+pub async fn create_team(
+    state: State<'_, AppState>,
+    name: String,
+    members: Vec<String>,
+    leads: Vec<String>,
+) -> CmdResult<String> {
+    let members = parse_members(&members)?;
+    let leads = parse_members(&leads)?;
+    with_node!(state, n => n.create_team(&name, members, leads).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn rename_team(state: State<'_, AppState>, id: String, name: String) -> CmdResult<()> {
+    with_node!(state, n => n.rename_team(&id, &name).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn archive_team(state: State<'_, AppState>, id: String, archived: bool) -> CmdResult<()> {
+    with_node!(state, n => n.archive_team(&id, archived).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn set_team_members(
+    state: State<'_, AppState>,
+    id: String,
+    members: Vec<String>,
+    leads: Vec<String>,
+) -> CmdResult<()> {
+    let members = parse_members(&members)?;
+    let leads = parse_members(&leads)?;
+    with_node!(state, n => n.set_team_members(&id, members, leads).await.map_err(e))
 }
 
 #[tauri::command]

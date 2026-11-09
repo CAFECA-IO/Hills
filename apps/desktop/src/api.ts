@@ -130,6 +130,19 @@ export interface TeamView {
   leads: string[];
 }
 
+/** 小組卡（ui-spec「設定 → 小組」，D49） */
+export interface TeamInfo {
+  id: string;
+  name: string;
+  members: string[];
+  leads: string[];
+  archived: boolean;
+  /** 本人是成員卻還沒收到小組金鑰 */
+  awaitingKey: boolean;
+  /** 本人可管理成員與負責人（管理者或該小組負責人） */
+  canManage: boolean;
+}
+
 export interface Overview {
   orgName: string;
   members: MemberView[];
@@ -804,6 +817,13 @@ export const api = {
   approveJoin: (device: string, admin: boolean, teams: string[]) =>
     call<void>('approve_join', { device, admin, teams }),
   rejectJoin: (device: string) => call<void>('reject_join', { device }),
+  teamsInfo: () => call<TeamInfo[]>('teams_info'),
+  createTeam: (name: string, members: string[], leads: string[]) =>
+    call<string>('create_team', { name, members, leads }),
+  renameTeam: (id: string, name: string) => call<void>('rename_team', { id, name }),
+  archiveTeam: (id: string, archived: boolean) => call<void>('archive_team', { id, archived }),
+  setTeamMembers: (id: string, members: string[], leads: string[]) =>
+    call<void>('set_team_members', { id, members, leads }),
   renameOrg: (name: string) => call<void>('rename_org', { name }),
   revokeMember: (memberId: string) => call<void>('revoke_member', { memberId }),
   devices: () => call<DeviceInfo[]>('devices'),

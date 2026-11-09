@@ -618,9 +618,10 @@ impl Mailbox {
                 return err(ErrorCode::Unauthorized, "封裝金鑰的簽章無效");
             };
             let allowed = match &w.body.key_id.family {
-                KeyFamily::Org | KeyFamily::Team(_) | KeyFamily::MemberAttendance(_) => {
-                    signer.is_admin()
-                }
+                KeyFamily::Org | KeyFamily::MemberAttendance(_) => signer.is_admin(),
+                // D49（technical-design §16.15）：mailbox 看不到小組名單，小組金鑰由任何有效成員
+                // 交接；成員資格由收件端檢查
+                KeyFamily::Team(_) => true,
                 KeyFamily::MemberPrivate(m) => *m == signer.member_id,
                 KeyFamily::Conv(_) | KeyFamily::ConvMeta(_) => true,
             };

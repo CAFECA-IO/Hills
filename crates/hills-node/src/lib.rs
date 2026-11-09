@@ -25,6 +25,7 @@ pub mod scrum;
 mod storage;
 mod syncproto;
 pub mod team;
+pub mod teams;
 
 pub use approval::JoinView;
 pub use chat::ConvView;
@@ -39,3 +40,4 @@ pub use node::{Event, Node, NodeOptions, SyncStatus};
 pub use onboarding::{CreateOrg, OnboardKind, OnboardStep, Onboarding, SignInView};
 pub use org::{LunchBreak, OfficeRec, OrgSnapshot};
 pub use team::{Focus, Look, StepInput, Task, TaskInput, TaskStatus, TaskStep};
+pub use teams::TeamInfo;

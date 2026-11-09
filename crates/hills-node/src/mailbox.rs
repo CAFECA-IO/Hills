@@ -28,18 +28,34 @@ async fn connect(inner: &Inner) -> Result<MailboxClient> {
     Ok(MailboxClient::connect(&inner.endpoint, addr, org_id, hello).await?)
 }
 
-/// 驗證並收下封裝給我的金鑰；權限規則與 mailbox 相同（簽署裝置決定）。
+/// 驗證並收下封裝給我的金鑰；權限由簽署裝置決定。小組金鑰依 §16.15 的接受規則，
+/// 目前無法判斷的（名單文件可能比金鑰晚到）暫存稍後重試。
 fn accept_keys(inner: &Inner, items: &[hills_proto::mailbox::KeyItem]) -> Result<bool> {
     let mut st = lock(&inner.st);
     let mut changed = false;
+    let mut deferred = Vec::new();
+    let mut new_teams = Vec::new();
+    let snap = inner.org_snapshot(&mut st);
     for it in items {
         let w = &it.wrapped;
         let Ok(signer) = st.trust.verify_device_signed(w) else {
             continue;
         };
         let ok = match &w.body.key_id.family {
-            KeyFamily::Org | KeyFamily::Team(_) | KeyFamily::MemberAttendance(_) => {
-                signer.is_admin()
+            KeyFamily::Org | KeyFamily::MemberAttendance(_) => signer.is_admin(),
+            KeyFamily::Team(t) => {
+                let ok = crate::teams::team_key_ok(
+                    &snap,
+                    &st,
+                    t,
+                    w.body.key_id.epoch,
+                    &signer.member_id,
+                    signer.is_admin(),
+                );
+                if !ok && !st.ring.contains(&w.body.key_id) {
+                    deferred.push(it.clone());
+                }
+                ok
             }
             KeyFamily::MemberPrivate(m) => *m == signer.member_id,
             // §14.1 v0.9：只接受對話建立者裝置封裝的對話金鑰
@@ -50,14 +66,30 @@ fn accept_keys(inner: &Inner, items: &[hills_proto::mailbox::KeyItem]) -> Result
         if !ok || st.ring.contains(&w.body.key_id) {
             continue;
         }
+        let first = st.ring.latest(&w.body.key_id.family).is_none();
         if st.ring.accept(&w.body, &inner.secrets.keys).is_ok() {
             changed = true;
+            if let (true, KeyFamily::Team(t)) = (first, &w.body.key_id.family) {
+                new_teams.push(t.clone());
+            }
         }
     }
     if changed {
         inner.persist(&st)?;
     }
+    drop(st);
+    inner.defer_keys(deferred)?;
+    inner.need_catch_up(new_teams)?;
     Ok(changed)
+}
+
+/// 重試暫存的小組金鑰，再交接 / 輪替小組金鑰（§16.15）。
+fn reconcile_teams(inner: &Inner) -> Result<bool> {
+    let retry = inner.take_deferred()?;
+    if !retry.is_empty() && accept_keys(inner, &retry)? {
+        inner.retry_pending()?;
+    }
+    crate::teams::reconcile(inner)
 }
 
 /// 確保自己有私密金鑰（PK），沒有就建立並封裝給自己。
@@ -166,6 +198,23 @@ async fn refresh(inner: &Arc<Inner>, mb: &MailboxClient) -> Result<()> {
     if next != since {
         lock(&inner.cfg).bundle_cursor = next;
         inner.save_cfg()?;
+    }
+    // 小組金鑰交接與輪替（D49）：有新的封裝就再上傳一次
+    match reconcile_teams(inner) {
+        Ok(true) => upload(inner, mb).await?,
+        Ok(false) => {}
+        Err(e) => tracing::warn!(error = %e, "無法交接小組金鑰"),
+    }
+    // 剛取得小組金鑰：重新下載該小組加入前的 bundle（當時不是成員而未保留）
+    let teams = inner.catch_up_teams()?;
+    if !teams.is_empty() {
+        let (items, _) = mb.list_all(None, 0).await?;
+        for it in &items {
+            if matches!(&it.bundle.key_id.family, KeyFamily::Team(t) if teams.contains(t)) {
+                inner.ingest_bundle(&it.bundle)?;
+            }
+        }
+        inner.clear_catch_up(&teams)?;
     }
     // mailbox 位址更新（§16.1）：舊版 mailbox 不支援 Info 時略過
     match mb.info().await {

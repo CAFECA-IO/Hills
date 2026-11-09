@@ -137,9 +137,18 @@ impl Node {
                     .collect()
             };
             let mut rotations = vec![(KeyFamily::Org, recipients(&|_| true, &st))];
+            // 只輪替自己持有的小組 TK；其餘由該小組的指定輪替裝置處理（D49，§16.15）
+            let mut rotated = Vec::new();
             for t in snap.teams_of(&member) {
+                if st.ring.latest(&KeyFamily::Team(t.clone())).is_none() {
+                    continue;
+                }
                 let team = snap.teams[&t].clone();
-                let r = recipients(&|m| team.members.contains(m) || team.leads.contains(m), &st);
+                let r = recipients(
+                    &|m| *m != member && (team.members.contains(m) || team.leads.contains(m)),
+                    &st,
+                );
+                rotated.push(t.clone());
                 rotations.push((KeyFamily::Team(t), r));
             }
             for (family, to) in rotations {
@@ -155,6 +164,7 @@ impl Node {
             inner.change_locked(&mut st, "org", |doc| {
                 Ok(org::remove_member(doc, &member, now_ms())?)
             })?;
+            crate::teams::remove_from_rosters(inner, &mut st, &member, &rotated)?;
         }
         inner.emit(Event::OrgChanged);
         inner.emit(Event::RosterChanged);

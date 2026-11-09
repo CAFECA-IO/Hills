@@ -11,6 +11,7 @@ import type {
   OnboardArgs,
   OnboardStatus,
   Overview,
+  TeamInfo,
   KbCategory,
   KbInput,
   KbItem,
@@ -89,6 +90,36 @@ const others: MemberView[] = [
   person('mem-e', '黃宜靜', 'Away', 'office:hsz', look(1, 4, 3), now0 + 15 * 60_000),
   person('mem-f', '張大同', null, 'hidden', look(1, 7, 1)),
   person('mem-g', '李雅婷', 'Leave', 'office:tpe', look(2, 6, 0), now0 + 4 * 86400_000),
+];
+// 小組（D49）：mock 中「我」是管理者
+let mockTeams: TeamInfo[] = [
+  {
+    id: 'default',
+    name: '全體成員',
+    members: [state.me, ...others.map((m) => m.id)],
+    leads: [state.me],
+    archived: false,
+    awaitingKey: false,
+    canManage: true,
+  },
+  {
+    id: 'eng',
+    name: '工程小組',
+    members: [state.me, 'mem-b', 'mem-d', 'mem-f'],
+    leads: ['mem-b'],
+    archived: false,
+    awaitingKey: true,
+    canManage: true,
+  },
+  {
+    id: 'old',
+    name: '展場專案',
+    members: ['mem-c', 'mem-g'],
+    leads: [],
+    archived: true,
+    awaitingKey: false,
+    canManage: true,
+  },
 ];
 let offices = [
   { id: 'tpe', name: '台北辦公室' },
@@ -813,14 +844,9 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
       },
       ...others,
     ],
-    teams: [
-      {
-        id: 'default',
-        name: '全體成員',
-        members: [state.me, ...others.map((m) => m.id)],
-        leads: [state.me],
-      },
-    ],
+    teams: mockTeams
+      .filter((t) => !t.archived)
+      .map((t) => ({ id: t.id, name: t.name, members: t.members, leads: t.leads })),
     offices,
     lunchBreak,
     timezone: 'Asia/Taipei',
@@ -1263,6 +1289,44 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   approve_join: (a) => {
     joins = joins.filter((j) => j.device !== a.device);
     touch('joins');
+  },
+  teams_info: () => mockTeams,
+  create_team: (a) => {
+    const name = String(a.name).trim();
+    const members = a.members as string[];
+    if (!name) throw new Error('小組名稱需為 1–40 字');
+    if (members.length === 0) throw new Error('小組至少要有一位成員');
+    const id = 't' + Date.now();
+    mockTeams = [
+      ...mockTeams,
+      {
+        id,
+        name,
+        members,
+        leads: a.leads as string[],
+        archived: false,
+        awaitingKey: false,
+        canManage: true,
+      },
+    ];
+    touch('org');
+    return id;
+  },
+  rename_team: (a) => {
+    mockTeams = mockTeams.map((t) => (t.id === a.id ? { ...t, name: String(a.name) } : t));
+    touch('org');
+  },
+  archive_team: (a) => {
+    mockTeams = mockTeams.map((t) => (t.id === a.id ? { ...t, archived: Boolean(a.archived) } : t));
+    touch('org');
+  },
+  set_team_members: (a) => {
+    const members = a.members as string[];
+    if (members.length === 0) throw new Error('小組至少要有一位成員');
+    mockTeams = mockTeams.map((t) =>
+      t.id === a.id ? { ...t, members, leads: a.leads as string[] } : t,
+    );
+    touch('org');
   },
   reject_join: (a) => {
     joins = joins.filter((j) => j.device !== a.device);

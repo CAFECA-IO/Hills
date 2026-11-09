@@ -794,6 +794,20 @@ async fn wrapped_keys_mailbox() {
             .await
             .is_err()
     );
+    // D49：小組金鑰由任何有效成員交接（成員資格由收件端檢查）
+    let team = rotate(
+        &KeyRing::default(),
+        &KeyFamily::Team("t-1".into()),
+        &[(o.bob.keys.member_id(), ek(&o.bob))],
+    )
+    .unwrap();
+    alice
+        .put_keys(vec![
+            o.alice.device.sign_body(team.wrapped[0].clone()).unwrap(),
+        ])
+        .await
+        .unwrap();
+    assert_eq!(bob.fetch_keys(0).await.unwrap().0.len(), 2);
     srv.router.shutdown().await.unwrap();
 }
 

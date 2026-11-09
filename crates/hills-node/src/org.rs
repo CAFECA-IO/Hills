@@ -20,11 +20,17 @@ pub struct MemberRec {
     pub handle: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
 pub struct TeamRec {
     pub name: String,
     pub leads: Vec<MemberId>,
     pub members: Vec<MemberId>,
+    /// 封存時間（D49）：不出現在選單與小組頁，名單與金鑰保留
+    pub archived_at: Option<Timestamp>,
+    /// 名單來自 `team-roster/<teamId>`（D49）；否則為 org 文件的後備名單
+    pub roster: bool,
+    /// `team-roster` 的移出次數（D49，§16.15）
+    pub removals: i64,
 }
 
 /// 辦公室（technical-design §16.8 v0.11；M1 不比對 Wi-Fi）。
@@ -122,7 +128,7 @@ pub(crate) fn get_int(doc: &AutoCommit, obj: &ObjId, key: &str) -> Option<i64> {
     }
 }
 
-fn get_ids(doc: &AutoCommit, obj: &ObjId, key: &str) -> Vec<MemberId> {
+pub(crate) fn get_ids(doc: &AutoCommit, obj: &ObjId, key: &str) -> Vec<MemberId> {
     get_strs(doc, obj, key)
         .iter()
         .filter_map(|s| MemberId::parse(s).ok())
@@ -179,6 +185,9 @@ pub fn read(doc: &AutoCommit) -> OrgSnapshot {
                     name: get_str(doc, &t, "name").unwrap_or_default(),
                     leads: get_ids(doc, &t, "leadIds"),
                     members: get_ids(doc, &t, "memberIds"),
+                    archived_at: get_int(doc, &t, "archivedAt"),
+                    roster: false,
+                    removals: 0,
                 },
             );
         }
@@ -215,7 +224,7 @@ pub(crate) fn ensure_map(doc: &mut AutoCommit, obj: &ObjId, key: &str) -> R<ObjI
     doc.put_object(obj, key, ObjType::Map)
 }
 
-fn put_list(doc: &mut AutoCommit, obj: &ObjId, key: &str, items: &[String]) -> R<()> {
+pub(crate) fn put_list(doc: &mut AutoCommit, obj: &ObjId, key: &str, items: &[String]) -> R<()> {
     let list = doc.put_object(obj, key, ObjType::List)?;
     for (i, it) in items.iter().enumerate() {
         doc.insert(&list, i, it.as_str())?;
@@ -299,6 +308,40 @@ pub fn add_to_team(doc: &mut AutoCommit, team: &str, id: &MemberId) -> R<()> {
         put_list(doc, &t, "memberIds", &ids)?;
     }
     Ok(())
+}
+
+/// 建立小組（D49）：org 只寫名稱；名單寫在 `team-roster/<teamId>`。
+pub fn create_team(doc: &mut AutoCommit, id: &str, name: &str) -> R<()> {
+    let teams = ensure_map(doc, &ROOT, "teams")?;
+    let t = doc.put_object(&teams, id, ObjType::Map)?;
+    doc.put(&t, "name", name)
+}
+
+/// 改名小組；小組不存在時回傳 false。
+pub fn rename_team(doc: &mut AutoCommit, id: &str, name: &str) -> R<bool> {
+    let teams = ensure_map(doc, &ROOT, "teams")?;
+    let Some(t) = get_obj(doc, &teams, id) else {
+        return Ok(false);
+    };
+    doc.put(&t, "name", name)?;
+    Ok(true)
+}
+
+/// 封存（`Some(時間)`）或取消封存（`None`）小組；小組不存在時回傳 false。
+pub fn set_team_archived(doc: &mut AutoCommit, id: &str, at: Option<Timestamp>) -> R<bool> {
+    let teams = ensure_map(doc, &ROOT, "teams")?;
+    let Some(t) = get_obj(doc, &teams, id) else {
+        return Ok(false);
+    };
+    match at {
+        Some(at) => doc.put(&t, "archivedAt", at)?,
+        None => {
+            if get_int(doc, &t, "archivedAt").is_some() {
+                doc.delete(&t, "archivedAt")?;
+            }
+        }
+    }
+    Ok(true)
 }
 
 /// 停用成員：從所有小組移除並標記移除時間（保留紀錄供交接，feature-plan §5.1）。

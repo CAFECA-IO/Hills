@@ -375,11 +375,11 @@ impl Node {
                         now: now_ms(),
                     },
                 )?;
-                for t in &teams {
-                    org::add_to_team(doc, t, &member)?;
-                }
                 Ok(())
             })?;
+            for t in &teams {
+                crate::teams::add_to_team(inner, &mut st, t, &member)?;
+            }
         }
         mb.resolve_join(device, true).await?;
         lock(&inner.joins).retain(|p| p.view.device != device);

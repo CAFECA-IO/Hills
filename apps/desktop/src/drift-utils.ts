@@ -300,3 +300,99 @@ export function sideOf(id: string): number {
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   return h % 2 === 0 ? -1 : 1;
 }
+
+// ── 第 4 批：四週軌跡、大家實際走向、週一方向時刻的預測 ──────────
+
+/** 一週摘要的角度（沒有完成的事為 null）。 */
+export function weekAngle(w: DirectionWeek): number | null {
+  return w.units > 0 ? 90 * (1 - w.alignedUnits / w.units) : null;
+}
+
+/** 前幾週的位置（舊 → 新，不含最新一週；最多 `n - 1` 個點）。 */
+export function trailOf(
+  weeks: DirectionWeek[] | undefined,
+  n = 4,
+): { angle: number; progress: number }[] {
+  if (!weeks || weeks.length < 2) return [];
+  return weeks
+    .slice(1, n)
+    .map((w) => ({ angle: weekAngle(w), progress: w.quarterProgress ?? 0 }))
+    .filter((x): x is { angle: number; progress: number } => x.angle !== null)
+    .reverse();
+}
+
+/** 趨勢：越走越偏、正在往團隊方向收、持平（需要至少兩個點）。 */
+export function trendOf(
+  trail: { angle: number }[],
+  current: number,
+): { kind: 'away' | 'back' | 'steady'; path: number[] } | null {
+  if (trail.length === 0) return null;
+  const path = [...trail.map((x) => Math.round(x.angle)), Math.round(current)];
+  const diff = current - trail[0]!.angle;
+  return { kind: diff >= 10 ? 'away' : diff <= -10 ? 'back' : 'steady', path };
+}
+
+/**
+ * 週一方向時刻要列出的任務：指派給我、未完成、這週到期或沒有期限、還沒連到週目標（最多 8 件）。
+ */
+export function unlinkedThisWeek(
+  me: string,
+  tasks: Task[],
+  week: string,
+  tz: string,
+  limit = 8,
+): Task[] {
+  return tasks
+    .filter(
+      (x) =>
+        x.assignee === me &&
+        x.status !== 'done' &&
+        !x.planItemId &&
+        (x.dueAt === null || periodsAt(x.dueAt, tz).week === week),
+    )
+    .slice(0, limit);
+}
+
+/**
+ * 預測的角度（technical-design §16.14 v0.22）：
+ *（本週 alignedUnits + 選了對齊鏈週目標的任務數）/（本週 units + 列出的任務數）。
+ * `picks` = 任務 id → 選的週目標 id（空字串 = 跟團隊無關）。
+ */
+export function predictAngle(
+  week: DirectionWeek | null,
+  listed: Task[],
+  picks: Record<string, string>,
+  plans: PlanView[],
+): number | null {
+  const byId = new Map(plans.map((p) => [p.id, p]));
+  const units = (week?.units ?? 0) + listed.length;
+  if (units === 0) return null;
+  const aligned =
+    (week?.alignedUnits ?? 0) +
+    listed.filter((x) => chainAligned(picks[x.id] || null, byId)).length;
+  return 90 * (1 - aligned / units);
+}
+
+/**
+ * 週一方向時刻的「上週」與軌跡：本週以前、有完成事項的最近 4 週（舊 → 新），
+ * 以及上週比四週前更集中（tighter）或更分散（looser）。
+ */
+export function pastTrail(
+  weeks: DirectionWeek[] | undefined,
+  thisWeek: string,
+  n = 4,
+): {
+  points: { angle: number; progress: number }[];
+  change: 'tighter' | 'looser' | null;
+} {
+  const points = (weeks ?? [])
+    .filter((w) => w.week < thisWeek)
+    .slice(0, n)
+    .map((w) => ({ angle: weekAngle(w), progress: w.quarterProgress ?? 0 }))
+    .filter((x): x is { angle: number; progress: number } => x.angle !== null)
+    .reverse();
+  const first = points[0];
+  const last = points[points.length - 1];
+  const diff = first && last && points.length >= 2 ? last.angle - first.angle : 0;
+  return { points, change: diff <= -5 ? 'tighter' : diff >= 5 ? 'looser' : null };
+}

@@ -12,11 +12,15 @@ import {
   type MemberView,
   type TeamGoal,
   type TeamView,
+  type WeekNote,
 } from './api';
 import { DirectionCompass, type CompassPerson } from './compass';
 import {
   assess,
+  meanAngle,
   quarterElapsed,
+  trailOf,
+  trendOf,
   sideOf,
   stateRank,
   summariesByMember,
@@ -29,6 +33,10 @@ import {
   Button,
   Card,
   ConfirmButton,
+  Dialog,
+  Field,
+  Switch,
+  TextInput,
   EmptyState,
   ErrorText,
   LinkButton,
@@ -49,6 +57,7 @@ export interface TeamTabProps {
   isAdmin: boolean;
   periods: Periods;
   now: number;
+  weekNotes: WeekNote[];
   onEditGoal: (team: string, goal: TeamGoal | null) => void;
   onChanged: () => void;
 }
@@ -117,7 +126,17 @@ function Reasons({ a }: { a: Assessment }) {
 }
 
 /** 滑過人像時的摘要（D7）。 */
-function PersonTip({ name, a, today }: { name: string; a: Assessment; today: number }) {
+function PersonTip({
+  name,
+  a,
+  today,
+  trend,
+}: {
+  name: string;
+  a: Assessment;
+  today: number;
+  trend: ReturnType<typeof trendOf>;
+}) {
   const w = a.week;
   const goal = w?.goals[0];
   return (
@@ -148,6 +167,11 @@ function PersonTip({ name, a, today }: { name: string; a: Assessment; today: num
             ? t('drift.today')
             : t('drift.daysAgo', { n: a.idleDays })}
       </TipRow>
+      {trend && (
+        <span className="text-muted">
+          {t(`drift.trend.${trend.kind}`, { path: trend.path.map((d) => `${d}°`).join(' → ') })}
+        </span>
+      )}
       <span className="border-t border-line pt-1.5 text-muted">{t(`drift.advice.${a.state}`)}</span>
     </>
   );
@@ -178,18 +202,30 @@ export function TeamTab(props: TeamTabProps) {
       );
   const goalOf = (team: string) =>
     teamGoals.find((g) => g.team === team && g.year === periods.year) ?? null;
-  const person = (r: Row, isMe: boolean): CompassPerson => ({
-    id: r.member.id,
-    name: r.member.name,
-    look: lookOf(r.member),
-    angle: r.a.angle,
-    progress: r.a.progress,
-    state: r.a.state === 'unknown' ? 'stale' : r.a.state,
-    unaligned: r.a.unaligned,
-    isMe,
-    side: sideOf(r.member.id),
-    tip: <PersonTip name={isMe ? t('drift.you') : r.member.name} a={r.a} today={today} />,
-  });
+  const person = (r: Row, isMe: boolean): CompassPerson => {
+    const trail = trailOf(byMember.get(r.member.id));
+    const trend = r.a.share === null ? null : trendOf(trail, r.a.angle);
+    return {
+      id: r.member.id,
+      name: r.member.name,
+      look: lookOf(r.member),
+      angle: r.a.angle,
+      progress: r.a.progress,
+      state: r.a.state === 'unknown' ? 'stale' : r.a.state,
+      unaligned: r.a.unaligned,
+      isMe,
+      side: sideOf(r.member.id),
+      trail,
+      tip: (
+        <PersonTip
+          name={isMe ? t('drift.you') : r.member.name}
+          a={r.a}
+          today={today}
+          trend={trend}
+        />
+      ),
+    };
+  };
   if (view.kind === 'team' || view.kind === 'person') {
     const tm = teams.find((x) => x.id === view.team);
     if (tm) {
@@ -511,6 +547,10 @@ function TeamView({
   goal,
   directions,
   me,
+  isAdmin,
+  periods,
+  weekNotes,
+  onChanged,
   today,
   person,
   onBack,
@@ -525,6 +565,13 @@ function TeamView({
   onOpen: (member: string) => void;
 }) {
   const [mode, setMode] = useState<'list' | 'compass'>('list');
+  const [showTrail, setShowTrail] = useState(() => readFlag(TRAIL_KEY));
+  const [showMean, setShowMean] = useState(() => readFlag(MEAN_KEY));
+  const [editingNote, setEditingNote] = useState(false);
+  const note = weekNotes.find((n) => n.team === team.id && n.week === periods.week) ?? null;
+  const canNote = isAdmin || team.leads.includes(me);
+  const active = rows.filter((r) => r.a.share !== null);
+  const mean = meanAngle(active.map((r) => ({ angle: r.a.angle, side: sideOf(r.member.id) })));
   const box = useRef<HTMLDivElement>(null);
   const size = useCompassSize(box, mode === 'compass');
   const dir = directions.find((d) => d.id === goal?.directionId);
@@ -558,6 +605,21 @@ function TeamView({
               <span className="truncate text-lg font-bold">
                 {goal?.title ?? t('guide.team.noGoal')}
               </span>
+              <span className="flex items-center gap-2 text-xs">
+                {note ? (
+                  <span className="truncate text-muted">
+                    {t('drift.note.label')}
+                    {note.text}
+                  </span>
+                ) : (
+                  canNote && <span className="text-muted">{t('drift.note.empty')}</span>
+                )}
+                {canNote && (
+                  <LinkButton className="shrink-0 text-xs" onClick={() => setEditingNote(true)}>
+                    {note ? t('guide.team.edit') : t('drift.note.write')}
+                  </LinkButton>
+                )}
+              </span>
             </div>
             {goal && (
               <div className="flex w-50 flex-col gap-1">
@@ -575,6 +637,28 @@ function TeamView({
           {mode === 'list' ? (
             <MemberList rows={rows} me={me} today={today} onOpen={onOpen} />
           ) : (
+            <div className="flex gap-4 px-5 pb-1">
+              <Switch
+                size="sm"
+                label={t('drift.toggle.trail')}
+                checked={showTrail}
+                onChange={(on) => {
+                  setShowTrail(on);
+                  writeFlag(TRAIL_KEY, on);
+                }}
+              />
+              <Switch
+                size="sm"
+                label={t('drift.toggle.mean')}
+                checked={showMean}
+                onChange={(on) => {
+                  setShowMean(on);
+                  writeFlag(MEAN_KEY, on);
+                }}
+              />
+            </div>
+          )}
+          {mode === 'compass' && (
             <div
               ref={box}
               className="flex min-h-0 flex-1 items-end justify-center overflow-hidden px-4 pb-2"
@@ -586,8 +670,12 @@ function TeamView({
                 radius={size.r}
                 today={today}
                 teamLabel={goal ? t('drift.compass.teamGoal', { title: goal.title }) : team.name}
-                people={rows.map((r) => person(r, r.member.id === me))}
+                people={rows.map((r) => {
+                  const p = person(r, r.member.id === me);
+                  return showTrail ? p : { ...p, trail: undefined };
+                })}
                 onOpen={onOpen}
+                mean={showMean ? mean : null}
                 label={t('drift.compass.label', { team: team.name })}
               />
             </div>
@@ -609,6 +697,11 @@ function TeamView({
                 <MySentence a={myRow.a} today={today} />
               </div>
             )}
+            {showMean && mean !== null && Math.abs(mean) >= 15 && (
+              <div className="rounded-control border border-level-year px-3.5 py-3 text-sm">
+                {t('drift.mean.warn', { deg: Math.round(Math.abs(mean)) })}
+              </div>
+            )}
             {warn.length > 0 && (
               <div className="flex flex-col gap-1 rounded-control border border-warning px-3.5 py-3">
                 <span className="text-sm font-bold text-warning">{t('drift.side.drifting')}</span>
@@ -628,7 +721,7 @@ function TeamView({
               </div>
             )}
             <span className="mt-1 text-sm font-bold">{t('drift.legend.title')}</span>
-            {(['angle', 'length', 'zone', 'dashed', 'stale'] as const).map((k) => (
+            {(['angle', 'length', 'zone', 'dashed', 'stale', 'trail'] as const).map((k) => (
               <div key={k} className="flex flex-col border-t border-line py-1.5">
                 <span className="text-sm font-bold">{t(`drift.legend.${k}`)}</span>
                 <span className="text-xs text-muted">{t(`drift.legend.${k}.hint`)}</span>
@@ -637,7 +730,84 @@ function TeamView({
           </Card>
         )}
       </div>
+      {editingNote && (
+        <NoteDialog
+          team={team}
+          week={periods.week}
+          initial={note?.text ?? ''}
+          onClose={() => setEditingNote(false)}
+          onSaved={() => {
+            setEditingNote(false);
+            onChanged();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+const TRAIL_KEY = 'hills.compass.trail';
+const MEAN_KEY = 'hills.compass.mean';
+
+function readFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+function writeFlag(key: string, on: boolean) {
+  try {
+    localStorage.setItem(key, on ? '1' : '0');
+  } catch {
+    // 忽略
+  }
+}
+
+/** 負責人寫這週重點（ui-spec「目標 → 團隊」v0.23）。 */
+function NoteDialog({
+  team,
+  week,
+  initial,
+  onClose,
+  onSaved,
+}: {
+  team: TeamView;
+  week: string;
+  initial: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [text, setText] = useState(initial);
+  const { busy, error, attempt } = useAction();
+  return (
+    <Dialog
+      title={t('drift.note.title', { team: team.name })}
+      onClose={onClose}
+      dirty={text !== initial}
+      onSubmit={async () => {
+        if (await attempt(() => api.setWeekNote(team.id, week, text))) onSaved();
+      }}
+    >
+      <Field label={t('drift.note.field')} hint={t('drift.note.hint')}>
+        <TextInput
+          autoFocus
+          maxLength={200}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        />
+      </Field>
+      <ErrorText message={error} />
+      <div className="flex justify-end gap-2 pt-2">
+        <Button variant="secondary" onClick={onClose}>
+          {t('common.cancel')}
+        </Button>
+        <Button type="submit" busy={busy}>
+          {t('common.save')}
+        </Button>
+      </div>
+    </Dialog>
   );
 }
 

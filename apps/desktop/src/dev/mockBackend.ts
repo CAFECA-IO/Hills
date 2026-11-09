@@ -26,6 +26,7 @@ import type {
   PlanView,
   TeamGoal,
   TeamGoalInput,
+  WeekNote,
   Report,
   ReportInput,
   ScrumInput,
@@ -164,7 +165,26 @@ let tasks: MockTask[] = [
     createdBy: 'mem-me',
     createdAt: now0 - 3600_000,
     updatedAt: now0,
-  },
+  }, // 還沒連到週目標（週一方向時刻示範）
+  ...(
+    [
+      ['t4', '整理 relay 監控告警', null],
+      ['t5', '回覆客戶導入問卷', now0 + 86400_000],
+      ['t6', '試用新的看板外掛', null],
+    ] as const
+  ).map(([id, title, dueAt]): MockTask => ({
+    id,
+    team: 'default',
+    title,
+    assignee: 'mem-me',
+    status: 'todo',
+    dueAt,
+    steps: [],
+    planItemId: null,
+    createdBy: 'mem-me',
+    createdAt: now0 - 7200_000,
+    updatedAt: now0,
+  })),
 ];
 const P = periodsAt(Date.now(), 'Asia/Taipei');
 const plan = (
@@ -328,20 +348,75 @@ const dw = (
   dueThisWeek: 1,
   updatedAt: now0,
 });
+/** n 週前的週別（第 4 批四週軌跡示範）。 */
+const weekAgo = (n: number) => periodsAt(now0 - n * 7 * DAY, 'Asia/Taipei').week;
+/** 前幾週的摘要（新 → 舊）：每週 [完成件數, 對齊件數, 進度]。 */
+const history = (goal: GoalBrief, rows: [number, number, number][]) =>
+  rows.map(([u, a, p], i) => dw(u, a, p, goal, 0, weekAgo(i + 1)));
+const qb = brief('qb', '研究 Rust GUI 框架', 50, false);
+const qa = brief('qa', '檔案分享上線', 70, true);
 let summaries: MemberDirection[] = [
-  { member: 'mem-a', weeks: [dw(6, 6, 70, brief('qa', '檔案分享上線', 70, true), 1)] },
-  { member: 'mem-b', weeks: [dw(5, 1, 50, brief('qb', '研究 Rust GUI 框架', 50, false))] },
+  {
+    member: 'mem-a',
+    weeks: [
+      dw(6, 6, 70, qa, 1),
+      ...history(qa, [
+        [5, 4, 62],
+        [4, 3, 55],
+        [6, 4, 48],
+      ]),
+    ],
+  },
+  {
+    member: 'mem-b',
+    // 陳小華：四週來越走越偏（83% → 56% → 33% → 20%）
+    weeks: [
+      dw(5, 1, 50, qb),
+      ...history(qb, [
+        [3, 1, 46],
+        [9, 5, 40],
+        [6, 5, 32],
+      ]),
+    ],
+  },
   {
     member: 'mem-c',
     weeks: [dw(2, 2, 8, brief('qc', '假勤模組上線', 8, true), 16, `${P.year}-W01`)],
   },
-  { member: 'mem-d', weeks: [dw(5, 4, 48, brief('qd', 'Windows 安裝檔驗收', 48, true))] },
+  {
+    member: 'mem-d',
+    weeks: [
+      dw(5, 4, 48, brief('qd', 'Windows 安裝檔驗收', 48, true)),
+      ...history(brief('qd', 'Windows 安裝檔驗收', 40, true), [
+        [4, 2, 40],
+        [5, 2, 33],
+      ]),
+    ],
+  },
+  // 我：只有前幾週（本週的摘要由前端發佈）
+  {
+    member: 'mem-me',
+    weeks: history(brief('q2', '本季目標', 40, true), [
+      [5, 3, 40],
+      [4, 2, 34],
+      [6, 2, 28],
+    ]),
+  },
   { member: 'mem-e', weeks: [dw(5, 4, 45, brief('qe', '聊天功能完成', 45, true), 2)] },
   { member: 'mem-f', weeks: [dw(10, 7, 40, brief('qf', '效能壓力測試', 40, true))] },
   { member: 'mem-g', weeks: [dw(10, 9, 55, brief('qg', 'iroh 連線穩定', 55, true), 1)] },
 ];
 const suggestionsToMe: SuggestionView[] = [
   { id: 'sg-1', from: 'mem-a', planItemId: 'q2', goalId: 'tg-1', createdAt: now0 - 3600_000 },
+];
+let weekNotes: WeekNote[] = [
+  {
+    team: 'default',
+    week: P.week,
+    text: '全力 M1 驗收：檔案分享先過關',
+    author: 'mem-me',
+    updatedAt: now0,
+  },
 ];
 let driftRules: DirectionRules = { minAlignedShare: 50, behindPoints: 25, staleDays: 14 };
 const taskProgress = (t: MockTask) =>
@@ -877,14 +952,29 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   my_suggestions: () => suggestionsToMe,
   publish_direction: (a) => {
     const week = a.week as DirectionWeek;
+    const old = summaries.find((m) => m.member === state.me)?.weeks ?? [];
     summaries = [
       ...summaries.filter((m) => m.member !== state.me),
-      { member: state.me, weeks: [{ ...week, updatedAt: Date.now() }] },
+      {
+        member: state.me,
+        weeks: [{ ...week, updatedAt: Date.now() }, ...old.filter((w) => w.week !== week.week)]
+          .sort((x, y) => y.week.localeCompare(x.week))
+          .slice(0, 8),
+      },
     ];
     touch();
   },
   suggest_align: (a) => {
     if (a.to === state.me) throw new Error('不能建議自己');
+    touch();
+  },
+  week_notes: () => weekNotes,
+  set_week_note: (a) => {
+    const team = a.team as string;
+    const week = a.week as string;
+    const text = (a.text as string).trim();
+    weekNotes = weekNotes.filter((n) => !(n.team === team && n.week === week));
+    if (text) weekNotes.push({ team, week, text, author: state.me, updatedAt: Date.now() });
     touch();
   },
   direction_rules: () => driftRules,

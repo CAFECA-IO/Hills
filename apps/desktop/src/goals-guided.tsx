@@ -28,6 +28,7 @@ import { DEFAULT_RULES, assess, quarterElapsed, sideOf } from './drift-utils';
 import { DirectionCompass } from './compass';
 import { MySentence, StatePill, TeamTab } from './team-direction';
 import { lookOf } from './summit';
+import { WeeklyCheck, weeklySeen } from './weekly-check';
 import { t, type MessageKey } from './i18n';
 import { PageHead } from './layout';
 import {
@@ -75,6 +76,7 @@ const ROW_TEXT: Record<ChainRow['kind'], string> = {
 export type GuidedView =
   | { kind: 'home' }
   | { kind: 'week' }
+  | { kind: 'weekly' }
   | { kind: 'plan'; year: string }
   | { kind: 'breakdown'; parentId: string }
   | { kind: 'teamGoal'; team: string; goal: TeamGoal | null };
@@ -131,8 +133,10 @@ export function GuidedGoals({
   const summaries = useLoad(api.directionSummaries, ['doc', 'org', 'roster']);
   const rules = useLoad(api.directionRules, ['org']);
   const suggestions = useLoad(api.mySuggestions, ['doc', 'org', 'roster']);
+  const weekNotes = useLoad(api.weekNotes, ['doc', 'org', 'roster']);
   const [tab, setTab] = useState<'mine' | 'team'>('mine');
   const [view, setView] = useState<GuidedView>({ kind: 'home' });
+  const [weeklyDismissed, setWeeklyDismissed] = useState(false);
   const [editing, setEditing] = useState<PlanView | null>(null);
   const [toast, setToast] = useState<(ToastState & { key: number }) | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -150,7 +154,13 @@ export function GuidedGoals({
   const reload = () => {
     plans.reload();
     dirs.reload();
+    weekNotes.reload();
   };
+  // 週一方向時刻：本週第一次打開目標頁時先顯示（「稍後再看」只在這次開啟內不再自動顯示）
+  const ready = Boolean(me && plans.data && summaries.data && weekNotes.data);
+  const showWeekly =
+    view.kind === 'weekly' ||
+    (view.kind === 'home' && ready && !weeklyDismissed && !weeklySeen(periods.week));
   const notify = (s: ToastState) => setToast({ ...s, key: Date.now() });
   const home = () => {
     setView({ kind: 'home' });
@@ -235,12 +245,35 @@ export function GuidedGoals({
           members={members}
           summaries={summaries.data ?? []}
           rules={rules.data ?? DEFAULT_RULES}
+          weekNotes={weekNotes.data ?? []}
           me={meId}
           isAdmin={me?.isAdmin ?? false}
           periods={periods}
           now={now}
           onEditGoal={(team, goal) => setView({ kind: 'teamGoal', team, goal })}
           onChanged={reload}
+        />
+      ) : showWeekly && me ? (
+        <WeeklyCheck
+          me={me}
+          members={members}
+          teams={teams}
+          weeks={summaries.data?.find((m) => m.member === meId)?.weeks ?? []}
+          rules={rules.data ?? DEFAULT_RULES}
+          plans={items}
+          tasks={tasks}
+          weekNotes={weekNotes.data ?? []}
+          periods={periods}
+          timezone={timezone}
+          onLater={() => {
+            setWeeklyDismissed(true);
+            setView({ kind: 'home' });
+          }}
+          onDone={() => {
+            setWeeklyDismissed(true);
+            home();
+          }}
+          notify={notify}
         />
       ) : view.kind === 'week' ? (
         <WeekView
@@ -275,6 +308,7 @@ export function GuidedGoals({
               now={now}
               me={me ?? null}
               teamName={myTeams[0]?.name ?? ''}
+              onWeekly={() => setView({ kind: 'weekly' })}
             />
           }
           suggestion={
@@ -513,6 +547,7 @@ function YourDirection({
   now,
   me,
   teamName,
+  onWeekly,
 }: {
   weeks: DirectionWeek[];
   rules: DirectionRules;
@@ -520,6 +555,7 @@ function YourDirection({
   now: number;
   me: MemberView | null;
   teamName: string;
+  onWeekly: () => void;
 }) {
   const a = assess(weeks, rules, periods, now);
   const today = quarterElapsed(periods) * 100;
@@ -534,6 +570,9 @@ function YourDirection({
       <div className="flex items-center gap-2">
         <h2 className="text-base font-bold">{t('drift.mine.yours')}</h2>
         <StatePill state={a.state} />
+        <LinkButton className="ml-auto text-xs" onClick={onWeekly}>
+          {t('weekly.open')}
+        </LinkButton>
       </div>
       {a.week && me ? (
         <>

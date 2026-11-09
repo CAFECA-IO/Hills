@@ -24,6 +24,12 @@ export interface CompassPerson {
   isMe: boolean;
   side: number;
   tip?: ReactNode;
+  /** 前幾週的位置（舊 → 新，不含現在；第 4 批「四週軌跡」） */
+  trail?: { angle: number; progress: number }[];
+  /** 半透明的預覽人像（週一方向時刻的「調整後」） */
+  ghost?: boolean;
+  /** 人像名牌的文字（預設為姓名或「你」） */
+  tag?: string;
 }
 
 type Mode = 'full' | 'me' | 'mini';
@@ -57,6 +63,7 @@ export function DirectionCompass({
   onOpen,
   pinned,
   label,
+  mean,
 }: {
   people: CompassPerson[];
   mode: Mode;
@@ -71,6 +78,8 @@ export function DirectionCompass({
   /** 固定顯示摘要的人（設計稿、測試） */
   pinned?: string;
   label: string;
+  /** 大家實際走向（度，正 = 偏右）；null / undefined 不畫 */
+  mean?: number | null;
 }) {
   const size = SIZES[mode];
   const plane: Plane = {
@@ -82,9 +91,10 @@ export function DirectionCompass({
   const R = radius;
   const Rf = R + size.pad;
   const ns = { vectorEffect: 'non-scaling-stroke' as const };
-  const shown = mode === 'me' ? people.filter((p) => p.isMe) : people;
+  const shown = mode === 'me' ? people.filter((p) => p.isMe || p.ghost) : people;
+  const radiusOf = (progress: number | null) => Math.max((R * (progress ?? 0)) / 100, R * 0.09);
   const geo = shown.map((p) => {
-    const r = Math.max((R * (p.progress ?? 0)) / 100, R * 0.09);
+    const r = radiusOf(p.progress);
     const [fx, fy] = flat(p.angle, r, p.side);
     const [x, y] = toScreen(plane, fx, fy);
     return { p, fx, fy, x, y };
@@ -169,9 +179,44 @@ export function DirectionCompass({
               strokeWidth={mode === 'mini' ? (p.isMe ? 2.6 : 1.5) : p.isMe ? 5 : 3}
               strokeLinecap="round"
               strokeDasharray={p.state === 'stale' ? '2 6' : p.unaligned ? '10 7' : undefined}
+              strokeOpacity={p.ghost ? 0.4 : 1}
               style={ns}
             />
           ))}
+          {mode !== 'mini' &&
+            geo.map(({ p, fx, fy }) =>
+              p.trail && p.trail.length > 0 ? (
+                <path
+                  key={`trail-${p.id}`}
+                  d={`M${[
+                    ...p.trail.map((q) => flat(q.angle, radiusOf(q.progress), p.side)),
+                    [fx, fy],
+                  ]
+                    .map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`)
+                    .join('L')}`}
+                  fill="none"
+                  className={colorOf(p).stroke}
+                  strokeWidth={1.6}
+                  strokeDasharray="1 5"
+                  strokeLinecap="round"
+                  style={ns}
+                />
+              ) : null,
+            )}
+          {mode === 'full' && mean !== null && mean !== undefined && (
+            <line
+              x1={0}
+              y1={0}
+              x2={flat(Math.abs(mean), R, mean >= 0 ? 1 : -1)[0]}
+              y2={flat(Math.abs(mean), R, mean >= 0 ? 1 : -1)[1]}
+              className="stroke-level-year"
+              strokeOpacity={0.6}
+              strokeWidth={2.5}
+              strokeDasharray="3 5"
+              strokeLinecap="round"
+              style={ns}
+            />
+          )}
         </g>
         <path
           d={`M${e1x} ${e1y}L${e2x} ${e2y}L${e2x} ${e2y + edge}L${e1x} ${e1y + edge}Z`}
@@ -232,6 +277,38 @@ export function DirectionCompass({
             </text>
           </>
         )}
+        {mode !== 'mini' &&
+          geo.flatMap(({ p }) =>
+            (p.trail ?? []).map((q, i, arr) => {
+              const [x, y] = toScreen(plane, ...flat(q.angle, radiusOf(q.progress), p.side));
+              return (
+                <circle
+                  key={`dot-${p.id}-${i}`}
+                  cx={x}
+                  cy={y}
+                  r={2.5 + i}
+                  className={colorOf(p).stroke.replace('stroke-', 'fill-')}
+                  opacity={0.25 + (0.5 * (i + 1)) / (arr.length + 1)}
+                />
+              );
+            }),
+          )}
+        {mode === 'full' && mean !== null && mean !== undefined && (
+          // 標在羅盤外緣（人像多半在內側），朝外對齊並加底色描邊以免被線條蓋住
+          <text
+            x={toScreen(plane, ...flat(Math.abs(mean), R * 1.03, mean >= 0 ? 1 : -1))[0]}
+            y={toScreen(plane, ...flat(Math.abs(mean), R * 1.03, mean >= 0 ? 1 : -1))[1] - 4}
+            textAnchor={mean >= 0 ? 'start' : 'end'}
+            paintOrder="stroke"
+            strokeWidth={4}
+            strokeLinejoin="round"
+            className="fill-level-year stroke-surface text-2xs font-bold"
+          >
+            {t(mean >= 0 ? 'drift.mean.right' : 'drift.mean.left', {
+              deg: Math.round(Math.abs(mean)),
+            })}
+          </text>
+        )}
         {mode === 'mini'
           ? geo.map(({ p, x, y }) => (
               <circle
@@ -277,15 +354,24 @@ export function DirectionCompass({
           const p = g.p;
           const c = colorOf(p);
           const avatar = size.avatar + (p.isMe ? 8 : 0);
-          const badge =
-            p.state === 'warn' ? 'warn' : p.state === 'stale' ? 'stale' : p.isMe ? 'ok' : undefined;
+          const badge = p.ghost
+            ? undefined
+            : p.state === 'warn'
+              ? 'warn'
+              : p.state === 'stale'
+                ? 'stale'
+                : p.isMe
+                  ? 'ok'
+                  : undefined;
           const body = (
             <Pressable
               aria-label={t('drift.compass.person', { name: p.isMe ? t('drift.you') : p.name })}
               className="group flex flex-col items-center rounded-full"
               onClick={() => onOpen?.(p.id)}
             >
-              <span className="transition-transform duration-(--hills-motion) group-hover:-translate-y-0.5 group-hover:scale-108 group-focus-visible:scale-108 motion-reduce:transition-none">
+              <span
+                className={`transition-transform duration-(--hills-motion) group-hover:-translate-y-0.5 group-hover:scale-108 group-focus-visible:scale-108 motion-reduce:transition-none ${p.ghost ? 'opacity-45' : ''}`}
+              >
                 <Bust
                   look={p.look}
                   size={avatar}
@@ -297,7 +383,7 @@ export function DirectionCompass({
               <span
                 className={`-mt-0.5 rounded-full px-1.5 text-2xs font-bold whitespace-nowrap shadow-sm ${p.isMe ? 'bg-fg text-surface' : 'bg-surface text-fg'}`}
               >
-                {p.isMe ? t('drift.you') : p.name}
+                {p.tag ?? (p.isMe ? t('drift.you') : p.name)}
               </span>
             </Pressable>
           );

@@ -408,6 +408,14 @@ export interface DirectionRules {
   staleDays: number;
 }
 
+export interface WeekNote {
+  team: string;
+  week: string;
+  text: string;
+  author: string;
+  updatedAt: number;
+}
+
 export interface DirectionInput {
   id?: string | null;
   year: string;
@@ -634,6 +642,9 @@ export const api = {
   deleteDirection: (id: string) => call<void>('delete_direction', { id }),
   saveTeamGoal: (input: TeamGoalInput) => call<string>('save_team_goal', { input }),
   deleteTeamGoal: (team: string, id: string) => call<void>('delete_team_goal', { team, id }),
+  weekNotes: () => call<WeekNote[]>('week_notes'),
+  setWeekNote: (team: string, week: string, text: string) =>
+    call<void>('set_week_note', { team, week, text }),
   directionSummaries: () => call<MemberDirection[]>('direction_summaries'),
   mySuggestions: () => call<SuggestionView[]>('my_suggestions'),
   publishDirection: (week: DirectionWeek) => call<void>('publish_direction', { week }),

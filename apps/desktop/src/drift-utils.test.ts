@@ -274,3 +274,75 @@ describe('羅盤幾何', () => {
     expect(meanAngle([{ angle: 30, side: 1 }])).toBeCloseTo(30);
   });
 });
+
+describe('第 4 批', () => {
+  const w = (week: string, units: number, aligned: number, progress = 50): DirectionWeek => ({
+    week,
+    units,
+    alignedUnits: aligned,
+    quarterProgress: progress,
+    goals: [],
+    privateGoals: 0,
+    lastActivity: NOW,
+    openTasks: 0,
+    dueThisWeek: 0,
+    updatedAt: NOW,
+  });
+
+  it('四週軌跡與趨勢', async () => {
+    const { trailOf, trendOf, weekAngle } = await import('./drift-utils');
+    const weeks = [
+      w('2026-W46', 5, 1),
+      w('2026-W45', 3, 1),
+      w('2026-W44', 0, 0),
+      w('2026-W43', 6, 5),
+      w('2026-W42', 1, 1),
+    ];
+    expect(weekAngle(weeks[0]!)).toBe(72);
+    const trail = trailOf(weeks);
+    // W43（15°）→ W45（60°）；W44 沒有完成的事略過；只取最近 4 週
+    expect(trail.map((x) => Math.round(x.angle))).toEqual([15, 60]);
+    expect(trendOf(trail, 72)).toEqual({ kind: 'away', path: [15, 60, 72] });
+    expect(trendOf([{ angle: 36 }], 18)?.kind).toBe('back');
+    expect(trendOf([], 18)).toBeNull();
+  });
+
+  it('週一方向時刻：列出的任務與預測角度', async () => {
+    const { unlinkedThisWeek, predictAngle } = await import('./drift-utils');
+    const tasks = [
+      task('a'),
+      task('b', { dueAt: NOW + DAY }),
+      task('c', { dueAt: NOW + 10 * DAY }),
+      task('d', { planItemId: 'w' }),
+      task('e', { status: 'done' }),
+      task('f', { assignee: 'other' }),
+    ];
+    const listed = unlinkedThisWeek('me', tasks, '2026-W46', TZ);
+    expect(listed.map((x) => x.id)).toEqual(['a', 'b']);
+    const plans = [
+      plan('y', 'year', '2026', { alignedGoalId: 'g' }),
+      plan('w', 'week', '2026-W46', { parentId: 'y' }),
+    ];
+    // 本週 5 件、1 件對齊；a 連到對齊的週目標、b 不連 → (1 + 1) / (5 + 2)
+    expect(predictAngle(w('2026-W46', 5, 1), listed, { a: 'w', b: '' }, plans)).toBeCloseTo(
+      90 * (1 - 2 / 7),
+    );
+    expect(predictAngle(null, [], {}, plans)).toBeNull();
+  });
+
+  it('週一方向時刻：上週與四週前比較', async () => {
+    const { pastTrail } = await import('./drift-utils');
+    const weeks = [
+      w('2026-W46', 2, 2),
+      w('2026-W45', 5, 4),
+      w('2026-W44', 0, 0),
+      w('2026-W43', 4, 1),
+    ];
+    const r = pastTrail(weeks, '2026-W46');
+    // 不含本週；W44 沒有完成的事略過
+    expect(r.points.map((x) => Math.round(x.angle))).toEqual([68, 18]);
+    expect(r.change).toBe('tighter');
+    expect(pastTrail([w('2026-W45', 1, 1)], '2026-W46').change).toBeNull();
+    expect(pastTrail(undefined, '2026-W46').points).toEqual([]);
+  });
+});

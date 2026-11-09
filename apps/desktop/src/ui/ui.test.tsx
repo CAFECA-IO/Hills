@@ -17,6 +17,7 @@ import {
   Menu,
   MenuItem,
   NoticeDialog,
+  Skeleton,
   ProgressBar,
   Select,
   SegmentedControl,
@@ -263,5 +264,22 @@ describe('ui 元件（docs/components.md）', () => {
     const h = html(<Markdown>{'<b>x</b> [a](https://e.com)'}</Markdown>);
     expect(h).not.toContain('<b>');
     expect(h).toContain('target="_blank"');
+  });
+  it('EmptyState 有插畫（aria-hidden）、loading 時改顯示骨架', () => {
+    const h = html(<EmptyState art="tasks">沒有任務</EmptyState>);
+    expect(h).toContain('<svg');
+    expect(h).toContain('aria-hidden="true"');
+    expect(h).toContain('沒有任務');
+    expect(html(<EmptyState art="none">x</EmptyState>)).not.toContain('<svg');
+    const l = html(<EmptyState loading>沒有任務</EmptyState>);
+    expect(l).toContain('role="status"');
+    expect(l).toContain('aria-busy="true"');
+    expect(l).not.toContain('沒有任務');
+  });
+
+  it('Skeleton 以 status 標示載入中，掃光使用 hills-shimmer', () => {
+    const h = html(<Skeleton variant="board" count={4} />);
+    expect(h).toContain(`aria-label="${t('common.loading')}"`);
+    expect(h).toContain('hills-shimmer');
   });
 });

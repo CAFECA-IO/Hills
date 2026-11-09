@@ -292,6 +292,7 @@ export function GuidedGoals({
         />
       ) : (
         <Home
+          loading={plans.data === null && !plans.error}
           periods={periods}
           items={items}
           tasks={tasks}
@@ -385,7 +386,10 @@ function Home({
   onAll,
   direction,
   suggestion,
+  loading = false,
 }: {
+  /** 目標還沒載入（顯示骨架） */
+  loading?: boolean;
   direction: ReactNode;
   suggestion: ReactNode;
   periods: Periods;
@@ -441,7 +445,7 @@ function Home({
           </div>
           <div className="scroll-panel min-h-0 flex-1">
             {rows.length === 0 ? (
-              <EmptyState>
+              <EmptyState art="goals" loading={loading}>
                 <span className="flex flex-col items-center gap-3">
                   {t('guide.chain.empty')}
                   <Button onClick={() => onPlanYear(periods.year)}>
@@ -524,7 +528,7 @@ function Home({
         )}
         <div className="scroll-panel flex min-h-0 flex-1 flex-col">
           {weekTasks.length === 0 ? (
-            <EmptyState>{t('guide.week.empty')}</EmptyState>
+            <EmptyState art="tasks">{t('guide.week.empty')}</EmptyState>
           ) : (
             weekTasks.map((x) => <CheckRow key={x.id} task={x} members={members} me={me} compact />)
           )}
@@ -958,7 +962,7 @@ function WeekView({
               </div>
             </>
           ) : (
-            <EmptyState>{t('guide.week.noGoal')}</EmptyState>
+            <EmptyState art="goals">{t('guide.week.noGoal')}</EmptyState>
           )}
           {goal && loose.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 border-t border-line px-5 py-3 text-sm">

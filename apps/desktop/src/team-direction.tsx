@@ -331,7 +331,7 @@ function Overview({
         </div>
         {dirs.length === 0 ? (
           <Card>
-            <EmptyState>
+            <EmptyState art="goals">
               {isAdmin ? t('guide.team.noDirectionAdmin') : t('guide.team.noDirection')}
             </EmptyState>
           </Card>
@@ -519,7 +519,7 @@ function Overview({
             <MySentence a={myRow.a} today={today} />
           </>
         ) : (
-          <EmptyState>{t('drift.mine.empty')}</EmptyState>
+          <EmptyState art="goals">{t('drift.mine.empty')}</EmptyState>
         )}
         <div className="mt-2 flex items-baseline gap-1.5 border-t border-line pt-3">
           <span className="text-sm font-bold">{t('drift.company')}</span>
@@ -951,7 +951,7 @@ function MemberList({
           </ListButton>
         );
       })}
-      {rows.length === 0 && <EmptyState>{t('drift.list.empty')}</EmptyState>}
+      {rows.length === 0 && <EmptyState art="team">{t('drift.list.empty')}</EmptyState>}
     </div>
   );
 }
@@ -1084,7 +1084,7 @@ function PersonView({
         <Card className="flex w-85 shrink-0 flex-col wide:w-100">
           <h2 className="mb-1.5 text-base font-bold">{t('drift.person.checks')}</h2>
           {!w ? (
-            <EmptyState>{t('drift.person.noData')}</EmptyState>
+            <EmptyState art="report">{t('drift.person.noData')}</EmptyState>
           ) : (
             <>
               {check(

@@ -419,7 +419,7 @@ export function GoalsRoadmap({ members, teams, tasks, timezone, headExtra }: Roa
         </div>
         <div className="scroll-panel min-h-0 flex-1">
           {lanes.length === 0 && (
-            <EmptyState>
+            <EmptyState art="goals" loading={plans.data === null} skeleton="lines">
               {zoom === 'quarter' && quarterGoals.length === 0
                 ? t('roadmap.emptyQuarter')
                 : t('roadmap.empty')}

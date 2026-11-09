@@ -802,7 +802,7 @@ function NextStepCard({
     return (
       <Card className="flex flex-col gap-3">
         <SectionLabel tone="primary">{t('home.next')}</SectionLabel>
-        <EmptyState>{t('home.empty.desc')}</EmptyState>
+        <EmptyState art="goals">{t('home.empty.desc')}</EmptyState>
         <Button onClick={onOpenTasks}>{t('home.empty.action')}</Button>
       </Card>
     );
@@ -872,7 +872,7 @@ function UnreadCard({
       <SectionLabel tone="warning">
         {t('home.waiting', { count: convs.filter((c) => c.unread > 0).length })}
       </SectionLabel>
-      {list.length === 0 && <EmptyState>{t('home.waiting.empty')}</EmptyState>}
+      {list.length === 0 && <EmptyState art="chat">{t('home.waiting.empty')}</EmptyState>}
       {list.map((c) => (
         <div
           key={c.id}
@@ -916,7 +916,7 @@ function BackSoonCard({
     <Card className="flex flex-col gap-2">
       <SectionLabel tone="success">{t('home.backSoon')}</SectionLabel>
       {list.length === 0 ? (
-        <EmptyState>{t('home.backSoon.empty')}</EmptyState>
+        <EmptyState art="team">{t('home.backSoon.empty')}</EmptyState>
       ) : (
         <>
           <svg viewBox={`0 0 ${W} 40`} className="w-full" aria-hidden>
@@ -973,7 +973,7 @@ function ChooseMountain({
   return (
     <Card className="flex flex-col gap-2">
       <h3 className="font-bold">{t('home.choose.title')}</h3>
-      {tasks.length === 0 && <EmptyState>{t('home.choose.empty')}</EmptyState>}
+      {tasks.length === 0 && <EmptyState art="tasks">{t('home.choose.empty')}</EmptyState>}
       <ul className="flex flex-col gap-1">
         {tasks.map((x) => (
           <li key={`${x.team}/${x.id}`}>

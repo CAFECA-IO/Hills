@@ -650,7 +650,7 @@ function KbList({
   const cites = citations(data.items);
   return (
     <div className="scroll-panel min-h-0 flex-1 rounded-card bg-surface p-4 shadow-sm">
-      {cats.length === 0 && <EmptyState>{t('kb.empty')}</EmptyState>}
+      {cats.length === 0 && <EmptyState art="knowledge">{t('kb.empty')}</EmptyState>}
       <ul className="flex flex-col gap-4">
         {cats.map((c) => (
           <li key={c.id}>

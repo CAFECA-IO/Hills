@@ -215,7 +215,11 @@ function TaskPicker({
       anchorRef={anchorRef}
       className="scroll-panel absolute top-full right-4 mt-1 max-h-72 w-80 p-2"
     >
-      {open.length === 0 && <EmptyState className="p-2">{t('camp.pick.empty')}</EmptyState>}
+      {open.length === 0 && (
+        <EmptyState art="tasks" className="p-2">
+          {t('camp.pick.empty')}
+        </EmptyState>
+      )}
       <ul className="flex flex-col">
         {open.map((x) => (
           <li key={`${x.team}:${x.id}`}>
@@ -511,7 +515,7 @@ export function ConvDrawer({
           ))}
         {tab === 'files' && (
           <div className="flex flex-col gap-2 p-3">
-            {files.length === 0 && <EmptyState>{t('camp.files.empty')}</EmptyState>}
+            {files.length === 0 && <EmptyState art="report">{t('camp.files.empty')}</EmptyState>}
             {files.map((f) => (
               <AttachmentCard
                 key={f.key}
@@ -541,7 +545,11 @@ function TaskTab({
 }) {
   const { busy, error, attempt } = useAction();
   if (!task) {
-    return <EmptyState className="p-4">{missing ? t('camp.missing') : t('camp.empty')}</EmptyState>;
+    return (
+      <EmptyState art="tasks" className="p-4">
+        {missing ? t('camp.missing') : t('camp.empty')}
+      </EmptyState>
+    );
   }
   return (
     <div className="flex flex-col gap-3 p-4 text-sm">

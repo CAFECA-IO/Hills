@@ -132,7 +132,11 @@ export function Chat({ members, tasks, teams, initial = null }: Props) {
         <aside className="scroll-panel flex w-60 shrink-0 flex-col gap-3">
           <Button onClick={() => setCreating(true)}>{t('chat.new')}</Button>
           <ErrorText message={convs.error} />
-          {list.length === 0 && <EmptyState>{t('chat.empty')}</EmptyState>}
+          {list.length === 0 && (
+            <EmptyState art="chat" loading={convs.data === null && !convs.error}>
+              {t('chat.empty')}
+            </EmptyState>
+          )}
           {groups.length > 0 && (
             <section>
               <h2 className="px-3 text-xs font-medium text-muted">{t('chat.groups')}</h2>

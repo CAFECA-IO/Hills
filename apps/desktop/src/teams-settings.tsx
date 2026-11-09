@@ -96,7 +96,11 @@ export function TeamsCard({ members, isAdmin }: { members: MemberView[]; isAdmin
           </Button>
         )}
       </div>
-      {active.length === 0 && <EmptyState>{t('teams.empty')}</EmptyState>}
+      {active.length === 0 && (
+        <EmptyState art="team" loading={data.data === null && !data.error}>
+          {t('teams.empty')}
+        </EmptyState>
+      )}
       <ul className="flex flex-col divide-y divide-line">{active.map(row)}</ul>
       {archived.length > 0 && (
         <div className="flex flex-col gap-1">

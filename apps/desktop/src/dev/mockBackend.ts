@@ -1595,6 +1595,11 @@ export const mockBackend = {
       const extra = Number(new URLSearchParams(window.location.search).get('bootDelay') ?? 0);
       if (extra > 0) await delay(extra);
     }
+    // 載入骨架截圖用：?loadDelay=毫秒 讓資料讀取晚一點回來
+    if (cmd !== 'app_info') {
+      const extra = Number(new URLSearchParams(window.location.search).get('loadDelay') ?? 0);
+      if (extra > 0) await delay(extra);
+    }
     if (args instanceof Uint8Array) {
       const h = options?.headers ?? {};
       if (cmd === 'put_shard') shards.set(`${h['x-node']}/${h['x-id']}`, args.slice());

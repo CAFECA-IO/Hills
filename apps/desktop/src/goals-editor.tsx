@@ -285,7 +285,9 @@ export function GoalEditor({
           <legend className="text-xs font-medium text-muted">{t('goals.krs')}</legend>
           <p className="text-xs text-muted">{t('goals.krs.hint')}</p>
           {v.keyResults.length === 0 && (
-            <EmptyState className="text-xs">{t('goals.krs.none')}</EmptyState>
+            <EmptyState art="none" className="text-xs">
+              {t('goals.krs.none')}
+            </EmptyState>
           )}
           {v.keyResults.map((k, i) => (
             <div

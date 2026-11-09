@@ -47,6 +47,8 @@ interface Props {
   timezone: string;
   error: string | null;
   isAdmin?: boolean;
+  /** 任務還沒載入（顯示骨架） */
+  loading?: boolean;
 }
 
 type View = 'list' | 'board';
@@ -67,7 +69,16 @@ export interface TaskDraft {
   teamGoalId?: string | null;
 }
 
-export function Tasks({ tasks, teams, members, focus, timezone, error, isAdmin = false }: Props) {
+export function Tasks({
+  tasks,
+  teams,
+  members,
+  focus,
+  timezone,
+  error,
+  isAdmin = false,
+  loading = false,
+}: Props) {
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const plans = useLoad(() => api.plans(false), ['doc', 'org', 'roster']);
   const dirs = useLoad(api.directions, ['doc', 'org']);
@@ -169,11 +180,13 @@ export function Tasks({ tasks, teams, members, focus, timezone, error, isAdmin =
             onEdit={(x) => setEditing(x)}
           />
         ) : (
-          <EmptyState>{t('assign.noTeams')}</EmptyState>
+          <EmptyState art="team">{t('assign.noTeams')}</EmptyState>
         ))}
       {view === 'list' && tasks.length === 0 && (
-        <Card className="flex flex-col items-start gap-2">
-          <EmptyState>{t('tasks.empty')}</EmptyState>
+        <Card className="flex flex-col items-stretch gap-2">
+          <EmptyState art="tasks" loading={loading}>
+            {t('tasks.empty')}
+          </EmptyState>
         </Card>
       )}
       {groups.map((g) => {
@@ -479,7 +492,7 @@ export function TaskDialog({
       </div>
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-1 text-xs font-medium text-muted">{t('tasks.field.steps')}</legend>
-        {v.steps.length === 0 && <EmptyState>{t('tasks.steps.empty')}</EmptyState>}
+        {v.steps.length === 0 && <EmptyState art="none">{t('tasks.steps.empty')}</EmptyState>}
         {v.steps.map((s, i) => (
           <div key={s.id ?? `new-${i}`} className="flex items-center gap-2">
             <span className="w-5 shrink-0 text-right text-sm text-muted">{i + 1}</span>

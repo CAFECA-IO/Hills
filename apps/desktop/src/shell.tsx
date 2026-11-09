@@ -322,6 +322,7 @@ export function Shell({ info }: { info: AppInfo }) {
                   timezone={overview.data?.timezone ?? ''}
                   error={tasks.error}
                   isAdmin={info.isAdmin}
+                  loading={tasks.data === null && !tasks.error}
                 />
               </div>
             )}
@@ -556,7 +557,7 @@ function TeamList({ overview }: { overview: Overview }) {
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted">{t('team.summary', { online, total: members.length })}</p>
-      {members.length <= 1 && <EmptyState>{t('team.empty')}</EmptyState>}
+      {members.length <= 1 && <EmptyState art="team">{t('team.empty')}</EmptyState>}
       {grouped.map((g) => (
         <Card key={g.id || 'none'}>
           <h2 className="mb-3 font-bold">{g.name}</h2>
@@ -1030,7 +1031,11 @@ function MembersTab({
       <Card className="flex flex-col gap-3">
         <h2 className="font-medium">{t('joins.title')}</h2>
         <p className="text-sm text-muted">{t('joins.desc')}</p>
-        {(joins.data ?? []).length === 0 && <EmptyState>{t('joins.empty')}</EmptyState>}
+        {(joins.data ?? []).length === 0 && (
+          <EmptyState art="team" loading={joins.data === null}>
+            {t('joins.empty')}
+          </EmptyState>
+        )}
         <ul className="flex flex-col divide-y divide-line">
           {(joins.data ?? []).map((j) => (
             <JoinRow key={j.device} join={j} overview={overview} onDone={joins.reload} />

@@ -1,6 +1,7 @@
 /** 顯示類元件（docs/components.md「顯示」）。 */
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { FOCUS_RING } from './button';
+import { EmptyIllustration, Skeleton, type EmptyArt, type SkeletonVariant } from './empty';
 
 /** 內容卡片：一個主題一張（摘要圖卡規則見 ui-spec「視覺語言」）。 */
 export function Card({
@@ -96,13 +97,39 @@ export function EmptyState({
   children,
   action,
   className = '',
+  art = 'generic',
+  loading = false,
+  skeleton = 'list',
 }: {
   children: ReactNode;
   action?: ReactNode;
   className?: string;
+  /** 說明上方的插畫；行內空狀態用 none（components.md v0.7） */
+  art?: EmptyArt | 'none';
+  /** 資料還沒載入：改顯示骨架 */
+  loading?: boolean;
+  skeleton?: SkeletonVariant;
 }) {
+  if (loading) {
+    return (
+      <div className={className}>
+        <Skeleton variant={skeleton} />
+      </div>
+    );
+  }
+  if (art === 'none') {
+    return (
+      <div className={`flex flex-col items-start gap-2 text-sm text-muted ${className}`}>
+        <p>{children}</p>
+        {action}
+      </div>
+    );
+  }
   return (
-    <div className={`flex flex-col items-start gap-2 text-sm text-muted ${className}`}>
+    <div
+      className={`flex flex-col items-center gap-3 py-6 text-center text-sm text-muted ${className}`}
+    >
+      <EmptyIllustration kind={art} />
       <p>{children}</p>
       {action}
     </div>

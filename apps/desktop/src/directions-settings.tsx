@@ -41,7 +41,11 @@ export function DirectionsCard() {
         </Button>
       </div>
       <p className="text-sm text-muted">{t('settings.directions.hint')}</p>
-      {list.length === 0 && <EmptyState>{t('settings.directions.empty')}</EmptyState>}
+      {list.length === 0 && (
+        <EmptyState art="goals" loading={data.data === null && !data.error}>
+          {t('settings.directions.empty')}
+        </EmptyState>
+      )}
       {byYear.map((y) => {
         const items = list.filter((d) => d.year === y);
         if (items.length === 0) return null;

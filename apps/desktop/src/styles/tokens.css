@@ -308,3 +308,22 @@ body {
     margin: 0;
   }
 }
+
+/* 載入骨架的掃光（design-system §7「載入骨架」v0.6） */
+.hills-shimmer {
+  animation: hills-shimmer 1.4s linear infinite;
+}
+@keyframes hills-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hills-shimmer {
+    animation: none;
+    display: none;
+  }
+}

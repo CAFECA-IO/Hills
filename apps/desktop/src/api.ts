@@ -830,6 +830,7 @@ export const api = {
   saveUploadJobs: (jobs: { id: string; tokens: string[]; state: unknown }[]) =>
     call<void>('save_upload_jobs', { jobs }),
   uploadJobs: () => call<StoredUploadJob[]>('upload_jobs'),
+  appVersion: () => call<{ version: string; commit: string }>('app_version'),
   syncStatus: () => call<SyncStatus | null>('sync_status'),
   syncNow: () => call<void>('sync_now'),
   orgCode: () => call<Code>('org_code'),

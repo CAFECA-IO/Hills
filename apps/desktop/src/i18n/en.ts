@@ -93,6 +93,7 @@ export const en: Record<MessageKey, string> = {
   'settings.tab.personal': 'Personal',
   'settings.tab.org': 'Organization',
   'settings.tab.members': 'Members',
+  'settings.version': 'Version',
   'settings.language': 'Language',
   'settings.devices': 'My devices',
   'settings.thisDevice': 'This device',

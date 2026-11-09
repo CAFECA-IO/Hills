@@ -88,6 +88,7 @@ export const zhTW = {
   'settings.tab.personal': '個人',
   'settings.tab.org': '組織',
   'settings.tab.members': '成員',
+  'settings.version': '版本',
   'settings.language': '介面語言',
   'settings.devices': '我的裝置',
   'settings.thisDevice': '目前這台',

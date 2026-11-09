@@ -1360,6 +1360,7 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     lunchBreak = a.start ? { start: String(a.start), end: String(a.end) } : null;
     touch('org');
   },
+  app_version: () => ({ version: '0.1.0', commit: 'mock' }),
   sync_status: () => (state.phase === 'pending' ? 'Pending' : 'Synced'),
   sync_now: () => undefined,
   org_code: () => code('hills-org1-' + 'y'.repeat(90)),

@@ -791,6 +791,19 @@ function Settings({
   );
 }
 
+/** 版本號與建置 commit（ui-spec「設定 → 個人」v0.30），回報問題時附上。 */
+function VersionCard() {
+  const v = useLoad(api.appVersion, []);
+  if (!v.data) return null;
+  const text = v.data.commit ? `${v.data.version} (${v.data.commit})` : v.data.version;
+  return (
+    <Card className="flex items-center justify-between gap-3">
+      <span className="text-sm font-medium">{t('settings.version')}</span>
+      <code className="text-sm text-muted select-all">{text}</code>
+    </Card>
+  );
+}
+
 function PersonalTab({ me }: { me: MemberView | undefined }) {
   const devices = useLoad(api.devices, ['roster', 'device-added']);
   const account = useLoad(api.cafecaAccount, ['org']);
@@ -816,6 +829,7 @@ function PersonalTab({ me }: { me: MemberView | undefined }) {
       </Card>
       <ScrumReminderCard />
       <McpPersonalCard />
+      <VersionCard />
       {account.data && (
         <Card className="flex flex-col gap-2">
           <h2 className="font-medium">{t('settings.cafeca')}</h2>

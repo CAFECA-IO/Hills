@@ -290,8 +290,18 @@ macro_rules! with_node {
 }
 
 #[tauri::command]
-pub fn app_version() -> &'static str {
-    env!("CARGO_PKG_VERSION")
+pub fn app_version() -> AppVersion {
+    AppVersion {
+        version: env!("CARGO_PKG_VERSION"),
+        commit: env!("HILLS_GIT_SHA"),
+    }
+}
+
+/// 版本號與建置 commit（ui-spec「設定 → 個人」v0.30）。
+#[derive(Serialize)]
+pub struct AppVersion {
+    version: &'static str,
+    commit: &'static str,
 }
 
 #[derive(Serialize)]
@@ -317,6 +327,8 @@ pub async fn app_info(app: AppHandle, state: State<'_, AppState>) -> CmdResult<A
             Ok(Some(node)) => {
                 forward_events(&app, &node);
                 *guard = Some(node);
+                // 重新開啟 app 時，依保存的設定啟動 MCP 伺服器（§18.2）
+                crate::mcp::refresh_later(&app);
             }
             Ok(None) => {}
             Err(err) if err.downcast_ref::<LegacyData>().is_some() => {

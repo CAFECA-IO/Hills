@@ -216,7 +216,12 @@ pub async fn mcp_settings(
     } else {
         None
     };
-    let running = rt.running.lock().await.is_some();
+    let mut running = rt.running.lock().await.is_some();
+    if cfg.enabled && allowed && !running && lock(&rt.error).is_none() {
+        // 應該在執行卻沒有（例如錯過啟動時機）：補啟動
+        rt.refresh(&app).await;
+        running = rt.running.lock().await.is_some();
+    }
     Ok(McpSettings {
         allowed,
         is_admin,

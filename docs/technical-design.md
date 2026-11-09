@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.21 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.22 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -913,7 +913,8 @@ org = { …,
   "direction:<ULID>": { year: "2027", title, keyResults: [ KeyResult ], createdAt, updatedAt }
 }
 team-goals/<teamId> = {
-  "goal:<ULID>": { year: "2027", title, directionId?, keyResults: [ KeyResult ], criteria: [ { id, text } ], createdAt, updatedAt }
+  "goal:<ULID>": { year: "2027", title, directionId?, keyResults: [ KeyResult ], criteria: [ { id, text } ], createdAt, updatedAt },
+  "weekNote:<YYYY-Www>": "<JSON 字串>"     // v0.22：負責人的這週重點 { text（1–200 字）, author, updatedAt }，保留最近 8 週
 }
 ```
 
@@ -956,6 +957,8 @@ Suggestion    = { v: 1, to: memberId, planItemId, goalId, createdAt }
   - **角度**（方向羅盤）= 90° ×（1 − alignedUnits / units）；`units = 0` 時為 0° 並以灰色顯示。**長度** = `quarterProgress`。
 - **對齊建議**：任何人可以對「目標沒對齊團隊」的成員送出建議（寫在自己的文件，`to` 為對象、`planItemId` 為對方摘要中的季目標、`goalId` 為小組目標）。對象的 App 讀取所有成員文件中 `to` 為自己的建議，在目標首頁顯示，按「套用」才修改自己的目標（只有本人可寫計劃，D17 精神）；「不用了」記在本機。建議 30 天後不再顯示。
 - **隱私**：摘要讓全員看到比例、季目標標題與進度（D47 的決定）；私人目標只計數量，私人任務只算進 `units`，不露標題。私人任務多的人可能被判為「時間花在別的事」，介面註明。
+- **四週軌跡與大家實際走向**（v0.22，第 4 批）：讀者端由摘要的歷史週（最多 8 週，取最近 4 週）計算每週的角度與進度；大家實際走向 = 本週 `units > 0` 的成員角度的向量平均（每人固定畫在左或右側，由成員 ID 決定）。
+- **週一方向時刻的預測**（v0.22）：只在本機計算，不寫入；預測比例 =（本週 `alignedUnits` + 選了對齊鏈週目標的未完成任務數）/（本週 `units` + 列出的未完成任務數）。按「好，開始這一週」只修改這些任務的 `planItemId`（一般的任務更新，§16.8）。
 
 
 ### 16.9 部署（M0）

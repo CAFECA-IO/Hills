@@ -532,7 +532,71 @@ export interface ConvRow {
 
 export const EVENTS = {
   node: 'hills://node',
+  /** 本機 MCP：有新的待確認變更或設定改變（technical-design §18.4） */
+  mcp: 'hills://mcp',
 } as const;
+
+// ── 本機 MCP 介面（D48，technical-design §18） ─────────────────
+
+export interface McpSettings {
+  /** 組織是否允許 */
+  allowed: boolean;
+  isAdmin: boolean;
+  enabled: boolean;
+  running: boolean;
+  port: number;
+  endpoint: string;
+  /** 開啟後才有 */
+  token: string | null;
+  error: string | null;
+}
+
+export type McpChangeStatus =
+  { state: 'pending' | 'approved' | 'rejected' | 'expired' } | { state: 'failed'; error: string };
+
+/** 確認卡的預覽（文字由前端依 i18n 組成） */
+export interface McpPreview {
+  action:
+    | 'createGoal'
+    | 'updateGoal'
+    | 'createTask'
+    | 'updateTask'
+    | 'stepDone'
+    | 'scrumDraft'
+    | 'message'
+    | 'createKb'
+    | 'updateKb';
+  title?: string | null;
+  level?: PlanLevel | null;
+  period?: string | null;
+  team?: string | null;
+  assignee?: string | null;
+  dueAt?: number | null;
+  task?: string | null;
+  step?: string | null;
+  done?: boolean | null;
+  date?: string | null;
+  text?: string | null;
+  conv?: string | null;
+  planItemId?: string | null;
+  status?: TaskStatus | null;
+}
+
+export interface McpChange {
+  id: string;
+  client: string;
+  tool: string;
+  preview: McpPreview;
+  createdAt: number;
+  status: McpChangeStatus;
+}
+
+export interface McpAuditEntry {
+  at: number;
+  client: string;
+  tool: string;
+  outcome: 'read' | 'pending' | 'approved' | 'rejected' | 'denied' | 'error';
+}
 
 type InvokeOptions = { headers: Record<string, string> };
 type Invoke = <T>(
@@ -643,6 +707,14 @@ export const api = {
   saveTeamGoal: (input: TeamGoalInput) => call<string>('save_team_goal', { input }),
   deleteTeamGoal: (team: string, id: string) => call<void>('delete_team_goal', { team, id }),
   weekNotes: () => call<WeekNote[]>('week_notes'),
+  mcpSettings: () => call<McpSettings>('mcp_settings'),
+  setMcpEnabled: (enabled: boolean) => call<void>('set_mcp_enabled', { enabled }),
+  regenerateMcpToken: () => call<string>('regenerate_mcp_token'),
+  setMcpAllowed: (allowed: boolean) => call<void>('set_mcp_allowed', { allowed }),
+  mcpPending: () => call<McpChange[]>('mcp_pending'),
+  mcpApprove: (id: string) => call<unknown>('mcp_approve', { id }),
+  mcpReject: (id: string) => call<void>('mcp_reject', { id }),
+  mcpAudit: () => call<McpAuditEntry[]>('mcp_audit'),
   setWeekNote: (team: string, week: string, text: string) =>
     call<void>('set_week_note', { team, week, text }),
   directionSummaries: () => call<MemberDirection[]>('direction_summaries'),

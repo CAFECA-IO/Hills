@@ -16,6 +16,8 @@ import {
 import { Chat } from './chat';
 import { Portrait, StatusBadge, stateLabel } from './figures';
 import { DirectionsCard, DriftRulesCard } from './directions-settings';
+import { McpConfirmStack } from './mcp-confirm';
+import { McpOrgCard, McpPersonalCard } from './mcp-settings';
 import { useDirectionPublisher } from './drift-publisher';
 import { Goals } from './goals';
 import { Home } from './home';
@@ -343,6 +345,7 @@ export function Shell({ info }: { info: AppInfo }) {
           </main>
         </div>
         {palette && <CommandPalette commands={commands} onClose={() => setPalette(false)} />}
+        <McpConfirmStack members={overview.data?.members ?? []} />
       </div>
     </HeadContext.Provider>
   );
@@ -810,6 +813,7 @@ function PersonalTab({ me }: { me: MemberView | undefined }) {
         </Select>
       </Card>
       <ScrumReminderCard />
+      <McpPersonalCard />
       {account.data && (
         <Card className="flex flex-col gap-2">
           <h2 className="font-medium">{t('settings.cafeca')}</h2>
@@ -973,6 +977,7 @@ function OrgTab({
       {info.isAdmin && <OrgScrumReminderCard />}
       {info.isAdmin && <DirectionsCard />}
       {info.isAdmin && <DriftRulesCard />}
+      {info.isAdmin && <McpOrgCard />}
       {info.hasOrgRoot && (
         <Card className="flex flex-col gap-3">
           <h2 className="font-medium">{t('settings.backup')}</h2>

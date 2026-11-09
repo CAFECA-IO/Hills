@@ -24,6 +24,7 @@ unicode-normalization = "0.1"
 data-encoding.workspace = true
 getrandom.workspace = true
 anyhow.workspace = true
+axum.workspace = true
 hills-cafeca.workspace = true
 hills-node.workspace = true
 keyring.workspace = true
@@ -37,6 +38,7 @@ zeroize.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+tower.workspace = true
 
 [lints]
 workspace = true

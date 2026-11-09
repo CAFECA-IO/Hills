@@ -3141,6 +3141,7 @@ name = "hills-desktop"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "data-encoding",
  "getrandom 0.4.3",
  "hills-cafeca",
@@ -3156,6 +3157,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tempfile",
  "tokio",
+ "tower",
  "tracing",
  "tracing-subscriber",
  "unicode-normalization",

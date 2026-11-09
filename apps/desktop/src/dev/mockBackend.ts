@@ -27,6 +27,8 @@ import type {
   TeamGoal,
   TeamGoalInput,
   WeekNote,
+  McpChange,
+  McpAuditEntry,
   Report,
   ReportInput,
   ScrumInput,
@@ -409,6 +411,53 @@ let summaries: MemberDirection[] = [
 const suggestionsToMe: SuggestionView[] = [
   { id: 'sg-1', from: 'mem-a', planItemId: 'q2', goalId: 'tg-1', createdAt: now0 - 3600_000 },
 ];
+const mcp: {
+  allowed: boolean;
+  enabled: boolean;
+  token: string;
+  pending: McpChange[];
+  audit: McpAuditEntry[];
+} = {
+  allowed: true,
+  enabled: true,
+  token: 'DEMO7Q4K2M9XWZ3B',
+  pending: [
+    {
+      id: 'mcp-1',
+      client: 'Claude Code',
+      tool: 'propose_task',
+      preview: {
+        action: 'createTask',
+        team: 'default',
+        title: '匯入台灣行事曆',
+        assignee: 'mem-d',
+        dueAt: now0 + 4 * 86_400_000,
+        planItemId: null,
+        status: null,
+      },
+      createdAt: now0 - 60_000,
+      status: { state: 'pending' },
+    },
+    {
+      id: 'mcp-2',
+      client: 'Claude Code',
+      tool: 'propose_message',
+      preview: {
+        action: 'message',
+        conv: '產品討論',
+        text: '這週先把假日曆匯入做完，林小美負責，週五前請 Luphia 驗收。',
+      },
+      createdAt: now0 - 30_000,
+      status: { state: 'pending' },
+    },
+  ],
+  audit: [
+    { at: now0 - 30_000, client: 'Claude Code', tool: 'propose_message', outcome: 'pending' },
+    { at: now0 - 60_000, client: 'Claude Code', tool: 'propose_task', outcome: 'pending' },
+    { at: now0 - 90_000, client: 'Claude Code', tool: 'list_goals', outcome: 'read' },
+    { at: now0 - 95_000, client: 'Claude Code', tool: 'whoami', outcome: 'read' },
+  ],
+};
 let weekNotes: WeekNote[] = [
   {
     team: 'default',
@@ -969,6 +1018,66 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     touch();
   },
   week_notes: () => weekNotes,
+  // 本機 MCP（D48）：示範一筆待確認變更
+  mcp_settings: () => ({
+    allowed: mcp.allowed,
+    isAdmin: true,
+    enabled: mcp.enabled,
+    running: mcp.allowed && mcp.enabled,
+    port: 47321,
+    endpoint: 'http://127.0.0.1:47321/mcp',
+    token: mcp.allowed && mcp.enabled ? mcp.token : null,
+    error: null,
+  }),
+  set_mcp_enabled: (a) => {
+    mcp.enabled = Boolean(a.enabled);
+    emit('hills://mcp', 'settings');
+  },
+  regenerate_mcp_token: () => {
+    mcp.token = 'DEMO' + Math.random().toString(36).slice(2, 14).toUpperCase();
+    emit('hills://mcp', 'settings');
+    return mcp.token;
+  },
+  set_mcp_allowed: (a) => {
+    mcp.allowed = Boolean(a.allowed);
+    emit('hills://mcp', 'settings');
+  },
+  mcp_pending: () => mcp.pending,
+  mcp_approve: (a) => {
+    const c = mcp.pending.find((x) => x.id === a.id);
+    if (!c) throw new Error('這個變更已處理或已過期');
+    mcp.pending = mcp.pending.filter((x) => x.id !== a.id);
+    mcp.audit.unshift({ at: Date.now(), client: c.client, tool: c.tool, outcome: 'approved' });
+    if (c.preview.action === 'createTask') {
+      tasks = [
+        ...tasks,
+        {
+          id: 't-mcp-' + Date.now(),
+          team: c.preview.team ?? 'default',
+          title: c.preview.title ?? '',
+          assignee: c.preview.assignee ?? state.me,
+          status: 'todo',
+          dueAt: c.preview.dueAt ?? null,
+          steps: [],
+          planItemId: null,
+          createdBy: state.me,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ];
+      touch();
+    }
+    emit('hills://mcp', 'resolved');
+    return 'ok';
+  },
+  mcp_reject: (a) => {
+    const c = mcp.pending.find((x) => x.id === a.id);
+    mcp.pending = mcp.pending.filter((x) => x.id !== a.id);
+    if (c)
+      mcp.audit.unshift({ at: Date.now(), client: c.client, tool: c.tool, outcome: 'rejected' });
+    emit('hills://mcp', 'resolved');
+  },
+  mcp_audit: () => mcp.audit.slice(0, 20),
   set_week_note: (a) => {
     const team = a.team as string;
     const week = a.week as string;

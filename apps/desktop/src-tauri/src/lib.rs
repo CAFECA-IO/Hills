@@ -4,6 +4,7 @@
 mod commands;
 mod files;
 mod keychain;
+mod mcp;
 mod share;
 
 use tauri::Manager;
@@ -23,11 +24,20 @@ pub fn run() {
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
-            app.manage(commands::AppState::new(dir));
+            app.manage(commands::AppState::new(dir.clone()));
+            app.manage(mcp::McpRuntime::new(app.handle().clone(), dir));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_version,
+            mcp::mcp_settings,
+            mcp::set_mcp_enabled,
+            mcp::regenerate_mcp_token,
+            mcp::set_mcp_allowed,
+            mcp::mcp_pending,
+            mcp::mcp_approve,
+            mcp::mcp_reject,
+            mcp::mcp_audit,
             commands::app_info,
             commands::reset_local_data,
             commands::onboard_begin,

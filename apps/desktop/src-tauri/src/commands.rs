@@ -29,7 +29,7 @@ pub mod events {
 
 pub struct AppState {
     dir: PathBuf,
-    secrets: Arc<dyn SecretStore>,
+    pub(crate) secrets: Arc<dyn SecretStore>,
     pub(crate) node: Mutex<Option<Node>>,
     /// 使用者本次選擇的檔案與下載目標（technical-design §15.2–15.5）
     pub(crate) files: std::sync::Mutex<crate::files::Registry>,
@@ -105,6 +105,10 @@ fn forward_events(app: &AppHandle, node: &Node) {
                     }
                     if matches!(ev, Event::PresenceChanged) {
                         flush_deferred(&app, &node);
+                    }
+                    if matches!(ev, Event::OrgChanged | Event::Activated) {
+                        // 管理者改了 AI 代理開關（§18.2）
+                        crate::mcp::refresh_later(&app);
                     }
                     let _ = app.emit(events::NODE, name);
                 }
@@ -203,7 +207,7 @@ pub(crate) fn defers(state: PresenceState, until: Option<i64>, now: i64) -> bool
     ) && until.is_none_or(|u| u > now)
 }
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -247,6 +251,7 @@ async fn install(app: &AppHandle, state: &AppState, node: Node) {
     forward_events(app, &node);
     *state.node.lock().await = Some(node);
     let _ = app.emit(events::NODE, "all");
+    crate::mcp::refresh_later(app);
 }
 
 #[macro_export]

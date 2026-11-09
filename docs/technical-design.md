@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.24 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.25 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -144,7 +144,7 @@ CAFECA 帳戶（chainId + 身分合約地址 account，由使用者的 Passkey /
 ### 3.7 停用成員與金鑰輪替
 
 1. 管理者寫入 `Sign_admin(Revocation{memberId, reason, at})`。
-2. 該成員能取得的每把金鑰（GK、所屬小組 TK、相關 AK）進行 **epoch 輪替**：管理者裝置產生新金鑰，以 HPKE 封裝給剩餘的合法持有者，寫入 `keys` 紀錄。
+2. 該成員能取得的每把金鑰（GK、所屬小組 TK、相關 AK）進行 **epoch 輪替**：管理者裝置產生新金鑰，以 HPKE 封裝給剩餘的合法持有者，寫入 `keys` 紀錄。v0.25（D49）：管理者不持有的小組 TK 改由該小組的指定輪替裝置輪替（§16.15）。
 3. 新資料一律使用新 epoch；被停用者已同步的歷史資料無法撤回，UI 需明示。
 4. 停用者的計劃、報表文件保留，小組負責人可讀以利交接。
 
@@ -159,6 +159,7 @@ CAFECA 帳戶（chainId + 身分合約地址 account，由使用者的 Passkey /
 | `org` | 管理者 | 全員 | `GK` | 設定、品牌、成員憑證與 CAFECA 帳戶、小組、假日曆、假別、工作規則、核准規則、公司方向（v0.20，D47）、`mcp.allowed`（v0.23，D48，§18） |
 | `team/<teamId>` | 小組成員 | 小組成員 | `TK_team` | 任務、角色外觀 |
 | `team-goals/<teamId>` | 該小組負責人、管理者 | 全員 | `GK` | 小組目標（v0.20，D47，§16.14） |
+| `team-roster/<teamId>` | 該小組負責人、管理者 | 全員 | `GK` | 小組成員與負責人、移出次數（v0.25，D49，§16.15） |
 | `member/<id>/plans/private`、`plans/team/<teamId>`、`plans/org` | 本人 | 本人 / 該小組成員 / 全員 | `PK` / `TK_team` / `GK` | 五層計劃（見 §4.3、§16.10） |
 | `member/<id>/scrum/<teamId>/<yyyy-mm>` | 本人 | 該小組成員 | `TK_team` | 每日 Scrum（每個所屬小組各一份，§16.12） |
 | `member/<id>/attendance/<yyyy-mm>` | 本人 | 本人、負責人、管理者 | `AK_member` | 打卡紀錄 |
@@ -427,6 +428,7 @@ services:
 | 離職成員 | 撤銷 + epoch 輪替；已同步資料無法撤回（明示） |
 | 竄改打卡 | DK 簽章 + TSA 時間憑證；異常標示給負責人 |
 | 惡意成員寫入他人文件 | single-writer 驗證層拒絕 |
+| 惡意小組成員自行輪替出只封給自己的小組金鑰（D49） | 收件端只接受管理者或「指定輪替成員」簽署的較新 epoch（§16.15）；mailbox 同一收件者、同一 keyId 只保留第一份。剛加入、還沒有任何 epoch 的成員無法分辨，M1 接受此限制 |
 | 新裝置綁定被調包 | 臨時公鑰寫在 CAFECA 簽署的 nonce 中，mailbox 無法替換 |
 | 公開 repo 洩漏機密 | GitHub secret scanning、pre-commit 掃描、`.env` 範本化 |
 | 本機其他程式或網頁呼叫 MCP（D48） | 只綁 127.0.0.1；Bearer token（鑰匙圈）；檢查 `Host`、拒絕非本機 `Origin`；寫入一律待確認（§18） |
@@ -767,7 +769,7 @@ secret 不放在 org 文件，因為所有成員都能讀 org 文件；代價是
 | `FetchDeviceRequests` | ✓ | 本人裝置 | v0.13：本人的新裝置申請 |
 | `PutDeviceGrant{device_pub, sealed}` | ✓ | 本人裝置 | v0.13：封裝給新裝置的 IK / EK |
 | `FetchDeviceGrant{org_id, device_pub}` | ✗ | 任何人（內容已加密） | v0.13：新裝置取回封裝 |
-| `PutKeys` | ✓ | 管理者（org、team、attendance）/ 本人（private） | `Signed<WrappedKey>`，由簽署裝置的權限決定 |
+| `PutKeys` | ✓ | 管理者（org、attendance）/ 任何有效成員（team，v0.25）/ 本人（private） | `Signed<WrappedKey>`，由簽署裝置的權限決定；v0.25（D49）：mailbox 看不到小組名單，小組金鑰只檢查簽署者是有效成員，成員資格由收件端檢查（§16.15） |
 | `FetchKeys{since}` | ✓ | 收件者本人 | 只回傳 `recipient == 本人` 的封裝 |
 | `Announce{addr}` / `Peers` | ✓ | 成員 | 自架位址簿：裝置的 iroh 位址與最後上線時間，取代 n0 DNS 探索（D1、D26 全自架） |
 | `Services` | ✓ | 成員 | v0.9：回傳儲存節點位址列表（依編號排序，§15.6）；尚未部署儲存節點時為空 |
@@ -782,7 +784,7 @@ secret 不放在 org 文件，因為所有成員都能讀 org 文件；代價是
 org = {
   name, timezone, locale,
   members: { <memberId>: { name, joinedAt, cafeca: "eip155:<chainId>:<account>", handle?, approvedBy? } },   // v0.13
-  teams:   { <teamId>: { name, leadIds: [..], memberIds: [..] } },
+  teams:   { <teamId>: { name, leadIds: [..], memberIds: [..], archivedAt? } },   // v0.25（D49）：有 team-roster 文件時以它的名單為準
   offices: { <officeId>: { name, wifiHashes: [] } },     // v0.11（D40）；M1 wifiHashes 為空
   lunchBreak?: { start: "12:00", end: "13:30" },          // v0.11；組織時區
   directionRules?: { minAlignedShare: 50, behindPoints: 25, staleDays: 14 },   // v0.21（D47，§16.14）；管理者可改
@@ -962,6 +964,41 @@ Suggestion    = { v: 1, to: memberId, planItemId, goalId, createdAt }
 - **四週軌跡與大家實際走向**（v0.22，第 4 批）：讀者端由摘要的歷史週（最多 8 週，取最近 4 週）計算每週的角度與進度；大家實際走向 = 本週 `units > 0` 的成員角度的向量平均（每人固定畫在左或右側，由成員 ID 決定）。
 - **週一方向時刻的預測**（v0.22）：只在本機計算，不寫入；預測比例 =（本週 `alignedUnits` + 選了對齊鏈週目標的未完成任務數）/（本週 `units` + 列出的未完成任務數）。按「好，開始這一週」只修改這些任務的 `planItemId`（一般的任務更新，§16.8）。
 
+
+### 16.15 小組管理與小組金鑰交接（v0.25，D49）
+
+**文件**
+
+```
+org.teams.<teamId> = { name, archivedAt?, leadIds?, memberIds? }   // 名稱與封存由管理者寫；舊的名單為後備值
+team-roster/<teamId> = {                                          // GK，全員可讀；寫入者 = 管理者或該小組負責人
+  members: [memberId..],          // 至少一位
+  leads:   [memberId..],          // members 的子集
+  removals: n,                    // 有人被移出就 +1
+}
+team/<teamId>."keyRotatedFor" = n // 已為第 n 次移出輪替（小組成員寫）
+```
+
+- `team-roster/<teamId>` 存在且有 `members` 時，投影（`Directory`、`teams_of`）以它的名單為準；否則用 org 文件的 `memberIds` / `leadIds`（D49 之前的組織）。寫入權限由驗證層檢查（`DocKind::TeamRoster`，寫入者是管理者或依目前投影的該小組負責人）。
+- **建立小組**（管理者）：org 寫入名稱，`team-roster` 寫入成員與負責人；管理者裝置產生 epoch 0 的 TK，封裝給全部成員；管理者不在成員中時不存入自己的金鑰環（D49）。
+- **改名、封存**（管理者）：只改 org 文件。封存的小組不出現在選單與小組頁，名單、文件與金鑰保留，可再取消封存。
+- **加入 / 移出、設定負責人**（管理者或該小組負責人）：整份覆寫 `members`、`leads`；這次有人被移出時 `removals + 1`。小組至少一位成員，負責人必須是成員。核准加入申請時選的小組也寫入 `team-roster`（沒有時寫入 org 的後備名單）。停用成員時從所有 `team-roster` 移除。
+
+**交接（每台持有 TK 的成員裝置，同步迴圈中執行）**
+
+1. 對名單上每位有效成員（不含自己）：本機紀錄（secret 檔 `team-handover`，key = `小組 / 成員 / EK / 最新 epoch`）中沒有時，把持有的全部 epoch 封裝給他、簽章、放入 `key_outbox`，並記下。重複封裝無害：mailbox 同一收件者、同一 EK、同一 keyId 只保留第一份。
+2. **輪替**：`team-roster.removals` 大於 `team.keyRotatedFor`，且本裝置是**指定輪替裝置**時，以 `rotate()` 產生下一個 epoch 封裝給名單上全部有效成員，再以新 epoch 寫入 `team.keyRotatedFor = removals`。
+   - 指定輪替成員：負責人中 memberId 最小者；沒有負責人時取成員中最小者。指定輪替裝置：該成員有效裝置中 DevicePub 最小的一台。
+   - 指定輪替裝置還沒有 TK 時等交接完成再輪替；不在線時延後，介面顯示「金鑰交接中」。
+3. 名單上沒有任何持有 TK 的人時（例如持有者全被移出）無法交接，留下的人讀不到小組內容；M1 接受此限制，介面在移出時提醒「至少留一位已持有金鑰的成員」。
+
+**接受規則（收件端 `accept_keys`）**
+
+- 小組 TK：簽署者是管理者，或依目前投影是該小組成員；epoch 大於本人已持有的最新 epoch 時，簽署者必須是管理者或指定輪替成員。
+- 不符合的封裝（常見原因是名單文件比金鑰晚到）暫存在 secret 檔 `keys-deferred`（最多 500 筆），下載文件後與每次同步時重試。
+- mailbox 的 `PutKeys` 對小組 TK 只檢查簽署者是有效成員（§16.7）。
+
+**介面資料**：小組列表回傳名稱、成員、負責人、是否封存，以及本人是成員卻還沒有 TK 時的 `awaitingKey`（「金鑰交接中，等小組成員上線」）。
 
 ### 16.9 部署（M0）
 

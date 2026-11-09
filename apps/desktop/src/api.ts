@@ -565,7 +565,10 @@ export interface McpPreview {
     | 'scrumDraft'
     | 'message'
     | 'createKb'
-    | 'updateKb';
+    | 'updateKb'
+    | 'deleteGoal'
+    | 'deleteTask'
+    | 'deleteKb';
   title?: string | null;
   level?: PlanLevel | null;
   period?: string | null;

@@ -450,6 +450,14 @@ const mcp: {
       createdAt: now0 - 30_000,
       status: { state: 'pending' },
     },
+    {
+      id: 'mcp-3',
+      client: 'Claude Code',
+      tool: 'propose_delete_goal',
+      preview: { action: 'deleteGoal', period: '2026-W46', title: '對話焦點營地' },
+      createdAt: now0 - 10_000,
+      status: { state: 'pending' },
+    },
   ],
   audit: [
     { at: now0 - 30_000, client: 'Claude Code', tool: 'propose_message', outcome: 'pending' },

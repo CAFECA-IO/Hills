@@ -314,6 +314,15 @@ pub(crate) mod tests {
             .filter_map(|t| t["name"].as_str())
             .collect();
         assert!(names.contains(&"list_goals") && names.contains(&"propose_task"));
+        assert!(names.contains(&"propose_delete_goal") && names.contains(&"propose_delete_task"));
+        // 刪除類工具也是寫入：readOnlyHint 為 false
+        let del = r["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == "propose_delete_task")
+            .unwrap();
+        assert_eq!(del["annotations"]["readOnlyHint"], false);
         let r = s
             .handle(json!({ "jsonrpc": "2.0", "id": 3, "method": "nope" }))
             .await

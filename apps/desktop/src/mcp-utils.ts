@@ -11,7 +11,8 @@ export function previewLines(p: McpPreview, members: MemberView[]): string[] {
   const parts: string[] = [];
   switch (p.action) {
     case 'createTask':
-    case 'updateTask': {
+    case 'updateTask':
+    case 'deleteTask': {
       const who = name(p.assignee);
       if (p.title) parts.push(t('mcp.preview.title', { title: p.title }));
       if (who) parts.push(t('mcp.preview.assignee', { name: who }));
@@ -20,6 +21,7 @@ export function previewLines(p: McpPreview, members: MemberView[]): string[] {
     }
     case 'createGoal':
     case 'updateGoal':
+    case 'deleteGoal':
       return [
         [p.period, p.title ? t('mcp.preview.title', { title: p.title }) : '']
           .filter(Boolean)

@@ -434,6 +434,38 @@ impl McpBackend for RealBackend {
                     json!({ "action": "message", "conv": c["name"], "text": clip(text, 200) });
                 Ok((json!({ "conv": conv, "text": text }), preview))
             }
+            "propose_delete_goal" => {
+                let id = need(&args, "id")?;
+                let all = arr(to_v(commands::plans(self.state(), true).await)?);
+                let p = all
+                    .into_iter()
+                    .find(|p| p["id"] == json!(id))
+                    .ok_or("no goal of the user with this id")?;
+                let preview = json!({ "action": "deleteGoal", "title": p["title"], "level": p["level"], "period": p["period"] });
+                Ok((json!({ "id": id }), preview))
+            }
+            "propose_delete_task" => {
+                let team = need(&args, "team")?;
+                let task = need(&args, "task")?;
+                let t = self
+                    .all_tasks()
+                    .await?
+                    .into_iter()
+                    .find(|t| t["id"] == json!(task) && t["team"] == json!(team))
+                    .ok_or("no task with this id in this team")?;
+                let preview = json!({ "action": "deleteTask", "title": t["title"], "team": team, "assignee": t["assignee"] });
+                Ok((json!({ "team": team, "task": task }), preview))
+            }
+            "propose_delete_kb_item" => {
+                let key = need(&args, "key")?;
+                let snap = to_v(commands::kb(self.state()).await)?;
+                let it = arr(snap["items"].clone())
+                    .into_iter()
+                    .find(|it| it["key"] == json!(key))
+                    .ok_or("no knowledge item with this key")?;
+                let preview = json!({ "action": "deleteKb", "title": it["title"] });
+                Ok((json!({ "key": key }), preview))
+            }
             "propose_kb_item" => {
                 let input = Value::Object(overlay(
                     Map::new(),
@@ -501,6 +533,20 @@ impl McpBackend for RealBackend {
             "propose_kb_item" => {
                 let input = serde_json::from_value(args).map_err(|e| e.to_string())?;
                 to_v(commands::kb_save(st, input).await)
+            }
+            "propose_delete_goal" => {
+                to_v(commands::delete_plan(st, need(&args, "id")?.to_owned()).await)
+            }
+            "propose_delete_task" => to_v(
+                commands::delete_task(
+                    st,
+                    need(&args, "team")?.to_owned(),
+                    need(&args, "task")?.to_owned(),
+                )
+                .await,
+            ),
+            "propose_delete_kb_item" => {
+                to_v(commands::kb_delete(st, need(&args, "key")?.to_owned()).await)
             }
             _ => Err("unknown tool".into()),
         }

@@ -19,6 +19,9 @@ const ACTION: Record<McpPreview['action'], MessageKey> = {
   message: 'mcp.action.message',
   createKb: 'mcp.action.createKb',
   updateKb: 'mcp.action.updateKb',
+  deleteGoal: 'mcp.action.deleteGoal',
+  deleteTask: 'mcp.action.deleteTask',
+  deleteKb: 'mcp.action.deleteKb',
 };
 
 function ChangeCard({ c, members }: { c: McpChange; members: MemberView[] }) {
@@ -47,7 +50,12 @@ function ChangeCard({ c, members }: { c: McpChange; members: MemberView[] }) {
         >
           {t('mcp.reject')}
         </Button>
-        <Button size="sm" busy={busy} onClick={() => void attempt(() => api.mcpApprove(c.id))}>
+        <Button
+          size="sm"
+          variant={c.preview.action.startsWith('delete') ? 'danger' : 'primary'}
+          busy={busy}
+          onClick={() => void attempt(() => api.mcpApprove(c.id))}
+        >
           {t('mcp.approve')}
         </Button>
       </div>

@@ -219,6 +219,27 @@ pub fn all() -> Vec<ToolDef> {
             ),
         },
         ToolDef {
+            name: "propose_delete_goal",
+            kind: Kind::Write,
+            description: "Propose deleting one of the user's own goals (use list_goals to find the id). Deleted only after the user approves it in Hills. Tasks linked to it are kept but lose the link.",
+            schema: obj(json!({ "id": { "type": "string" } }), &["id"]),
+        },
+        ToolDef {
+            name: "propose_delete_task",
+            kind: Kind::Write,
+            description: "Propose deleting a task (use list_tasks to find team and id). Deleted only after the user approves it in Hills.",
+            schema: obj(
+                json!({ "team": { "type": "string" }, "task": { "type": "string" } }),
+                &["team", "task"],
+            ),
+        },
+        ToolDef {
+            name: "propose_delete_kb_item",
+            kind: Kind::Write,
+            description: "Propose deleting a knowledge base item by its key (from search_knowledge). Deleted only after the user approves it in Hills.",
+            schema: obj(json!({ "key": { "type": "string" } }), &["key"]),
+        },
+        ToolDef {
             name: "get_change_status",
             kind: Kind::Status,
             description: "Status of a proposed change: pending, approved (with result), rejected, expired (after 24 hours) or failed (with error).",
@@ -242,7 +263,7 @@ pub fn list_json() -> Value {
                 "inputSchema": t.schema,
                 "annotations": {
                     "readOnlyHint": t.kind != Kind::Write,
-                    "destructiveHint": false,
+                    "destructiveHint": t.name.starts_with("propose_delete_"),
                     "openWorldHint": false
                 }
             })

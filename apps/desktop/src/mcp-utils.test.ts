@@ -28,4 +28,16 @@ describe('previewLines', () => {
       previewLines({ action: 'createTask', title: 'x', assignee: 'mem-z' }, members)[0],
     ).toContain('mem-z');
   });
+
+  it('刪除顯示標題', () => {
+    expect(
+      previewLines({ action: 'deleteGoal', period: '2026-W46', title: '檔案分享穩定' }, members)[0],
+    ).toContain('檔案分享穩定');
+    expect(
+      previewLines(
+        { action: 'deleteTask', title: '匯入台灣行事曆', assignee: 'mem-d' },
+        members,
+      )[0],
+    ).toContain('林小美');
+  });
 });

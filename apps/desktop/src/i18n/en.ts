@@ -848,7 +848,6 @@ export const en: Record<MessageKey, string> = {
   'md.mode': 'Editor mode',
   'md.mode.edit': 'Edit',
   'md.mode.preview': 'Preview',
-  'md.mode.split': 'Side by side',
   'md.preview': 'Preview',
   'md.empty': '(empty)',
   'kb.format': 'Format',

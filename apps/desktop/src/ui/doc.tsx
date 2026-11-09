@@ -131,7 +131,7 @@ export function DocView({
 
 // ── Markdown 編輯器 ──────────────────────────────────
 
-type Mode = 'edit' | 'preview' | 'split';
+type Mode = 'edit' | 'preview';
 
 interface Edit {
   /** 包住選取文字 */
@@ -253,8 +253,21 @@ export function MarkdownEditor({
       el.setSelectionRange(s, en);
     });
   };
-  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+  const [height, setHeight] = useState<number | null>(null);
+  const toggle = (m: Mode) => {
+    // 預覽與編輯區同高、同位置；textarea 保持掛載，回到編輯時游標與捲動位置不變
+    if (m === 'preview' && area.current) setHeight(area.current.offsetHeight);
+    setMode(m);
+    if (m === 'edit') requestAnimationFrame(() => area.current?.focus());
+  };
+  const onKey = (e: KeyboardEvent<HTMLElement>) => {
     if (!(e.metaKey || e.ctrlKey)) return;
+    if (e.shiftKey && e.key.toLowerCase() === 'p') {
+      e.preventDefault();
+      toggle(mode === 'edit' ? 'preview' : 'edit');
+      return;
+    }
+    if (mode !== 'edit') return;
     const tool = TOOLS.find((x) => x.hotkey === e.key.toLowerCase());
     if (!tool) return;
     e.preventDefault();
@@ -268,15 +281,18 @@ export function MarkdownEditor({
       value={value}
       invalid={invalid}
       aria-label={label}
-      className="min-h-40 flex-1 font-mono text-xs"
+      className={`min-h-40 w-full font-mono text-xs ${mode === 'edit' ? '' : 'hidden'}`}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={onKey}
     />
   );
   const preview = (
     <div
-      className="min-h-40 flex-1 overflow-auto rounded-control border border-line p-3"
+      tabIndex={0}
+      className="min-h-40 w-full overflow-auto rounded-control border border-line p-3"
+      style={height ? { height } : undefined}
       aria-label={t('md.preview')}
+      onKeyDown={onKey}
     >
       {value.trim() ? (
         <Markdown>{value}</Markdown>
@@ -309,24 +325,17 @@ export function MarkdownEditor({
         </div>
         <SegmentedControl
           className="ml-auto"
-          label={t('md.mode')}
+          label={`${t('md.mode')} (⌘⇧P)`}
           value={mode}
-          onChange={setMode}
+          onChange={toggle}
           options={[
             { value: 'edit', label: t('md.mode.edit') },
             { value: 'preview', label: t('md.mode.preview') },
-            { value: 'split', label: t('md.mode.split') },
           ]}
         />
       </div>
-      {mode === 'edit' && editor}
+      {editor}
       {mode === 'preview' && preview}
-      {mode === 'split' && (
-        <div className="flex gap-3">
-          {editor}
-          {preview}
-        </div>
-      )}
     </div>
   );
 }

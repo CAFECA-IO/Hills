@@ -822,7 +822,6 @@ export const zhTW = {
   'md.mode': '編輯模式',
   'md.mode.edit': '編輯',
   'md.mode.preview': '預覽',
-  'md.mode.split': '並排',
   'md.preview': '預覽',
   'md.empty': '（沒有內容）',
   'kb.format': '格式',

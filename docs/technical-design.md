@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.30 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.31 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -164,9 +164,10 @@ CAFECA 帳戶（chainId + 身分合約地址 account，由使用者的 Passkey /
 | `member/<id>/scrum/<teamId>/<yyyy-mm>` | 本人 | 該小組成員 | `TK_team` | 每日 Scrum（每個所屬小組各一份，§16.12） |
 | `member/<id>/attendance/<yyyy-mm>` | 本人 | 本人、負責人、管理者 | `AK_member` | 打卡紀錄 |
 | `member/<id>/requests` | 本人 | 本人、核准者 | `AK_member` | 請假、加班、補打卡申請 |
-| `member/<id>/secrets` | 本人 | 本人 | `PK_member` | 本人的私密設定 |
+| `member/<id>/secrets` | 本人 | 本人 | `PK_member` | 本人的私密設定（v0.31 起含通知偏好 `notify`，§16.17） |
 | `member/<id>/tasks` | 本人 | 本人 | `PK_member` | 私人任務（D46，§16.8） |
 | `member/<id>/direction` | 本人 | 全員 | `GK` | 方向摘要與對齊建議（v0.21，D47，§16.14） |
+| `member/<id>/profile` | 本人 | 全員 | `GK` | 顯示名稱、時區、工作時段（v0.31，D57，§16.17） |
 | `approvals/<approverId>` | 核准者本人 | 申請者、管理者 | 申請者的 `AK_member` | 核准 / 退回決定 |
 | `member/<id>/reports/<teamId>/<yyyy>` | 本人 | 該小組成員 | `TK_team` | 日 / 週報（發佈到哪些小組就寫入哪些小組，§16.13） |
 | `kb/meta` | 全體成員 | 全員 | `GK` | 知識庫的分類與主題（§16.11） |
@@ -802,7 +803,7 @@ team/<teamId> = {                                         // v0.11（D40）
                           brief?,                         // v0.29（D53）：交付說明，Markdown，≤ 8 KB
                           acceptance?: [ { id, text } ],  // v0.29（D53）：完成條件，≤ 20 條，每條 1–200 字
                           createdBy, createdAt, updatedAt },
-  "profile:<memberId>": "{\"hair\":0,\"shirt\":3,\"skin\":1}",   // 角色外觀（JSON 字串，固定色盤的索引）
+  "profile:<memberId>": "{\"kind\":0,\"hair\":0,\"shirt\":3,\"skin\":1}",   // 角色外觀（JSON 字串，v0.31 起含 kind；見下方「角色外觀」）
   "ack:<taskId>:<memberId>": "{\"state\":\"accepted\",\"at\":0}",   // v0.26（D50）：負責人的回應，只有本人可寫
   "log:<taskId>:<ULID>:<memberId>": "<JSON>",            // v0.29（D53）：執行紀錄，只有本人可寫
   "report:<taskId>:<memberId>": "<JSON>",                // v0.29（D53）：結案報告，只有本人可寫
@@ -813,6 +814,18 @@ team/<teamId> = {                                         // v0.11（D40）
 
 - `offices`、`lunchBreak` 只有管理者可寫（org 文件規則）。
 - `team/<id>` 為多人寫入（§4）：任務全組可編輯；`profile:<memberId>` 只有本人可寫，由驗證層檢查（根物件上 `profile:` 開頭的 key 必須是作者本人，且只能放入字串），他人的寫入整筆 change 拒絕。成員把外觀寫進自己所屬的每個小組文件，讀取時取任一份。
+- **角色外觀**（v0.31，D56）：`Look = { kind, hair, shirt, skin }`。`kind` 0–6 依序為男性、女性、貓、狗、大象、羊、老虎；`hair` / `shirt` / `skin` 是三個部位的色號 0–5（`LOOK_PALETTE = 6`），部位依角色解讀：
+
+  | kind | hair（部位 1） | shirt（部位 2） | skin（部位 3） |
+  |---|---|---|---|
+  | 0 男性、1 女性 | 頭髮 | 衣服 | 膚色 |
+  | 2 貓 | 毛色 | 衣服 | 花紋 |
+  | 3 狗 | 毛色 | 衣服 | 耳朵 |
+  | 4 大象 | 皮膚 | 衣服 | 耳內 |
+  | 5 羊 | 羊毛 | 衣服 | 臉 |
+  | 6 老虎 | 毛色 | 衣服 | 條紋 |
+
+  色值是 token `--hills-look-<kind>-<part>-<n>`（衣服共用 `--hills-shirt-<n>`），不存在文件裡。**相容**：沒有 `kind` 的舊資料視為 0（男性）；讀取時色號以 6 取餘數、`kind` 超出範圍視為 0，不再丟棄整筆；寫入時檢查 `kind < 7` 且色號 < 6。
 - **任務與週目標**（v0.19，D46）：`planItemId` 指向一個週目標（`level = week`）；寫入時檢查該目標存在於本人可讀的計劃中且為週層級。目標可能是私人或另一個小組的，看不到的讀者顯示「私人項目」。**任務進度** = 已完成步驟數 / 步驟數 × 100；沒有步驟時完成 = 100、未完成 = 0（§16.10 彙總）。
 - **分派與回應**（v0.26，D50）：
   - `write_task` 發現負責人改變時寫入 `assignedBy`（寫入者）與 `assignedAt`；沒有負責人時刪除兩者。
@@ -911,6 +924,7 @@ Blocker = { text, notified: MemberId[] }
 - 草稿只存在本機（不同步）；按「送出」才寫入文件。送出後可再修改，覆寫同一天並更新 `updatedAt`。
 - **阻礙通知**：送出時 `notified` = 各所屬小組的負責人（`leadIds`）；小組沒有負責人時為全體管理者。負責人的裝置收到 `notified` 含自己、且有阻礙的新 Scrum 時發桌機通知（本機判斷，伺服器不參與）。
 - **提醒**：組織預設時間存在 org 文件 `scrumReminder: "HH:MM"`（管理者可改，預設 `17:30`），個人可在本機覆寫（本機設定檔，不同步）。工作日依 §7.1；**M1 第一版在假日曆（backlog #6）與請假（#14）尚未實作前，只排除週六與週日**。當天已送出就不提醒，每天最多提醒一次。
+- v0.31（D57）：提醒時間以**本人時區**（§16.17 `timezone`，未設定時用裝置時區）解讀；不在本人 `workHours.days` 的日子不提醒（取代上面的「週六與週日」）；本人的通知偏好 `scrumReminder` 關閉時不提醒。週報提醒（§16.13）套用同樣的工作日與開關。
 
 ### 16.13 日 / 週報（v0.18，feature-plan §5.5、D32、D16）
 
@@ -1048,6 +1062,29 @@ team/<teamId>."keyRotatedFor" = n // 已為第 n 次移出輪替（小組成員�
 - 原始碼檢視以等寬字顯示清理後的 HTML。
 - 經 MCP / hills-agent 寫入的 HTML 不經前端清理：Rust 端（`kb_save`）拒絕含 `<script`、`<iframe`、`javascript:` 或 `on*=` 事件屬性的內容，其餘照存；顯示前一律再清理並放在沙盒中。
 - 測試環境：前端以 jsdom 驗證清理結果（DOMPurify 在不支援的環境下不輸出任何標記，只輸出跳脫後的文字）。
+
+### 16.17 個人資料與通知偏好（v0.31，D57）
+
+```
+member/<id>/profile = {
+  "displayName": "小美",                  // 1–40 字（去頭尾空白）；空字串 = 用 org 名冊的 name
+  "timezone": "Asia/Taipei",              // IANA 名稱；空字串 = 裝置時區
+  "workHours": "{\"days\":[1,2,3,4,5],\"start\":\"09:00\",\"end\":\"18:00\"}",  // JSON 字串；days 1 = 週一 … 7 = 週日
+  "updatedAt": 1762650000000
+}
+member/<id>/secrets 另加：
+  "notify": "{\"messages\":true,\"assigned\":true,\"blockers\":true,\"scrumReminder\":true}"
+```
+
+- **權限**：`profile` 是 §4.1 的本人文件（`DocKind::Member`，section `profile`），驗證層只接受本人裝置的 change；以 `GK` 加密，全員可讀。不經 mailbox 明文（與其他文件相同）。
+- **驗證**（寫入時，hills-node）：`displayName` 0–40 字、不含控制字元；`timezone` 為空或符合 IANA 名稱格式（英數字與 `/ _ - +`，≤ 64 字；Rust 端只檢查格式，前端以 `Intl` 確認時區存在，不另引入時區資料庫）；`workHours.days` 為 1–7 的不重複整數（可以是空陣列，代表沒有固定工作日）、`start` / `end` 為 `HH:MM` 且 `start < end`（不支援跨午夜）。讀取時不合格的欄位改用預設值。
+- **名稱解析**：`displayName` 非空時所有畫面、通知標題、MCP（`whoami`、`list_members`、確認卡）都用它；否則用 org 名冊 `members/<id>/name`。管理者在「人與小組」的成員列表同時看到名冊姓名。名冊姓名仍只有管理者能改（§16.8）。
+- **時區**：只用來換算本人的提醒時間與顯示「現在幾點」；期間代碼、週次、報表日期一律依組織時區（§16.10 不變）。
+- **工作時段**：
+  - 提醒：見 §16.12 v0.31。
+  - 對同事：以對方的 `timezone` 與 `workHours` 計算現在是否在工作時段，不在時介面把該成員標為 `offHours`（前端以 `Intl` 計算，後端只回傳個人資料），名牌顯示「下班時間」，敲門提示（§16.8 延後通知）比照「專注中」。對方沒有個人資料時視為在工作時段。
+- **通知偏好**（`secrets.notify`，只有本人的裝置讀得到）：`messages`（私訊與提及）、`assigned`（被指派任務）、`blockers`（小組成員回報阻礙）、`scrumReminder`（Scrum 與週報提醒），缺少的欄位視為 `true`。「新裝置加入」（§17.6）屬於安全通知，不受偏好影響。延後通知（專注、會議、午休）照舊在前；偏好關閉的類型不會進入延後摘要。
+- **營地進度**（D56）由前端依現有資料計算，不寫入任何文件。
 
 ### 16.9 部署（M0）
 

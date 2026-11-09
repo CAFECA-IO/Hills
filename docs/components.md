@@ -1,6 +1,6 @@
 # Hills 通用元件
 
-> 版本：v0.9 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.18（D45、D47）
+> 版本：v0.10 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.37（D45、D47、D56）
 > 本文件定義 `apps/desktop/src/ui/` 的通用元件：用途、何時用、變體、狀態、鍵盤與無障礙、API。視覺基礎（token、字級、間距）見 [design-system.md](./design-system.md)。
 > 畫面只能組合這些元件（design-system §1、§11）。需要新元件或新變體時，**先改本文件，再改 `src/ui/`**，並補 `src/ui/ui.test.tsx`。
 
@@ -375,6 +375,55 @@ v0.7：
 快捷鍵提示（`⌘K`）。
 
 ---
+
+### GlassPanel（v0.10，D56）
+
+放在插畫背景上的毛玻璃面板（設定頁）。`<section>`，圓角 22、`--hills-glass` 底、`backdrop-blur` 18、細白框與 `--hills-glass-shadow`；降低透明度時改為 `surface` 實色。
+
+| prop | 型別 | 說明 |
+|---|---|---|
+| `title` | ReactNode | 標題（h2）；有傳時與 `scope` 排在同一列 |
+| `scope` | `device` \| `me` \| `org` | 右上角 `ScopeTag` |
+| `padding` | `md` \| `none` | 預設 `md`（22 / 24） |
+
+不要用在一般白底頁面（用 `Card`）。
+
+### GlassScope、GlassLayer（v0.10，D56）
+
+`GlassScope` 包住一段畫面時，其中的 `Card` 改為毛玻璃外觀（設定頁沿用既有卡片，例如小組卡、AI 代理卡）。`GlassLayer` 是模糊底層：放在內容後面的絕對定位兄弟元素，避免 `backdrop-filter` 讓卡片內的對話框（`position: fixed`）錯位。`GlassPanel` 與玻璃 `Card` 都用它。
+
+### GlassNav（v0.10，D56）
+
+毛玻璃膠囊導覽（設定分組）。`nav` + `aria-label`；每個項目是按鈕，選取中的為深色實心並設 `aria-current="page"`；可帶數字徽章（`count` + `countLabel`）或提醒圓點（`dotLabel`，有傳才顯示，`role="img"`）。
+
+### ScopeTag（v0.10，D56）
+
+設定項目的影響範圍小標：`device`「這台電腦」、`me`「只有我」、`org`「全組織」。字級 10 / 700、膠囊、三種色調（muted / primary-soft / level-year 淡底）；文字一律顯示，不只靠顏色。
+
+### SwatchGroup（v0.10，D56）
+
+一組色票單選（`role="radiogroup"`，每個色票 `role="radio"` + `aria-checked` + `aria-label`「〈部位〉 第 n 色」）。← → 移動並選取，選取中的色票有 3 px 深色外框。
+
+| prop | 型別 | 說明 |
+|---|---|---|
+| `label` | string | 部位名稱（顯示在左側，也是 radiogroup 名稱） |
+| `colors` | string[] | CSS 顏色（`var(--hills-*)`） |
+| `value` / `onChange` | number | 選取的索引 |
+
+### Character、CharacterStage（v0.10，D56）
+
+`Character`（`characters.tsx`，插畫元件，不在 `ui/`）：七種角色的 SVG。props `kind`、`look`、`pose`（`stand` \| `walk` \| `wave` \| `sit`）、`animate`（原地踏步）。在 `<svg>` 內以 `<g>` 繪製，原點在兩腳中間，高度 64 單位。
+
+`CharacterStage`（`ui/`）：設定頁的角色切換舞台。
+
+| prop | 型別 | 說明 |
+|---|---|---|
+| `count` / `index` / `onChange` | number | 角色數、目前索引、切換（傳入新索引） |
+| `label` | string | 目前角色的無障礙名稱（`aria-live="polite"`） |
+| `prevLabel` / `nextLabel` | string | 箭頭按鈕名稱 |
+| `children` | ReactNode | 目前要顯示的角色 |
+
+切換動畫：舊內容往切換方向反側位移 28 px 並淡出（240 ms），切換後從另一側淡入；動畫中再按箭頭會忽略。舞台可聚焦，← → 切換。下方圓點不可點（`aria-hidden`），位置由 `aria-label` 表達。
 
 ## 6. 回饋與流程
 

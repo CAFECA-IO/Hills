@@ -818,6 +818,25 @@
         "area:ui"
       ],
       "body": "## 目標\n\n任務有交付說明與完成條件；負責人回報進度、結案時寫報告並附上附件；指派者可退回。\n\n## 工作項目\n\n- [ ] 任務 brief / acceptance\n- [ ] `log:` / `report:`（本人限定，驗證層）\n- [ ] 任務詳情：執行紀錄時間軸、回報進度、問題與回覆\n- [ ] 結案對話框：規格範本、完成條件對照、附件上傳\n- [ ] 退回\n- [ ] MCP：`propose_task_log`、`propose_task_close`、`propose_task` 的 brief / acceptance\n\n## 驗收條件\n\n- 結案 → 退回 → 再結案，紀錄完整、報告為最新\n- 非小組成員無法下載報告附件\n\n## 參考\n\nfeature-plan D53；technical-design §16.8 v0.29；ui-spec「任務 → 執行紀錄與結案」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M1] 新版設定與七種角色（D56）",
+      "milestone": "M1 計劃、Scrum、對話與檔案（MVP）",
+      "labels": [
+        "type:feature",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n設定依用途分成七組，採晨光山丘毛玻璃風格；角色擴充為七種並在全 app 一致。\n\n## 工作項目\n\n- [ ] `Look.kind`、色盤 6 色與舊資料相容\n- [ ] `Character`：七種角色、姿勢、原地踏步；`Figure` / `Portrait` / `Bust` 改用\n- [ ] token：角色色盤、玻璃、晨光山丘\n- [ ] `GlassPanel`、`ScopeTag`、`SwatchGroup`、`CharacterStage`\n- [ ] 設定七個分組、範圍標籤、營地進度、搜尋設定\n\n## 驗收條件\n\n- 箭頭切換角色時往前 / 往後淡出，減少動態時直接切換\n- 舊外觀的同事顯示為男性、顏色有效\n- 1280 × 720 整頁不出現捲軸；降低透明度時面板為實色\n\n## 參考\n\nfeature-plan D56；technical-design §16.8 v0.31；ui-spec「設定」v0.37、「視覺語言」；design-system §2.2、§7；components「GlassPanel」「ScopeTag」「SwatchGroup」「Character、CharacterStage」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M1] 個人資料、工作時段與通知偏好（D57）",
+      "milestone": "M1 計劃、Scrum、對話與檔案（MVP）",
+      "labels": [
+        "type:feature",
+        "area:core",
+        "area:ui"
+      ],
+      "body": "## 目標\n\n成員可設定顯示名稱、時區與工作時段，並關閉不需要的通知。\n\n## 工作項目\n\n- [ ] `member/<id>/profile` 文件（本人寫、全員讀、GK）與驗證\n- [ ] 名稱解析：顯示名稱優先（畫面、通知、MCP）\n- [ ] 提醒依本人時區與工作日；同事非工作時段顯示「下班時間」\n- [ ] `secrets.notify` 通知偏好與各通知的判斷\n\n## 驗收條件\n\n- 改顯示名稱後同事約 2 秒內看到\n- 非工作日不收到 Scrum 提醒\n- 關閉「被指派任務」後不再收到該通知，新裝置通知照常\n\n## 參考\n\nfeature-plan D57、§5.1；technical-design §4.1、§16.12、§16.17；ui-spec「設定 → 我是誰 / 我的節奏」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
     }
   ]
 }

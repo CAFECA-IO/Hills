@@ -1,6 +1,6 @@
 # Hills 設計系統
 
-> 版本：v0.6 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.18（D22、D40、D43、D45、D47）
+> 版本：v0.7 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.37（D22、D40、D43、D45、D47、D56）
 > 本文件定義視覺基礎：原則、token、字級、間距、圓角、陰影、層級、動態、無障礙、圖示與列印。通用元件的規格見 [components.md](./components.md)；畫面結構與流程見 [ui-spec.md](./ui-spec.md)。
 > 實作來源：`apps/desktop/src/styles/tokens.css`（token）、`apps/desktop/src/ui/`（元件）。三者不一致時以本文件為準，並修正程式碼。
 
@@ -47,7 +47,9 @@
 | 狀態 | `--hills-st-<狀態>`（徽章色）、`--hills-st-<狀態>-text`（文字色，對 surface ≥ 4.5 : 1） | Presence 徽章、狀態文字、成功 / 進行中標示 | 搭配徽章形狀與文字（ui-spec 狀態表） |
 | 啟動動畫 | `--hills-boot-flame-out/-mid/-in`、`--hills-boot-log`、`--hills-boot-glow`（v0.5） | 啟動動畫 F 的營火、木柴、火光（§9） | 只用於啟動動畫；其餘版本重用山景、星空、羅盤、角色、狀態 token |
 | 方向羅盤 | `--hills-drift-floor`、`--hills-drift-floor-edge`、`--hills-drift-zone`（`fill-drift-*`） | 方向羅盤的地面、地面厚度、「在路上」扇形（§9） | 狀態另用 `primary`（在路上）、`warning`（可能偏離）、`muted`（太久沒更新）、`level-year`（小組方向），一律搭配形狀與文字 |
-| 角色 | `--hills-ink*`、`--hills-cloud`、`--hills-sun*`、`--hills-moon*`、`--hills-roof`、`--hills-laptop*`、`--hills-hair-0…7`、`--hills-shirt-0…7`、`--hills-skin-0…7` | 原創簡筆角色與天空裝飾 | 只用於 `figures.tsx` 等插畫；成員從色盤選擇（`team.rs` 的 `LOOK_PALETTE` = 8） |
+| 角色 | `--hills-ink*`、`--hills-cloud`、`--hills-sun*`、`--hills-moon*`、`--hills-roof`、`--hills-laptop*`、`--hills-shirt-0…5`、`--hills-look-<kind>-<part>-0…5`（v0.7，D56） | 七種角色與天空裝飾 | 只用於 `characters.tsx`、`figures.tsx` 等插畫；`kind` 為 `man`、`woman`、`cat`、`dog`、`elephant`、`sheep`、`tiger`，`part` 為 `a`（部位 1）、`c`（部位 3），衣服共用 `--hills-shirt-*`；成員從色盤選擇（`team.rs` 的 `LOOK_PALETTE` = 6）；角色固定色（筆電、腳底、口鼻白、眼睛、腮紅）用 `--hills-char-*` |
+| 晨光山丘（v0.7，D56） | `--hills-dawn-top/-upper/-lower/-bottom`、`--hills-dawn-sun`、`--hills-dawn-hill-far/-mid/-near` | 設定頁背景；深色模式為夜晚（沿用星空 token 的色調） | 只用於背景插畫 |
+| 毛玻璃（v0.7，D56） | `--hills-glass`、`--hills-glass-strong`、`--hills-glass-line`、`--hills-glass-shadow`；`backdrop-blur` 18 px | `GlassPanel`、`GlassScope` 內的 `Card`、設定頁的分組膠囊與箭頭 | 只放在插畫背景上；模糊畫在內容後面的兄弟層（`GlassLayer`），不要把 `backdrop-filter` 加在含對話框的容器上（會讓 `position: fixed` 錯位）；玻璃上的文字用 `text` / `muted` 並確保 ≥ 4.5 : 1；`prefers-reduced-transparency: reduce` 時改為 `surface` 實色、不模糊 |
 
 SVG 插畫用 `var(--hills-*)` 指定 `fill` / `stroke`（`figures.tsx`、`home.tsx` 的 `v()` 函式），不寫色碼。
 
@@ -114,6 +116,7 @@ SVG 插畫用 `var(--hills-*)` 指定 `fill` / `stroke`（`figures.tsx`、`home.
   - 有文字的部分（字標、標籤、狀態文字）不縮放；
   - 系統開啟「減少動態效果」時顯示靜態的完成畫面。
 - 慶祝效果（登頂彩帶）可在設定關閉，減少動態時改為靜態圖示（ui-spec「視覺語言」）。
+- **角色動畫**（v0.7，D56）：角色原地踏步（兩腿交替抬起 8 單位、身體微微下沉，1 秒循環，CSS keyframes `hills-step-a/-b`、`hills-body`），屬插畫動畫；減少動態時靜止站立。設定的角色舞台切換：舊角色往切換方向的反方向位移 28 px 並淡出（240 ms），新角色從另一側淡入；減少動態時直接替換。
 - **載入骨架**（v0.6）：資料還沒載入時，以 `Skeleton` 畫出內容的大致形狀（文字列、清單列、卡片、看板欄），上面一道淡光由左往右掃過（1.4 秒循環，CSS 位移動畫）。骨架只用 `line`、`bg` token；不用轉圈圖示，也不先顯示空狀態再跳成內容。減少動態時不掃光、只顯示靜態骨架。
 
 ## 8. 無障礙

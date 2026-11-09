@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.25 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.26 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -795,8 +795,11 @@ team/<teamId> = {                                         // v0.11（D40）
                           doneAt?,                        // v0.21（D47）：改成完成時寫入，離開完成時刪除
                           steps: [ { id, title, assignee?, done, doneAt? } ],
                           planItemId?,                    // v0.19（D46）：所屬週目標
+                          assignedBy?, assignedAt?,       // v0.26（D50）：負責人改變時寫入
+                          teamGoalId?,                    // v0.26（D50）：來源小組目標，只供顯示與建議
                           createdBy, createdAt, updatedAt },
   "profile:<memberId>": "{\"hair\":0,\"shirt\":3,\"skin\":1}",   // 角色外觀（JSON 字串，固定色盤的索引）
+  "ack:<taskId>:<memberId>": "{\"state\":\"accepted\",\"at\":0}",   // v0.26（D50）：負責人的回應，只有本人可寫
 }
 ```
 
@@ -805,6 +808,14 @@ team/<teamId> = {                                         // v0.11（D40）
 - `offices`、`lunchBreak` 只有管理者可寫（org 文件規則）。
 - `team/<id>` 為多人寫入（§4）：任務全組可編輯；`profile:<memberId>` 只有本人可寫，由驗證層檢查（根物件上 `profile:` 開頭的 key 必須是作者本人，且只能放入字串），他人的寫入整筆 change 拒絕。成員把外觀寫進自己所屬的每個小組文件，讀取時取任一份。
 - **任務與週目標**（v0.19，D46）：`planItemId` 指向一個週目標（`level = week`）；寫入時檢查該目標存在於本人可讀的計劃中且為週層級。目標可能是私人或另一個小組的，看不到的讀者顯示「私人項目」。**任務進度** = 已完成步驟數 / 步驟數 × 100；沒有步驟時完成 = 100、未完成 = 0（§16.10 彙總）。
+- **分派與回應**（v0.26，D50）：
+  - `write_task` 發現負責人改變時寫入 `assignedBy`（寫入者）與 `assignedAt`；沒有負責人時刪除兩者。
+  - `ack:<taskId>:<memberId>` 為 JSON 字串 `{state: "accepted" | "concern", note?, at}`，note 1–200 字；只有 memberId 本人可寫（驗證層比照 `profile:`：`ack:` 開頭的 key 必須以 `:<作者>` 結尾、只能放入字串）。
+  - 回應**有效**：memberId 是目前負責人且 `at ≥ assignedAt`；改派後舊回應自動失效。
+  - **待接下**：有負責人、`assignedBy` 不是負責人，且沒有有效的 accepted。負責人自己建立或改成自己的任務不需接下。
+  - `teamGoalId` 指向同一小組的小組目標（寫入時檢查存在），只用於顯示來源與建議，進度仍經週目標彙總（D46 不變）。
+  - **通知**：套用遠端 change 後，本機找出「負責人是我、`assignedBy` 不是我」且 `task/assignedAt` 沒通知過的任務，發桌機通知（伺服器不參與）。
+  - **負荷**（介面計算）：未完成 = 負責人是他、狀態不是完成；本週到期 = 其中期限落在組織時區本週；「偏重」= 未完成 ≥ 7 或本週到期 ≥ 4。
 - **私人任務**（v0.19，D46）：存在 `member/<id>/tasks`（`PK_member`，只有本人讀寫），結構與 `team/<id>` 的 `task:` 相同（不含 `profile:`）。介面與命令以 `teamId = "private"` 表示；負責人固定為本人、步驟沒有負責人；不出現在小組頁，不能連結到對話（§14.2）。
 - **焦點**（feature-plan §5.4）：候選（含私人任務）為指派給我、或下一個未完成步驟指派給我的未完成任務；依「期限最近 → 卡住別人（下一步負責人不是我但我負責的步驟未完成）→ 指派給我 → 建立時間」排序。手動選擇的焦點只存在本機（secret 檔 `focus`），任務完成或刪除時回到自動。
 

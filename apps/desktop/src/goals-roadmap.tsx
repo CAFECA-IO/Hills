@@ -54,6 +54,7 @@ import {
   EmptyState,
   ErrorText,
   IconButton,
+  LinkButton,
   Pressable,
   SegmentedControl,
   Select,
@@ -296,7 +297,6 @@ export function GoalsRoadmap({ members, teams, tasks, timezone, headExtra }: Roa
                 setDraft(null);
               }}
             />
-            {headExtra}
             <Switch
               className="h-9 rounded-full bg-surface px-3 shadow-sm"
               label={t('goals.mineOnly')}
@@ -321,6 +321,7 @@ export function GoalsRoadmap({ members, teams, tasks, timezone, headExtra }: Roa
             >
               {t('goals.new')}
             </Button>
+            {headExtra}
           </>
         }
       />
@@ -443,9 +444,20 @@ export function GoalsRoadmap({ members, teams, tasks, timezone, headExtra }: Roa
                   className={`flex flex-col gap-0.5 px-4 py-2 ${lane.loose ? 'bg-bg' : ''}`}
                   style={{ gridRow: `1 / span ${rowCount + 1}` }}
                 >
-                  <span className={`truncate text-sm font-bold ${lane.loose ? 'text-muted' : ''}`}>
-                    {lane.title}
-                  </span>
+                  {!lane.loose && lane.owner?.mine ? (
+                    <LinkButton
+                      className="self-start truncate text-left text-sm font-bold"
+                      onClick={() => lane.owner && setEditing(toInput(lane.owner))}
+                    >
+                      {lane.title}
+                    </LinkButton>
+                  ) : (
+                    <span
+                      className={`truncate text-sm font-bold ${lane.loose ? 'text-muted' : ''}`}
+                    >
+                      {lane.title}
+                    </span>
+                  )}
                   {lane.progress !== null && (
                     <span className="text-xs text-muted">
                       {t('drift.progress', { pct: Math.round(lane.progress) })}
@@ -572,6 +584,11 @@ export function GoalsRoadmap({ members, teams, tasks, timezone, headExtra }: Roa
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
+            reload();
+          }}
+          onDeleted={() => {
+            setEditing(null);
+            setFocus(null);
             reload();
           }}
         />

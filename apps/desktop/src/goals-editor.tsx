@@ -26,6 +26,7 @@ import { t, type MessageKey } from './i18n';
 import {
   Button,
   Checkbox,
+  ConfirmButton,
   Dialog,
   EmptyState,
   ErrorText,
@@ -139,6 +140,7 @@ export function GoalEditor({
   anchor,
   onClose,
   onSaved,
+  onDeleted,
 }: {
   initial: PlanInput;
   items: PlanView[];
@@ -147,6 +149,8 @@ export function GoalEditor({
   anchor: Periods;
   onClose: () => void;
   onSaved: (id: string, level: PlanLevel) => void;
+  /** 刪除後（只有編輯既有目標時顯示「刪除」）；預設同關閉 */
+  onDeleted?: () => void;
 }) {
   const [v, setV] = useState<PlanInput>(initial);
   const [titleError, setTitleError] = useState<string | null>(null);
@@ -401,13 +405,25 @@ export function GoalEditor({
         <p className="text-xs text-muted">{t('goals.override.hint')}</p>
       </div>
       <ErrorText message={error} />
-      <div className="flex justify-end gap-2">
-        <Button type="button" variant="secondary" onClick={onClose}>
-          {t('common.cancel')}
-        </Button>
-        <Button type="submit" busy={busy}>
-          {t('goals.save')}
-        </Button>
+      <div className="flex items-center gap-2">
+        {initial.id && (
+          <ConfirmButton
+            label={t('goals.delete')}
+            message={t('goals.delete.confirm', { title: initial.title })}
+            onConfirm={async () => {
+              const id = initial.id;
+              if (id && (await attempt(() => api.deletePlan(id)))) (onDeleted ?? onClose)();
+            }}
+          />
+        )}
+        <span className="ml-auto flex gap-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" busy={busy}>
+            {t('goals.save')}
+          </Button>
+        </span>
       </div>
     </Dialog>
   );

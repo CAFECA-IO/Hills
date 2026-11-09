@@ -38,6 +38,7 @@ import {
   Select,
   TextArea,
   useAction,
+  Switch,
 } from './ui';
 
 const SECTIONS: (keyof ReportSections)[] = ['progress', 'okr', 'attendance', 'next'];
@@ -461,14 +462,13 @@ function TeamReports({
         {t('report.team.summary', { published: list.length, total: people.length })}
       </p>
       <div className="flex flex-wrap gap-2 [&>button]:whitespace-nowrap">
-        <Button
-          variant={merged ? 'primary' : 'secondary'}
-          className="h-8 px-3 py-0 text-xs"
-          aria-pressed={merged}
-          onClick={() => setMerged((m) => !m)}
-        >
-          {t('report.merged')}
-        </Button>
+        <Switch
+          size="sm"
+          className="h-8 pr-1"
+          label={t('report.merged')}
+          checked={merged}
+          onChange={setMerged}
+        />
         {merged && (
           <>
             <Button

@@ -1,5 +1,6 @@
 /** 表單元件（docs/components.md「表單」）。 */
 import { t } from '../i18n';
+import { FOCUS_RING } from './button';
 import {
   createContext,
   forwardRef,
@@ -338,5 +339,73 @@ export function ChoiceCard<T extends string>({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * 左右滑動的功能開關（components.md v0.5「Switch」）：開或關之後立即生效的設定或檢視。
+ * 表單裡要按儲存才生效的選項用 Checkbox。
+ */
+export function Switch({
+  checked,
+  onChange,
+  label,
+  description,
+  size = 'md',
+  disabled = false,
+  className = '',
+  'aria-label': ariaLabel,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label?: ReactNode;
+  description?: ReactNode;
+  size?: 'sm' | 'md';
+  disabled?: boolean;
+  className?: string;
+  'aria-label'?: string;
+}) {
+  const id = useId();
+  const track = size === 'sm' ? 'h-4 w-7' : 'h-5 w-9';
+  const knob = size === 'sm' ? 'size-3' : 'size-4';
+  const shift = size === 'sm' ? 'translate-x-3' : 'translate-x-4';
+  const button = (
+    <button
+      type="button"
+      role="switch"
+      id={id}
+      aria-checked={checked}
+      aria-label={label ? undefined : ariaLabel}
+      aria-labelledby={label ? `${id}-label` : undefined}
+      aria-describedby={description ? `${id}-desc` : undefined}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex shrink-0 items-center rounded-full p-0.5 transition-colors duration-(--hills-motion) motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING} ${track} ${checked ? 'bg-primary' : 'bg-line'}`}
+    >
+      <span
+        aria-hidden="true"
+        className={`rounded-full bg-surface shadow-sm transition-transform duration-(--hills-motion) motion-reduce:transition-none ${knob} ${checked ? shift : 'translate-x-0'}`}
+      />
+    </button>
+  );
+  if (!label) return button;
+  return (
+    <span className={`inline-flex items-center gap-2.5 ${className}`}>
+      <span className="flex flex-col">
+        <label
+          id={`${id}-label`}
+          htmlFor={id}
+          className={`text-sm ${disabled ? 'text-muted' : 'cursor-pointer'}`}
+        >
+          {label}
+        </label>
+        {description && (
+          <span id={`${id}-desc`} className="text-xs text-muted">
+            {description}
+          </span>
+        )}
+      </span>
+      {button}
+    </span>
   );
 }

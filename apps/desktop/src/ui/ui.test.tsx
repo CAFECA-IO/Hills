@@ -18,6 +18,7 @@ import {
   Select,
   SegmentedControl,
   Stepper,
+  Switch,
   Tabs,
   TextInput,
   Toast,
@@ -82,6 +83,18 @@ describe('ui 元件（docs/components.md）', () => {
     expect(h).toMatch(/role="radio" aria-checked="true" tabindex="0"/);
     const none = html(<ChoiceCard label="方向" options={opts} value={null} onChange={noop} />);
     expect(none).toMatch(/aria-checked="false" tabindex="0"[^]*aria-checked="false" tabindex="-1"/);
+  });
+
+  it('Switch 是 role=switch，以 aria-checked 表示開關，label 以 aria-labelledby 連結', () => {
+    const on = html(<Switch checked label="進階檢視" description="說明" onChange={noop} />);
+    expect(on).toMatch(/<button type="button" role="switch" id="([^"]+)" aria-checked="true"/);
+    const id = /role="switch" id="([^"]+)"/.exec(on)?.[1];
+    expect(on).toContain(`aria-labelledby="${id}-label"`);
+    expect(on).toContain(`aria-describedby="${id}-desc"`);
+    expect(on).toContain(`<label id="${id}-label" for="${id}"`);
+    const off = html(<Switch checked={false} aria-label="合併" onChange={noop} />);
+    expect(off).toContain('aria-checked="false"');
+    expect(off).toContain('aria-label="合併"');
   });
 
   it('Stepper 標示目前步驟', () => {

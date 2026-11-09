@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { GuidedGoals } from './goals-guided';
 import { GoalsRoadmap, type GoalsProps } from './goals-roadmap';
 import { t } from './i18n';
-import { Checkbox } from './ui';
+import { Switch } from './ui';
 
 const ADVANCED_KEY = 'hills.goals.advanced';
 
@@ -29,13 +29,13 @@ function writeAdvanced(on: boolean) {
 export function Goals(props: GoalsProps) {
   const [advanced, setAdvanced] = useState(readAdvanced);
   const toggle = (
-    <Checkbox
+    <Switch
       className="h-9 rounded-full bg-surface px-3 shadow-sm"
       label={t('guide.advanced')}
       checked={advanced}
-      onChange={(e) => {
-        setAdvanced(e.target.checked);
-        writeAdvanced(e.target.checked);
+      onChange={(on) => {
+        setAdvanced(on);
+        writeAdvanced(on);
       }}
     />
   );

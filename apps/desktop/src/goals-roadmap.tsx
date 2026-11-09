@@ -50,7 +50,6 @@ import {
 import { TaskDialog, type TaskDraft } from './tasks';
 import {
   Button,
-  Checkbox,
   Dialog,
   EmptyState,
   ErrorText,
@@ -58,6 +57,7 @@ import {
   Pressable,
   SegmentedControl,
   Select,
+  Switch,
   TextInput,
   useAction,
 } from './ui';
@@ -297,11 +297,11 @@ export function GoalsRoadmap({ members, teams, tasks, timezone, headExtra }: Roa
               }}
             />
             {headExtra}
-            <Checkbox
+            <Switch
               className="h-9 rounded-full bg-surface px-3 shadow-sm"
               label={t('goals.mineOnly')}
               checked={mineOnly}
-              onChange={(e) => setMineOnly(e.target.checked)}
+              onChange={setMineOnly}
             />
             <Button
               onClick={() =>

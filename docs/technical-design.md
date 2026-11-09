@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.23 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.24 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -1138,7 +1138,7 @@ kind = `recover`，流程與加入相同（產生**新的** IK / EK / DK、`Appl
 | `read_messages` | `conv`、`limit?`（≤ 50） | 最近的訊息 |
 | `search_knowledge` | `query`、`limit?` | 標題與內文包含關鍵字的知識 |
 
-寫入（只建立待確認變更，回傳 `{status: "pending", id, summary}`）：`propose_goal`（PlanInput，有 `id` 為修改）、`propose_task`（team + TaskInput，有 `task` 為修改）、`propose_step_done`、`propose_scrum_draft`、`propose_message`、`propose_kb_item`；查詢：`get_change_status(id)` → `pending | approved | rejected | expired | failed`（failed 附錯誤訊息）。
+寫入（只建立待確認變更，回傳 `{status: "pending", id, summary}`）：`propose_goal`（PlanInput，有 `id` 為修改）、`propose_task`（team + TaskInput，有 `task` 為修改）、`propose_step_done`、`propose_scrum_draft`、`propose_message`、`propose_kb_item`；刪除（v0.24）：`propose_delete_goal(id)`（只限本人的目標）、`propose_delete_task(team, task)`、`propose_delete_kb_item(key)`，權限與使用者在 app 內刪除相同；查詢：`get_change_status(id)` → `pending | approved | rejected | expired | failed`（failed 附錯誤訊息）。
 
 ### 18.4 待確認變更
 

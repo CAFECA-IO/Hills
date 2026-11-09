@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="430" viewBox="0 0 960 430" role="img" aria-labelledby="t d">
+  <title id="t">Hills 的運作原理</title>
+  <desc id="d">每台桌機 app 都是一個節點，以 Automerge 文件保存資料並端對端加密；成員之間經 iroh 直連同步，無法直連時經 relay 中繼；離線時資料暫存在 mailbox；檔案以 RS(8,5) 分片加密後存到 8 個儲存節點。伺服器只看得到密文。</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#3b4656"/>
+    </marker>
+    <style>
+      .bg{fill:#f3f6fa}
+      .card{fill:#ffffff;stroke:#d6dde8;stroke-width:1.5}
+      .app{fill:#e6f0fe;stroke:#1f6feb;stroke-width:1.5}
+      .srv{fill:#fff8ec;stroke:#e0b76b;stroke-width:1.5}
+      .zone{fill:none;stroke:#8a94a6;stroke-width:1.2;stroke-dasharray:6 6}
+      .t{font:600 15px -apple-system,"Segoe UI","PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;fill:#16202e}
+      .s{font:400 12px -apple-system,"Segoe UI","PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;fill:#3b4656}
+      .h{font:700 18px -apple-system,"Segoe UI","PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;fill:#16202e}
+      .lb{font:600 12px -apple-system,"Segoe UI","PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;fill:#1f6feb}
+      .ln{stroke:#3b4656;stroke-width:1.5;fill:none}
+      .p2p{stroke:#1f6feb;stroke-width:2.5;fill:none}
+    </style>
+  </defs>
+  <rect class="bg" width="960" height="430" rx="16"/>
+  <text class="h" x="32" y="40">點對點同步，伺服器只看得到密文</text>
+
+  <!-- 成員端 -->
+  <rect class="app" x="32" y="72" width="250" height="132" rx="12"/>
+  <text class="t" x="50" y="100">成員 A 的桌機 app</text>
+  <text class="s" x="50" y="124">Tauri 2：Rust 核心 + React 介面</text>
+  <text class="s" x="50" y="146">Automerge 文件（離線可編輯）</text>
+  <text class="s" x="50" y="168">本機加密儲存 · 金鑰在系統鑰匙圈</text>
+  <text class="s" x="50" y="190">本機 MCP（127.0.0.1）</text>
+
+  <rect class="app" x="678" y="72" width="250" height="132" rx="12"/>
+  <text class="t" x="696" y="100">成員 B 的桌機 app</text>
+  <text class="s" x="696" y="124">Mac / Windows（行動端於 M2）</text>
+  <text class="s" x="696" y="146">只解得開自己有權限的文件</text>
+  <text class="s" x="696" y="168">組織 / 小組 / 個人三層金鑰</text>
+  <text class="s" x="696" y="190">變更合併不會衝突</text>
+
+  <path class="p2p" d="M282 120 H674" marker-end="url(#a)" marker-start="url(#a)"/>
+  <text class="lb" x="364" y="110">iroh 直連（QUIC），端對端加密同步</text>
+
+  <!-- 伺服器 -->
+  <rect class="zone" x="24" y="236" width="912" height="176" rx="14"/>
+  <text class="s" x="48" y="402">自架服務（Docker Compose）· 只處理加密後的資料</text>
+
+  <rect class="srv" x="48" y="272" width="200" height="108" rx="12"/>
+  <text class="t" x="64" y="300">relay</text>
+  <text class="s" x="64" y="324">無法直連時中繼</text>
+  <text class="s" x="64" y="346">NAT 穿透</text>
+
+  <rect class="srv" x="276" y="272" width="200" height="108" rx="12"/>
+  <text class="t" x="292" y="300">mailbox</text>
+  <text class="s" x="292" y="324">對方離線時暫存變更</text>
+  <text class="s" x="292" y="346">成員名冊、加入申請</text>
+  <text class="s" x="292" y="368">封裝後的金鑰</text>
+
+  <rect class="srv" x="504" y="272" width="200" height="108" rx="12"/>
+  <text class="t" x="520" y="300">storage-0 … 7</text>
+  <text class="s" x="520" y="324">檔案先在 app 內加密</text>
+  <text class="s" x="520" y="346">RS(8,5) 分 8 片，</text>
+  <text class="s" x="520" y="368">任 3 台故障仍可下載</text>
+
+  <rect class="card" x="732" y="272" width="180" height="108" rx="12"/>
+  <text class="t" x="748" y="300">CAFECA 帳戶</text>
+  <text class="s" x="748" y="324">登入與身分</text>
+  <text class="s" x="748" y="346">管理者核准加入</text>
+
+  <path class="ln" d="M120 204 V268" marker-end="url(#a)"/>
+  <path class="ln" d="M190 204 V216 H376 V268" marker-end="url(#a)"/>
+  <path class="ln" d="M262 204 V226 H604 V268" marker-end="url(#a)"/>
+  <path class="ln" d="M803 204 V268" marker-end="url(#a)" marker-start="url(#a)"/>
+</svg>

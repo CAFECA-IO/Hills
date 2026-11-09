@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="380" viewBox="0 0 960 380" role="img" aria-labelledby="t d">
+  <title id="t">Hills 部署方式</title>
+  <desc id="d">一台有公網 IP 的 Linux 主機以 Docker Compose 執行 relay、mailbox 與 8 個儲存節點；開放 TCP 80/443、UDP 7842、7843、7850 到 7857。部署完成後取得 mailbox 連線碼，在第一台桌機建立組織，再邀請成員。</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#3b4656"/>
+    </marker>
+    <style>
+      .bg{fill:#f3f6fa}
+      .host{fill:#ffffff;stroke:#d6dde8;stroke-width:1.5}
+      .srv{fill:#fff8ec;stroke:#e0b76b;stroke-width:1.5}
+      .step{fill:#e6f0fe;stroke:#1f6feb;stroke-width:1.5}
+      .num{fill:#1f6feb}
+      .nt{font:700 13px -apple-system,"Segoe UI",sans-serif;fill:#ffffff}
+      .t{font:600 15px -apple-system,"Segoe UI","PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;fill:#16202e}
+      .s{font:400 12px -apple-system,"Segoe UI","PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;fill:#3b4656}
+      .m{font:400 12px ui-monospace,Menlo,Consolas,monospace;fill:#16202e}
+      .h{font:700 18px -apple-system,"Segoe UI","PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;fill:#16202e}
+      .ln{stroke:#3b4656;stroke-width:1.5;fill:none}
+    </style>
+  </defs>
+  <rect class="bg" width="960" height="380" rx="16"/>
+  <text class="h" x="32" y="40">一台主機、一個指令完成自架</text>
+
+  <rect class="host" x="32" y="64" width="480" height="292" rx="14"/>
+  <text class="t" x="52" y="92">Linux 主機（1 vCPU · 1 GB RAM 起 · 固定公網 IP）</text>
+  <text class="m" x="52" y="116">docker compose up -d --build</text>
+
+  <rect class="srv" x="52" y="136" width="200" height="88" rx="10"/>
+  <text class="t" x="68" y="164">relay</text>
+  <text class="s" x="68" y="186">TCP 80 / 443（憑證自動取得）</text>
+  <text class="s" x="68" y="206">UDP 7842</text>
+
+  <rect class="srv" x="272" y="136" width="220" height="88" rx="10"/>
+  <text class="t" x="288" y="164">mailbox</text>
+  <text class="s" x="288" y="186">UDP 7843 · 健康檢查 18080</text>
+  <text class="s" x="288" y="206">印出「mailbox 連線碼」</text>
+
+  <rect class="srv" x="52" y="244" width="440" height="92" rx="10"/>
+  <text class="t" x="68" y="272">storage-0 … storage-7</text>
+  <text class="s" x="68" y="294">UDP 7850–7857 · 每 1 GB 檔案約占 1.6 GB</text>
+  <text class="s" x="68" y="316">建議 8 個 volume 分散在不同磁碟</text>
+
+  <path class="ln" d="M512 210 H556" marker-end="url(#a)"/>
+
+  <rect class="step" x="560" y="64" width="368" height="62" rx="12"/>
+  <circle class="num" cx="586" cy="95" r="13"/><text class="nt" x="581.5" y="100">1</text>
+  <text class="t" x="610" y="90">設定 .env 並啟動</text>
+  <text class="s" x="610" y="112">relay 網域、公網 IP、CAFECA 錢包網址</text>
+
+  <rect class="step" x="560" y="138" width="368" height="62" rx="12"/>
+  <circle class="num" cx="586" cy="169" r="13"/><text class="nt" x="581.5" y="174">2</text>
+  <text class="t" x="610" y="164">取得 mailbox 連線碼</text>
+  <text class="s" x="610" y="186">以 hills-mbx1- 開頭，不是機密</text>
+
+  <rect class="step" x="560" y="212" width="368" height="62" rx="12"/>
+  <circle class="num" cx="586" cy="243" r="13"/><text class="nt" x="581.5" y="248">3</text>
+  <text class="t" x="610" y="238">立即在第一台桌機建立組織</text>
+  <text class="s" x="610" y="260">以 CAFECA 登入，匯出組織根金鑰備份</text>
+
+  <rect class="step" x="560" y="286" width="368" height="62" rx="12"/>
+  <circle class="num" cx="586" cy="317" r="13"/><text class="nt" x="581.5" y="322">4</text>
+  <text class="t" x="610" y="312">邀請成員加入</text>
+  <text class="s" x="610" y="334">成員以 CAFECA 登入，管理者核准</text>
+</svg>

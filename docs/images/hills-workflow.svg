@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="360" viewBox="0 0 960 360" role="img" aria-labelledby="t d">
+  <title id="t">Hills 的工作流程</title>
+  <desc id="d">年目標拆成季、月、週目標，週目標之下是任務與步驟；每日 Scrum 回報任務進度，自動產生日報、週報、月報、年報；對話、檔案、知識庫與會議貫穿其中。</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#3b4656"/>
+    </marker>
+    <style>
+      .bg{fill:#f3f6fa}
+      .card{fill:#ffffff;stroke:#d6dde8;stroke-width:1.5}
+      .hl{fill:#e6f0fe;stroke:#1f6feb;stroke-width:1.5}
+      .t{font:600 15px -apple-system,"Segoe UI","PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;fill:#16202e}
+      .s{font:400 12px -apple-system,"Segoe UI","PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;fill:#3b4656}
+      .h{font:700 18px -apple-system,"Segoe UI","PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;fill:#16202e}
+      .ln{stroke:#3b4656;stroke-width:1.5;fill:none}
+      .dash{stroke:#8a94a6;stroke-width:1.5;fill:none;stroke-dasharray:5 5}
+    </style>
+  </defs>
+  <rect class="bg" width="960" height="360" rx="16"/>
+  <text class="h" x="32" y="40">從目標到報表</text>
+
+  <rect class="card" x="32" y="64" width="150" height="76" rx="12"/>
+  <text class="t" x="48" y="94">年目標</text>
+  <text class="s" x="48" y="118">公司方向 · 小組目標</text>
+
+  <rect class="card" x="214" y="64" width="150" height="76" rx="12"/>
+  <text class="t" x="230" y="94">季 · 月目標</text>
+  <text class="s" x="230" y="118">OKR 與待辦</text>
+
+  <rect class="card" x="396" y="64" width="150" height="76" rx="12"/>
+  <text class="t" x="412" y="94">週目標</text>
+  <text class="s" x="412" y="118">本人規劃這一週</text>
+
+  <rect class="hl" x="578" y="64" width="150" height="76" rx="12"/>
+  <text class="t" x="594" y="94">任務與步驟</text>
+  <text class="s" x="594" y="118">組長分派 · 成員接下</text>
+
+  <rect class="card" x="760" y="64" width="168" height="76" rx="12"/>
+  <text class="t" x="776" y="94">結案報告</text>
+  <text class="s" x="776" y="118">固定段落 · 附件 · 知識</text>
+
+  <path class="ln" d="M182 102 H210" marker-end="url(#a)"/>
+  <path class="ln" d="M364 102 H392" marker-end="url(#a)"/>
+  <path class="ln" d="M546 102 H574" marker-end="url(#a)"/>
+  <path class="ln" d="M728 102 H756" marker-end="url(#a)"/>
+
+  <rect class="hl" x="578" y="196" width="150" height="76" rx="12"/>
+  <text class="t" x="594" y="226">每日 Scrum</text>
+  <text class="s" x="594" y="250">昨天 · 今天 · 阻礙</text>
+  <path class="ln" d="M653 140 V192" marker-end="url(#a)"/>
+  <text class="s" x="662" y="172">進度</text>
+
+  <rect class="card" x="760" y="196" width="168" height="76" rx="12"/>
+  <text class="t" x="776" y="226">自動報表</text>
+  <text class="s" x="776" y="250">日報 · 週報 · 月報 · 年報</text>
+  <path class="ln" d="M728 234 H756" marker-end="url(#a)"/>
+
+  <path class="dash" d="M600 140 V164 H107 V144" marker-end="url(#a)"/>
+  <text class="s" x="230" y="184">任務完成，進度逐層往上彙總到週、月、季、年目標</text>
+
+  <rect class="card" x="32" y="296" width="896" height="44" rx="12"/>
+  <text class="s" x="52" y="323">貫穿全程：即時對話與檔案分享 · 知識庫（Markdown / HTML） · 線上會議 · 出勤與假勤 · 本機 MCP，讓你自己的 AI Agent 協助操作</text>
+</svg>

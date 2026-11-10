@@ -25,6 +25,8 @@ import { AssignedCard } from './assign-inbox';
 import { useSize } from './hooks';
 import { formatClock, formatDate, t } from './i18n';
 import { PageHead } from './layout';
+import { TaskCloseDialog } from './task-close';
+import { closeIsPrimary } from './task-utils';
 import {
   backSoon,
   climberPosition,
@@ -50,6 +52,7 @@ import {
   Popover,
   SectionLabel,
   SegmentedControl,
+  Toast,
   useAction,
 } from './ui';
 
@@ -799,6 +802,8 @@ function NextStepCard({
   onOpenTasks: () => void;
 }) {
   const { busy, error, attempt } = useAction();
+  const [closing, setClosing] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   if (!task) {
     return (
       <Card className="flex flex-col gap-3">
@@ -843,12 +848,29 @@ function NextStepCard({
         >
           {t('home.markDone')}
         </Button>
+      ) : me && closeIsPrimary(task, me.id) ? (
+        <div className="flex gap-2">
+          <Button className="flex-1" onClick={() => setClosing(true)}>
+            {t('tasks.close')}
+          </Button>
+          <Button variant="secondary" onClick={onOpenTasks}>
+            {t('home.openTask')}
+          </Button>
+        </div>
       ) : (
         <Button variant="secondary" onClick={onOpenTasks}>
           {t('home.openTask')}
         </Button>
       )}
       <ErrorText message={error} />
+      {closing && (
+        <TaskCloseDialog
+          task={task}
+          onClose={() => setClosing(false)}
+          onDone={() => setToast(t('close.done', { title: task.title }))}
+        />
+      )}
+      {toast && <Toast key={toast} message={toast} onClose={() => setToast(null)} />}
     </Card>
   );
 }

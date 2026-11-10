@@ -479,6 +479,8 @@ impl McpBackend for RealBackend {
                     "steps",
                     "planItemId",
                     "teamGoalId",
+                    "brief",
+                    "acceptance",
                 ];
                 let base = match &task {
                     Some(id) => {
@@ -768,6 +770,83 @@ impl McpBackend for RealBackend {
                     preview,
                 ))
             }
+            "propose_task_log" => {
+                let team = need(&args, "team")?;
+                let task = need(&args, "task")?;
+                let kind = need(&args, "kind")?;
+                if !["start", "progress", "question", "answer"].contains(&kind) {
+                    return Err("`kind` must be start, progress, question or answer".into());
+                }
+                let text = s(&args, "text").unwrap_or_default();
+                if kind != "start" && text.trim().is_empty() {
+                    return Err("`text` is required".into());
+                }
+                let percent = args["percent"].as_u64();
+                if percent.is_some_and(|p| p > 100) {
+                    return Err("`percent` must be 0–100".into());
+                }
+                let t = self.task(team, task).await?;
+                let preview = json!({
+                    "action": "taskLog", "title": t["title"], "kind": kind,
+                    "text": clip(text, 120), "percent": percent
+                });
+                Ok((
+                    json!({ "team": team, "task": task, "kind": kind, "text": text, "percent": percent }),
+                    preview,
+                ))
+            }
+            "propose_task_close" => {
+                let team = need(&args, "team")?;
+                let task = need(&args, "task")?;
+                let body = need(&args, "body")?;
+                let format: hills_node::doc_spec::DocFormat = serde_json::from_value(
+                    args.get("format").cloned().unwrap_or(json!("markdown")),
+                )
+                .map_err(|_| "`format` must be markdown or html".to_owned())?;
+                let t = self.task(team, task).await?;
+                let has_criteria = !arr(t["acceptance"].clone()).is_empty();
+                hills_node::doc_spec::check(
+                    Some(hills_node::doc_spec::SPEC_V1),
+                    hills_node::doc_spec::DocKind::Report {
+                        criteria: has_criteria,
+                    },
+                    format,
+                    body,
+                )
+                .map_err(|e| e.to_string())?;
+                let input = json!({
+                    "format": format, "body": body,
+                    "criteria": args.get("criteria").cloned().unwrap_or(json!([])),
+                    "attachments": [],
+                    "refs": args.get("refs").cloned().unwrap_or(json!([])),
+                });
+                serde_json::from_value::<hills_node::task_report::CloseInput>(input.clone())
+                    .map_err(|e| format!("invalid report: {e}"))?;
+                let summary = hills_node::doc_spec::sections(format, body)
+                    .into_iter()
+                    .find(|x| x.key.as_deref() == Some("summary"))
+                    .map(|x| x.text)
+                    .unwrap_or_default();
+                let preview = json!({
+                    "action": "closeTask", "title": t["title"], "text": clip(&summary, 120)
+                });
+                Ok((
+                    json!({ "team": team, "task": task, "input": input }),
+                    preview,
+                ))
+            }
+            "propose_task_reopen" => {
+                let team = need(&args, "team")?;
+                let task = need(&args, "task")?;
+                let text = need(&args, "text")?;
+                if text.trim().is_empty() {
+                    return Err("`text` is required".into());
+                }
+                let t = self.task(team, task).await?;
+                let preview =
+                    json!({ "action": "reopenTask", "title": t["title"], "text": clip(text, 120) });
+                Ok((json!({ "team": team, "task": task, "text": text }), preview))
+            }
             "propose_task_ack" => {
                 let team = need(&args, "team")?;
                 let task = need(&args, "task")?;
@@ -1012,6 +1091,43 @@ impl McpBackend for RealBackend {
                     .await,
                 )
             }
+            "propose_task_log" => {
+                let kind: hills_node::task_report::LogKind =
+                    serde_json::from_value(args["kind"].clone()).map_err(|e| e.to_string())?;
+                to_v(
+                    commands::add_task_log(
+                        st,
+                        need(&args, "team")?.to_owned(),
+                        need(&args, "task")?.to_owned(),
+                        kind,
+                        s(&args, "text").unwrap_or_default().to_owned(),
+                        args["percent"].as_u64().and_then(|p| u8::try_from(p).ok()),
+                    )
+                    .await,
+                )
+            }
+            "propose_task_close" => {
+                let input: hills_node::task_report::CloseInput =
+                    serde_json::from_value(args["input"].clone()).map_err(|e| e.to_string())?;
+                to_v(
+                    commands::close_task(
+                        st,
+                        need(&args, "team")?.to_owned(),
+                        need(&args, "task")?.to_owned(),
+                        input,
+                    )
+                    .await,
+                )
+            }
+            "propose_task_reopen" => to_v(
+                commands::reopen_task(
+                    st,
+                    need(&args, "team")?.to_owned(),
+                    need(&args, "task")?.to_owned(),
+                    need(&args, "text")?.to_owned(),
+                )
+                .await,
+            ),
             "propose_task_ack" => {
                 let ack: hills_node::AckState =
                     serde_json::from_value(args["state"].clone()).map_err(|e| e.to_string())?;

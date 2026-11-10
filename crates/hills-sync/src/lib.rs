@@ -47,7 +47,8 @@ pub fn append_only_by(change: &Change, author: &MemberId) -> bool {
 }
 
 /// team 文件根物件上 `profile:` 開頭的 key 只能由本人放入字串（technical-design §16.8 v0.11）；
-/// `ack:<taskId>:<memberId>`（任務回應，v0.26，D50）同樣只能由 memberId 本人放入字串。
+/// `ack:<taskId>:<memberId>`（任務回應，v0.26，D50）同樣只能由 memberId 本人放入字串；
+/// `log:<taskId>:<ULID>:<memberId>`、`report:<taskId>:<memberId>`（D53，v0.33）亦同。
 pub fn own_profile_only(change: &Change, author: &MemberId) -> bool {
     use automerge::ScalarValue;
     use automerge::legacy::{Key, ObjectId, OpType};
@@ -61,7 +62,9 @@ pub fn own_profile_only(change: &Change, author: &MemberId) -> bool {
             (ObjectId::Root, Key::Map(k)) if k.starts_with("profile:") => {
                 *k == mine && !op.insert && matches!(&op.action, OpType::Put(ScalarValue::Str(_)))
             }
-            (ObjectId::Root, Key::Map(k)) if k.starts_with("ack:") => {
+            (ObjectId::Root, Key::Map(k))
+                if k.starts_with("ack:") || k.starts_with("log:") || k.starts_with("report:") =>
+            {
                 k.ends_with(&ack_suffix)
                     && k.len() <= 128
                     && !op.insert

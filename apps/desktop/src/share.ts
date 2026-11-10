@@ -197,6 +197,32 @@ async function persist() {
   }
 }
 
+// ── 結案報告的附件（D53，technical-design §16.8 v0.29） ──────────
+
+const TASK_TARGET = 'task:';
+/** 上傳完成、尚未寫入報告的附件（依任務；只在記憶體） */
+const taskDone = new Map<string, Attachment[]>();
+
+/** 結案附件的上傳目標：`task:<team>/<id>`（與對話 id 分開）。 */
+export const taskTarget = (team: string, task: string) => `${TASK_TARGET}${team}/${task}`;
+export const isTaskTarget = (target: string) => target.startsWith(TASK_TARGET);
+
+const NONE: Attachment[] = [];
+
+export const taskAttachments = {
+  get: (target: string): Attachment[] => taskDone.get(target) ?? NONE,
+  remove(target: string, index: number) {
+    const list = [...(taskDone.get(target) ?? [])];
+    list.splice(index, 1);
+    taskDone.set(target, list);
+    emit();
+  },
+  clear(target: string) {
+    taskDone.delete(target);
+    emit();
+  },
+};
+
 export function validateSizes(sizes: number[]): string | null {
   return sizes.some((s) => s > MAX_FILE_SIZE) ? 'tooLarge' : null;
 }
@@ -330,7 +356,12 @@ function run(job: UploadJob) {
       const attachment = await finish(job, nodes, ctl);
       job.current = '';
       emit();
-      await api.sendMessage(job.conv, '', [], [attachment]);
+      if (isTaskTarget(job.conv)) {
+        // 結案報告的附件（D53）：不送訊息，交給結案對話框
+        taskDone.set(job.conv, [...(taskDone.get(job.conv) ?? []), attachment]);
+      } else {
+        await api.sendMessage(job.conv, '', [], [attachment]);
+      }
       jobs.delete(job.id);
       controls.delete(job.id);
       emit();

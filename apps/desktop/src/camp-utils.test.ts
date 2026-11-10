@@ -47,6 +47,8 @@ const task = (steps: Task['steps']): Task => ({
   teamGoalId: null,
   ack: null,
   pendingAck: false,
+  brief: null,
+  acceptance: [],
 });
 
 const member = (

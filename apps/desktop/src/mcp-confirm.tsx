@@ -38,6 +38,9 @@ const ACTION: Record<McpPreview['action'], MessageKey> = {
   createKbCategory: 'mcp.action.createKbCategory',
   createKbTopic: 'mcp.action.createKbTopic',
   renameKb: 'mcp.action.renameKb',
+  taskLog: 'mcp.action.taskLog',
+  closeTask: 'mcp.action.closeTask',
+  reopenTask: 'mcp.action.reopenTask',
 };
 
 function ChangeCard({ c, members }: { c: McpChange; members: MemberView[] }) {

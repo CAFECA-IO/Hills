@@ -184,9 +184,55 @@ pub fn all() -> Vec<ToolDef> {
                     "status": { "type": "string", "enum": ["todo", "doing", "review", "done"] },
                     "dueAt": { "type": "integer", "description": "ms" },
                     "planItemId": { "type": "string", "description": "Week goal id." },
-                    "steps": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "assignee": { "type": "string" }, "done": { "type": "boolean" } }, "required": ["title"] } }
+                    "steps": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "assignee": { "type": "string" }, "done": { "type": "boolean" } }, "required": ["title"] } },
+                    "brief": { "type": "string", "description": "Handover notes (Markdown, ≤ 8 KB). Omit to keep; empty string clears." },
+                    "acceptance": { "type": "array", "description": "Done criteria (≤ 20, each 1–200 chars). Omit to keep; keep `id` of existing ones.", "items": { "type": "object", "properties": { "id": { "type": "string" }, "text": { "type": "string" } }, "required": ["text"] } }
                 }),
                 &["team", "title"],
+            ),
+        },
+        ToolDef {
+            name: "propose_task_log",
+            kind: Kind::Write,
+            description: "Propose adding an entry to a task's progress log: `start`, `progress` (optional `percent` 0–100) or `question` by the assignee, or `answer` by any team member. Needs approval in Hills.",
+            schema: obj(
+                json!({
+                    "team": { "type": "string" },
+                    "task": { "type": "string" },
+                    "kind": { "type": "string", "enum": ["start", "progress", "question", "answer"] },
+                    "text": { "type": "string", "description": "Markdown, ≤ 4 KB." },
+                    "percent": { "type": "integer", "minimum": 0, "maximum": 100 }
+                }),
+                &["team", "task", "kind"],
+            ),
+        },
+        ToolDef {
+            name: "propose_task_close",
+            kind: Kind::Write,
+            description: "Propose closing a task with a closing report (assignee only). The report follows hills-doc/1: Markdown `## 結果摘要 {#summary}` is required, plus `## 完成條件對照 {#criteria}` when the task has done criteria; optional `outputs`, `issues`, `next` and custom `x-` sections. `criteria` maps each done criterion id to met / note. Attachments cannot be added through MCP; the user can add them in Hills. Needs approval in Hills.",
+            schema: obj(
+                json!({
+                    "team": { "type": "string" },
+                    "task": { "type": "string" },
+                    "format": { "type": "string", "enum": ["markdown", "html"] },
+                    "body": { "type": "string", "description": "Report, ≤ 64 KB." },
+                    "criteria": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "met": { "type": "boolean" }, "note": { "type": "string" } }, "required": ["id", "met"] } },
+                    "refs": { "type": "array", "items": { "type": "string" }, "description": "Knowledge item keys produced by this task." }
+                }),
+                &["team", "task", "body"],
+            ),
+        },
+        ToolDef {
+            name: "propose_task_reopen",
+            kind: Kind::Write,
+            description: "Propose sending a closed task back to in-progress with a required comment (assigner, assignee or team lead). Needs approval in Hills.",
+            schema: obj(
+                json!({
+                    "team": { "type": "string" },
+                    "task": { "type": "string" },
+                    "text": { "type": "string", "description": "Why it is sent back." }
+                }),
+                &["team", "task", "text"],
             ),
         },
         ToolDef {

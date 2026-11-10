@@ -26,6 +26,7 @@ pub mod reports;
 pub mod scrum;
 mod storage;
 mod syncproto;
+pub mod task_report;
 pub mod team;
 pub mod teams;
 

@@ -134,6 +134,56 @@ export interface Task {
   ack: TaskAck | null;
   /** 待接下：別人指派、還沒接下（D50） */
   pendingAck: boolean;
+  /** 交付說明（Markdown，D53） */
+  brief: string | null;
+  /** 完成條件（D53） */
+  acceptance: Criterion[];
+}
+
+/** 任務的一條完成條件（D53）。 */
+export interface Criterion {
+  id: string;
+  text: string;
+}
+
+export type LogKind = 'start' | 'progress' | 'question' | 'answer' | 'close' | 'reopen';
+
+/** 一筆執行紀錄（technical-design §16.8 v0.29，D53）。 */
+export interface TaskLog {
+  id: string;
+  author: string;
+  kind: LogKind;
+  text: string;
+  percent: number | null;
+  refs: string[];
+  at: number;
+}
+
+export interface CriterionResult {
+  id: string;
+  met: boolean;
+  note?: string | null;
+}
+
+/** 結案報告（hills-doc/1 結案報告規格，D53）。 */
+export interface TaskReport {
+  v: number;
+  format: DocFormat;
+  spec: string;
+  body: string;
+  criteria: CriterionResult[];
+  /** §14.2 Attachment 陣列 */
+  attachments: unknown[];
+  at: number;
+  author: string | null;
+}
+
+export interface CloseInput {
+  format: DocFormat;
+  body: string;
+  criteria: CriterionResult[];
+  attachments: unknown[];
+  refs?: string[];
 }
 
 export type AckState = 'accepted' | 'concern';
@@ -160,6 +210,10 @@ export interface TaskInput {
   planItemId?: string | null;
   /** 來源小組目標（D50） */
   teamGoalId?: string | null;
+  /** 交付說明；不傳 = 不變更，空字串 = 清除（D53） */
+  brief?: string | null;
+  /** 完成條件；不傳 = 不變更（D53） */
+  acceptance?: { id?: string | null; text: string }[] | null;
 }
 
 /** 私人任務的「小組」值（technical-design §16.8 v0.19，D46）。 */
@@ -657,7 +711,10 @@ export interface McpPreview {
     | 'unarchiveTeam'
     | 'createKbCategory'
     | 'createKbTopic'
-    | 'renameKb';
+    | 'renameKb'
+    | 'taskLog'
+    | 'closeTask'
+    | 'reopenTask';
   title?: string | null;
   level?: PlanLevel | null;
   period?: string | null;
@@ -680,7 +737,8 @@ export interface McpPreview {
   removed?: string[] | null;
   leads?: string[] | null;
   state?: 'accepted' | 'concern' | null;
-  kind?: 'category' | 'topic' | null;
+  kind?: 'category' | 'topic' | LogKind | null;
+  percent?: number | null;
   from?: string | null;
   parent?: string | null;
 }
@@ -802,6 +860,15 @@ export const api = {
   createTask: (team: string, input: TaskInput) => call<string>('create_task', { team, input }),
   updateTask: (team: string, task: string, input: TaskInput) =>
     call<void>('update_task', { team, task, input }),
+  taskLogs: (team: string, task: string) => call<TaskLog[]>('task_logs', { team, task }),
+  addTaskLog: (team: string, task: string, kind: LogKind, text: string, percent: number | null) =>
+    call<void>('add_task_log', { team, task, kind, text, percent }),
+  closeTask: (team: string, task: string, input: CloseInput) =>
+    call<void>('close_task', { team, task, input }),
+  reopenTask: (team: string, task: string, text: string) =>
+    call<void>('reopen_task', { team, task, text }),
+  taskReport: (team: string, task: string) =>
+    call<TaskReport | null>('task_report', { team, task }),
   setStepDone: (team: string, task: string, step: string, done: boolean) =>
     call<void>('set_step_done', { team, task, step, done }),
   deleteTask: (team: string, task: string) => call<void>('delete_task', { team, task }),

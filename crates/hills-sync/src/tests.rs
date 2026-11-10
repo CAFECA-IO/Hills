@@ -227,6 +227,19 @@ fn team_profile_only_by_owner() {
         v.check("team/t1", &forged).unwrap_err(),
         SyncError::NotOwnProfile
     );
+    // 執行紀錄與結案報告（D53）：只能寫自己的
+    for key in [
+        format!("log:t1:01ABC:{alice}"),
+        format!("report:t1:{alice}"),
+    ] {
+        let own = put(&mut doc, key.clone(), &w.alice.1);
+        assert!(v.check("team/t1", &own).is_ok());
+        let forged = put(&mut doc, key, &w.bob.1);
+        assert_eq!(
+            v.check("team/t1", &forged).unwrap_err(),
+            SyncError::NotOwnProfile
+        );
+    }
 }
 
 #[test]

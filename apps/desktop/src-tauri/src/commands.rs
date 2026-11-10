@@ -764,6 +764,9 @@ pub struct TaskView {
     team_goal_id: Option<String>,
     ack: Option<hills_node::Ack>,
     pending_ack: bool,
+    /// 交付說明與完成條件（D53）
+    brief: Option<String>,
+    acceptance: Vec<hills_node::team::Criterion>,
 }
 
 impl From<Task> for TaskView {
@@ -775,6 +778,8 @@ impl From<Task> for TaskView {
             team_goal_id: t.team_goal_id.clone(),
             ack: t.ack.clone(),
             pending_ack,
+            brief: t.brief.clone(),
+            acceptance: t.acceptance.clone(),
             id: t.id,
             team: t.team,
             title: t.title,
@@ -824,6 +829,11 @@ pub struct TaskArgs {
     plan_item_id: Option<String>,
     #[serde(default)]
     team_goal_id: Option<String>,
+    /// 交付說明與完成條件（D53）
+    #[serde(default)]
+    brief: Option<String>,
+    #[serde(default)]
+    acceptance: Option<Vec<hills_node::team::CriterionInput>>,
 }
 
 impl TaskArgs {
@@ -847,8 +857,64 @@ impl TaskArgs {
                 .collect::<CmdResult<_>>()?,
             plan_item_id: self.plan_item_id,
             team_goal_id: self.team_goal_id,
+            brief: self.brief,
+            acceptance: self.acceptance,
         })
     }
+}
+
+/// 任務的執行紀錄（D53）。
+#[tauri::command]
+pub async fn task_logs(
+    state: State<'_, AppState>,
+    team: String,
+    task: String,
+) -> CmdResult<Vec<hills_node::task_report::TaskLog>> {
+    with_node!(state, n => n.task_logs(&team, &task).map_err(e))
+}
+
+/// 寫一筆紀錄：start / progress / question / answer（D53）。
+#[tauri::command]
+pub async fn add_task_log(
+    state: State<'_, AppState>,
+    team: String,
+    task: String,
+    kind: hills_node::task_report::LogKind,
+    text: String,
+    percent: Option<u8>,
+) -> CmdResult<()> {
+    with_node!(state, n => n.add_task_log(&team, &task, kind, &text, percent).await.map_err(e))
+}
+
+/// 結案：寫報告、任務完成、寫結案紀錄（D53）。
+#[tauri::command]
+pub async fn close_task(
+    state: State<'_, AppState>,
+    team: String,
+    task: String,
+    input: hills_node::task_report::CloseInput,
+) -> CmdResult<()> {
+    with_node!(state, n => n.close_task(&team, &task, input).await.map_err(e))
+}
+
+/// 退回：任務回到進行中、寫退回紀錄（D53）。
+#[tauri::command]
+pub async fn reopen_task(
+    state: State<'_, AppState>,
+    team: String,
+    task: String,
+    text: String,
+) -> CmdResult<()> {
+    with_node!(state, n => n.reopen_task(&team, &task, &text).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn task_report(
+    state: State<'_, AppState>,
+    team: String,
+    task: String,
+) -> CmdResult<Option<hills_node::task_report::TaskReport>> {
+    with_node!(state, n => n.task_report(&team, &task).map_err(e))
 }
 
 /// 負責人回應指派（D50）。

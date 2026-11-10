@@ -10,6 +10,10 @@ import type {
   MemberProfile,
   MemberView,
   NotifyPrefs,
+  CloseInput,
+  LogKind,
+  TaskLog,
+  TaskReport,
   OnboardArgs,
   OnboardStatus,
   Overview,
@@ -154,6 +158,9 @@ interface MockTask {
   assignedAt?: number | null;
   teamGoalId?: string | null;
   ack?: { state: 'accepted' | 'concern'; note?: string; at: number } | null;
+  // 交付說明與完成條件（D53）
+  brief?: string | null;
+  acceptance?: { id: string; text: string }[];
 }
 const st = (id: string, title: string, assignee: string | null, done = false): MockStep => ({
   id,
@@ -244,7 +251,7 @@ let tasks: MockTask[] = [
       ['t25', '確認 A3 資料來源', 'mem-b', 'mem-b', 1, null],
       ['t26', '擴充介面規格 v0.1', null, null, 6, null],
       ['t27', '製程流程圖初稿', null, null, 1, null],
-      ['t28', '設施清冊整理', 'mem-me', 'mem-b', 2, null],
+      ['t28', '設施清冊整理', 'mem-me', 'mem-b', -1, null],
       ['t29', '可觀測數據清單', 'mem-a', 'mem-me', 5, { state: 'accepted', at: now0 }],
     ] as const
   ).map(([id, title, assignee, by, days, ack]): MockTask => ({
@@ -265,6 +272,40 @@ let tasks: MockTask[] = [
     ack,
   })),
 ];
+// 執行紀錄與結案報告（D53）
+const taskLogs: (TaskLog & { task: string })[] = [
+  {
+    task: 't25',
+    id: '1',
+    author: 'mem-b',
+    kind: 'start',
+    text: '',
+    percent: null,
+    refs: [],
+    at: now0 - 7200_000,
+  },
+  {
+    task: 't25',
+    id: '2',
+    author: 'mem-b',
+    kind: 'progress',
+    text: '已聯絡兩個資料來源',
+    percent: 40,
+    refs: [],
+    at: now0 - 3600_000,
+  },
+  {
+    task: 't25',
+    id: '3',
+    author: 'mem-b',
+    kind: 'question',
+    text: 'A3 的 API 需要誰申請？',
+    percent: null,
+    refs: [],
+    at: now0 - 1800_000,
+  },
+];
+const taskReports = new Map<string, TaskReport>();
 /** 待接下：別人指派、還沒接下（D50） */
 const withAck = (t: MockTask) => ({
   ...t,
@@ -272,6 +313,8 @@ const withAck = (t: MockTask) => ({
   assignedAt: t.assignedAt ?? null,
   teamGoalId: t.teamGoalId ?? null,
   ack: t.ack ?? null,
+  brief: t.brief ?? null,
+  acceptance: t.acceptance ?? [],
   pendingAck: Boolean(
     t.assignee &&
     t.assignedBy &&
@@ -1347,6 +1390,11 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
         assignedBy: input.assignee ? state.me : null,
         assignedAt: input.assignee ? Date.now() : null,
         teamGoalId: input.teamGoalId ?? null,
+        brief: input.brief || null,
+        acceptance: (input.acceptance ?? []).map((c, i) => ({
+          id: c.id || `${id}-c${i}`,
+          text: c.text,
+        })),
         createdBy: state.me,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -1362,6 +1410,11 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
         ? {
             ...x,
             ...input,
+            brief:
+              input.brief === undefined || input.brief === null ? x.brief : input.brief || null,
+            acceptance: input.acceptance
+              ? input.acceptance.map((c, i) => ({ id: c.id || `${x.id}-c${i}`, text: c.text }))
+              : x.acceptance,
             status: input.status ?? x.status,
             doneAt: x.doneAt ?? null,
             planItemId: input.planItemId ?? null,
@@ -1393,6 +1446,73 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     }
     touch();
   },
+  task_logs: (a) =>
+    taskLogs
+      .filter((l) => l.task === a.task)
+      .map((l) => {
+        const { task, ...rest } = l;
+        void task;
+        return rest;
+      }),
+  add_task_log: (a) => {
+    taskLogs.push({
+      task: String(a.task),
+      id: String(Date.now()),
+      author: state.me,
+      kind: a.kind as LogKind,
+      text: String(a.text ?? ''),
+      percent: (a.percent as number | null) ?? null,
+      refs: [],
+      at: Date.now(),
+    });
+    touch();
+  },
+  close_task: (a) => {
+    const task = tasks.find((x) => x.id === a.task);
+    if (!task) throw new Error('找不到任務');
+    const input = a.input as CloseInput;
+    if (!/\{#summary\}|data-section="summary"/.test(input.body))
+      throw new Error('缺少段落：summary');
+    taskReports.set(task.id, {
+      v: 1,
+      spec: 'hills-doc/1',
+      ...input,
+      at: Date.now(),
+      author: state.me,
+    });
+    task.status = 'done';
+    task.doneAt = Date.now();
+    taskLogs.push({
+      task: task.id,
+      id: String(Date.now()),
+      author: state.me,
+      kind: 'close',
+      text: '',
+      percent: null,
+      refs: [],
+      at: Date.now(),
+    });
+    touch();
+  },
+  reopen_task: (a) => {
+    const task = tasks.find((x) => x.id === a.task);
+    if (!task) throw new Error('找不到任務');
+    if (!String(a.text ?? '').trim()) throw new Error('請輸入內容');
+    task.status = 'doing';
+    task.doneAt = null;
+    taskLogs.push({
+      task: task.id,
+      id: String(Date.now()),
+      author: state.me,
+      kind: 'reopen',
+      text: String(a.text),
+      percent: null,
+      refs: [],
+      at: Date.now(),
+    });
+    touch();
+  },
+  task_report: (a) => taskReports.get(String(a.task)) ?? null,
   delete_task: (a) => {
     tasks = tasks.filter((x) => x.id !== a.task);
     touch();
@@ -1404,9 +1524,9 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
         (x.assignee === state.me || x.steps.find((y) => !y.done)?.assignee === state.me),
     );
     const manual = open.find((x) => x.id === manualFocus);
-    if (manual) return { task: manual, manual: true };
+    if (manual) return { task: withAck(manual), manual: true };
     const pick = [...open].sort((p, q) => (p.dueAt ?? Infinity) - (q.dueAt ?? Infinity))[0];
-    return { task: pick ?? null, manual: false };
+    return { task: pick ? withAck(pick) : null, manual: false };
   },
   set_focus: (a) => {
     manualFocus = (a.task as string | null) ?? null;

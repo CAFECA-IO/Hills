@@ -20,6 +20,9 @@ import { loadOf, loads, sortByLoad } from './assign-utils';
 import { periodsAt, weekGoalOptions } from './goals-utils';
 import { useLoad } from './hooks';
 import { formatClock, t } from './i18n';
+import { TaskCloseDialog } from './task-close';
+import { TaskDetail } from './task-detail';
+import { canClose, closeIsPrimary } from './task-utils';
 import {
   Badge,
   Button,
@@ -31,11 +34,13 @@ import {
   ErrorText,
   Field,
   IconButton,
+  MarkdownEditor,
   Pressable,
   ProgressBar,
   SegmentedControl,
   Select,
   TextInput,
+  Toast,
   useAction,
 } from './ui';
 
@@ -98,6 +103,8 @@ export function Tasks({
   const [boardTeam, setBoardTeam] = useState('');
   const team = myTeams.find((x) => x.id === boardTeam) ?? myTeams[0];
   const [breakdown, setBreakdown] = useState(false);
+  const [closing, setClosing] = useState<Task | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const canBreak = Boolean(team && (isAdmin || (me && team.leads.includes(me.id))));
   const nameOf = (id: string | null) =>
     id ? (members.find((m) => m.id === id)?.name ?? '?') : t('home.unassigned');
@@ -168,6 +175,14 @@ export function Tasks({
           onClose={() => setEditing(null)}
         />
       )}
+      {closing && (
+        <TaskCloseDialog
+          task={closing}
+          onClose={() => setClosing(null)}
+          onDone={() => setToast(t('close.done', { title: closing.title }))}
+        />
+      )}
+      {toast && <Toast key={toast} message={toast} onClose={() => setToast(null)} />}
       {view === 'board' &&
         (team ? (
           <AssignBoard
@@ -203,7 +218,11 @@ export function Tasks({
                   linked={Boolean(x.planItemId)}
                   isFocus={focus?.task?.id === x.id}
                   nameOf={nameOf}
+                  me={me?.id ?? ''}
+                  members={members}
+                  teams={teams}
                   onEdit={() => setEditing(x)}
+                  onClose={() => setClosing(x)}
                 />
               ))}
             </ul>
@@ -220,14 +239,22 @@ function TaskRow({
   linked,
   isFocus,
   nameOf,
+  me,
+  members,
+  teams,
   onEdit,
+  onClose,
 }: {
   task: Task;
   goal: PlanView | null;
   linked: boolean;
   isFocus: boolean;
   nameOf: (id: string | null) => string;
+  me: string;
+  members: MemberView[];
+  teams: TeamView[];
   onEdit: () => void;
+  onClose: () => void;
 }) {
   const [open, setOpen] = useState(isFocus);
   const { error, attempt } = useAction();
@@ -271,29 +298,49 @@ function TaskRow({
             {done} / {task.steps.length}
           </span>
         )}
+        {canClose(task, me) && (
+          <Button
+            variant={closeIsPrimary(task, me) ? 'primary' : 'secondary'}
+            size="sm"
+            onClick={onClose}
+          >
+            {t('tasks.close')}
+          </Button>
+        )}
         <Button variant="secondary" size="sm" onClick={onEdit}>
           {t('tasks.edit')}
         </Button>
       </div>
-      {open && task.steps.length > 0 && (
-        <ol className="flex flex-col gap-1 pl-2">
-          {task.steps.map((s) => (
-            <li key={s.id}>
-              <Checkbox
-                checked={s.done}
-                onChange={(e) =>
-                  void attempt(() => api.setStepDone(task.team, task.id, s.id, e.target.checked))
-                }
-                label={
-                  <>
-                    <span className={s.done ? 'text-muted line-through' : ''}>{s.title}</span>
-                    {!priv && <span className="text-muted"> · {nameOf(s.assignee)}</span>}
-                  </>
-                }
-              />
-            </li>
-          ))}
-        </ol>
+      {open && (
+        <TaskDetail
+          task={task}
+          members={members}
+          teams={teams}
+          steps={
+            task.steps.length > 0 && (
+              <ol className="flex flex-col gap-1">
+                {task.steps.map((s) => (
+                  <li key={s.id}>
+                    <Checkbox
+                      checked={s.done}
+                      onChange={(e) =>
+                        void attempt(() =>
+                          api.setStepDone(task.team, task.id, s.id, e.target.checked),
+                        )
+                      }
+                      label={
+                        <>
+                          <span className={s.done ? 'text-muted line-through' : ''}>{s.title}</span>
+                          {!priv && <span className="text-muted"> · {nameOf(s.assignee)}</span>}
+                        </>
+                      }
+                    />
+                  </li>
+                ))}
+              </ol>
+            )
+          }
+        />
       )}
       <ErrorText message={error} />
     </li>
@@ -337,6 +384,8 @@ export function TaskDialog({
       assignee: task ? (task.assignee ?? '') : me,
       due: toLocalInput(task?.dueAt ?? null),
       planItemId: task?.planItemId ?? draft?.planItemId ?? '',
+      brief: task?.brief ?? '',
+      acceptance: task?.acceptance.map((c) => ({ id: c.id as string | null, text: c.text })) ?? [],
       steps:
         task?.steps.map((s): StepInput => ({
           id: s.id,
@@ -400,6 +449,8 @@ export function TaskDialog({
         .map((s) => (priv ? { ...s, assignee: null } : s)),
       planItemId: v.planItemId || null,
       teamGoalId: priv ? null : (task?.teamGoalId ?? draft?.teamGoalId ?? null),
+      brief: v.brief.trim() ? v.brief : '',
+      acceptance: v.acceptance.filter((c) => c.text.trim()),
     };
     let id = task?.id ?? '';
     const ok = await attempt(async () => {
@@ -490,6 +541,54 @@ export function TaskDialog({
           />
         </Field>
       </div>
+      <MarkdownEditor
+        label={t('tasks.field.brief')}
+        value={v.brief}
+        onChange={(brief) => set({ brief })}
+        rows={4}
+      />
+      <fieldset className="flex flex-col gap-2">
+        <legend className="mb-1 text-xs font-medium text-muted">
+          {t('tasks.field.acceptance')}
+        </legend>
+        {v.acceptance.map((c, i) => (
+          <div key={c.id ?? `new-${i}`} className="flex items-center gap-2">
+            <span className="w-5 shrink-0 text-right text-sm text-muted">○</span>
+            <TextInput
+              size="sm"
+              maxLength={200}
+              aria-label={t('tasks.criterion.text', { n: i + 1 })}
+              className="min-w-0 flex-1"
+              value={c.text}
+              onChange={(e) =>
+                set({
+                  acceptance: v.acceptance.map((x, j) =>
+                    j === i ? { ...x, text: e.target.value } : x,
+                  ),
+                })
+              }
+            />
+            <IconButton
+              size="sm"
+              label={t('tasks.criterion.remove')}
+              className="hover:text-danger"
+              onClick={() => set({ acceptance: v.acceptance.filter((_, j) => j !== i) })}
+            >
+              ×
+            </IconButton>
+          </div>
+        ))}
+        <div>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={v.acceptance.length >= 20}
+            onClick={() => set({ acceptance: [...v.acceptance, { id: null, text: '' }] })}
+          >
+            {t('tasks.criterion.add')}
+          </Button>
+        </div>
+      </fieldset>
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-1 text-xs font-medium text-muted">{t('tasks.field.steps')}</legend>
         {v.steps.length === 0 && <EmptyState art="none">{t('tasks.steps.empty')}</EmptyState>}

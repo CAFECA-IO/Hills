@@ -37,6 +37,8 @@ const task = (p: Partial<Task>): Task => ({
   teamGoalId: null,
   ack: null,
   pendingAck: false,
+  brief: null,
+  acceptance: [],
   ...p,
 });
 

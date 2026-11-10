@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::node::{Node, now_ms};
 use crate::org::{get_int, get_obj, get_str};
 
-const TASK_PREFIX: &str = "task:";
+pub(crate) const TASK_PREFIX: &str = "task:";
 /// 私人任務在介面與命令中的「小組」值（technical-design §16.8 v0.19）
 pub const PRIVATE_TEAM: &str = "private";
 const PROFILE_PREFIX: &str = "profile:";
@@ -22,6 +22,11 @@ const ACK_PREFIX: &str = "ack:";
 const MAX_ACK_NOTE: usize = 200;
 const FOCUS_FILE: &str = "focus";
 const MAX_STEPS: usize = 30;
+/// 交付說明上限（D53，technical-design §16.8 v0.29）
+const MAX_BRIEF: usize = 8 * 1024;
+/// 完成條件條數與每條字數上限（D53）
+const MAX_CRITERIA: usize = 20;
+const MAX_CRITERION: usize = 200;
 const MAX_TITLE: usize = 200;
 /// 外觀色盤的大小（前端 `summit.ts` 須一致；technical-design §16.8 v0.31，D56）
 pub const LOOK_PALETTE: u8 = 6;
@@ -91,6 +96,26 @@ pub struct Task {
     pub team_goal_id: Option<String>,
     /// 目前負責人有效的回應（D50）
     pub ack: Option<Ack>,
+    /// 交付說明（Markdown，D53）
+    pub brief: Option<String>,
+    /// 完成條件（D53）
+    pub acceptance: Vec<Criterion>,
+}
+
+/// 任務的一條完成條件（technical-design §16.8 v0.29，D53）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Criterion {
+    pub id: String,
+    pub text: String,
+}
+
+/// 完成條件的輸入；`id` 為空時新增。
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CriterionInput {
+    #[serde(default)]
+    pub id: Option<String>,
+    pub text: String,
 }
 
 /// 負責人對指派的回應（technical-design §16.8 v0.26）。
@@ -161,6 +186,12 @@ pub struct TaskInput {
     /// 來源小組目標（D50）；由 node 檢查存在於同一小組
     #[serde(default)]
     pub team_goal_id: Option<String>,
+    /// 交付說明（D53）；None = 不變更，空字串 = 清除（其他畫面編輯任務時不會誤刪）
+    #[serde(default)]
+    pub brief: Option<String>,
+    /// 完成條件（D53）；None = 不變更
+    #[serde(default)]
+    pub acceptance: Option<Vec<CriterionInput>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -259,6 +290,10 @@ pub fn read_tasks(doc: &AutoCommit, team: &str) -> Vec<Task> {
                 assigned_at: get_int(doc, &t, "assignedAt"),
                 team_goal_id: get_str(doc, &t, "teamGoalId").filter(|s| !s.is_empty()),
                 ack: None,
+                brief: get_str(doc, &t, "brief").filter(|s| !s.trim().is_empty()),
+                acceptance: get_str(doc, &t, "acceptance")
+                    .and_then(|raw| serde_json::from_str(&raw).ok())
+                    .unwrap_or_default(),
             })
         })
         .map(|mut t| {
@@ -287,7 +322,12 @@ pub fn put_ack(doc: &mut AutoCommit, task: &str, me: &MemberId, ack: &Ack) -> Re
 }
 
 /// 任務改成完成時寫入 `doneAt`（已有則保留），離開完成時刪除（technical-design §16.8 v0.21）。
-fn put_done_at(doc: &mut AutoCommit, t: &ObjId, status: TaskStatus, now: Timestamp) -> R<()> {
+pub(crate) fn put_done_at(
+    doc: &mut AutoCommit,
+    t: &ObjId,
+    status: TaskStatus,
+    now: Timestamp,
+) -> R<()> {
     let has = doc.get(t, "doneAt")?.is_some();
     if status == TaskStatus::Done {
         if !has {
@@ -325,6 +365,19 @@ fn validate(input: &TaskInput) -> Result<()> {
         .any(|s| s.title.trim().is_empty() || s.title.chars().count() > MAX_TITLE)
     {
         bail!("步驟名稱需為 1–{MAX_TITLE} 字");
+    }
+    if input.brief.as_ref().is_some_and(|b| b.len() > MAX_BRIEF) {
+        bail!("交付說明最多 8 KB");
+    }
+    let acceptance = input.acceptance.as_deref().unwrap_or_default();
+    if acceptance.len() > MAX_CRITERIA {
+        bail!("完成條件最多 {MAX_CRITERIA} 條");
+    }
+    if acceptance.iter().any(|c| {
+        let n = c.text.trim().chars().count();
+        n == 0 || n > MAX_CRITERION
+    }) {
+        bail!("每條完成條件需為 1–{MAX_CRITERION} 字");
     }
     Ok(())
 }
@@ -426,6 +479,35 @@ pub fn write_task(
         if s.done {
             let at = prev.and_then(|p| p.done_at).unwrap_or(now);
             doc.put(&m, "doneAt", at)?;
+        }
+    }
+    if let Some(b) = input.brief.as_deref().map(str::trim) {
+        if b.is_empty() {
+            if doc.get(&t, "brief")?.is_some() {
+                doc.delete(&t, "brief")?;
+            }
+        } else {
+            doc.put(&t, "brief", b)?;
+        }
+    }
+    if let Some(acceptance) = &input.acceptance {
+        if acceptance.is_empty() {
+            if doc.get(&t, "acceptance")?.is_some() {
+                doc.delete(&t, "acceptance")?;
+            }
+        } else {
+            let mut list = Vec::with_capacity(acceptance.len());
+            for c in acceptance {
+                let id = match &c.id {
+                    Some(x) if !x.is_empty() => x.clone(),
+                    _ => step_id()?,
+                };
+                list.push(Criterion {
+                    id,
+                    text: c.text.trim().to_owned(),
+                });
+            }
+            doc.put(&t, "acceptance", serde_json::to_string(&list)?)?;
         }
     }
     doc.put(&t, "updatedAt", now)?;
@@ -560,7 +642,7 @@ struct FocusChoice {
 
 // ---------- Node API ----------
 
-fn team_doc(team: &str) -> String {
+pub(crate) fn team_doc(team: &str) -> String {
     format!("team/{team}")
 }
 
@@ -573,7 +655,7 @@ impl Node {
         self.org().teams_of(&self.member_id())
     }
 
-    fn ensure_my_team(&self, team: &str) -> Result<()> {
+    pub(crate) fn ensure_my_team(&self, team: &str) -> Result<()> {
         if team == PRIVATE_TEAM {
             return Ok(());
         }
@@ -584,7 +666,7 @@ impl Node {
     }
 
     /// 任務所在的文件：小組任務 `team/<id>`，私人任務 `member/<me>/tasks`。
-    fn task_doc(&self, team: &str) -> String {
+    pub(crate) fn task_doc(&self, team: &str) -> String {
         if team == PRIVATE_TEAM {
             private_tasks_doc(&self.member_id())
         } else {
@@ -891,6 +973,8 @@ mod tests {
         let input = TaskInput {
             plan_item_id: None,
             team_goal_id: None,
+            brief: None,
+            acceptance: None,
             title: " Windows 驗收 ".into(),
             assignee: Some(B),
             status: None,
@@ -920,6 +1004,8 @@ mod tests {
         let mut edit = TaskInput {
             plan_item_id: None,
             team_goal_id: None,
+            brief: None,
+            acceptance: None,
             title: "Windows 驗收".into(),
             assignee: Some(B),
             status: Some(TaskStatus::Doing),
@@ -951,6 +1037,49 @@ mod tests {
         assert_eq!(read_tasks(&doc, "general")[0].status, TaskStatus::Doing);
         delete_task(&mut doc, "t1").unwrap();
         assert!(read_tasks(&doc, "general").is_empty());
+    }
+
+    #[test]
+    fn brief_and_acceptance_kept_unless_given() {
+        let mut doc = AutoCommit::new();
+        let mut input = TaskInput {
+            title: "交付".into(),
+            brief: Some("## 背景\n說明".into()),
+            acceptance: Some(vec![CriterionInput {
+                id: None,
+                text: "通過測試".into(),
+            }]),
+            ..Default::default()
+        };
+        write_task(&mut doc, "t", &input, &A, 1, &mut ids()).unwrap();
+        let t = read_tasks(&doc, "g").pop().unwrap();
+        assert_eq!(t.brief.as_deref(), Some("## 背景\n說明"));
+        assert_eq!(t.acceptance.len(), 1);
+        let cid = t.acceptance[0].id.clone();
+        // 其他畫面只改標題：不傳 brief / acceptance → 保留
+        input.title = "交付 v2".into();
+        input.brief = None;
+        input.acceptance = None;
+        write_task(&mut doc, "t", &input, &A, 2, &mut ids()).unwrap();
+        let t = read_tasks(&doc, "g").pop().unwrap();
+        assert_eq!(t.acceptance[0].id, cid);
+        assert!(t.brief.is_some());
+        // 空字串與空清單 → 清除
+        input.brief = Some("  ".into());
+        input.acceptance = Some(vec![]);
+        write_task(&mut doc, "t", &input, &A, 3, &mut ids()).unwrap();
+        let t = read_tasks(&doc, "g").pop().unwrap();
+        assert!(t.brief.is_none() && t.acceptance.is_empty());
+        // 上限
+        input.acceptance = Some(
+            (0..21)
+                .map(|i| CriterionInput {
+                    id: None,
+                    text: format!("c{i}"),
+                })
+                .collect(),
+        );
+        assert!(write_task(&mut doc, "t", &input, &A, 4, &mut ids()).is_err());
     }
 
     #[test]
@@ -1006,6 +1135,8 @@ mod tests {
             assigned_at: None,
             team_goal_id: None,
             ack: None,
+            brief: None,
+            acceptance: vec![],
         }
     }
 

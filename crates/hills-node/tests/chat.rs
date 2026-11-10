@@ -318,6 +318,8 @@ async fn conversation_task_link() {
     let input = |title: &str| hills_node::team::TaskInput {
         plan_item_id: None,
         team_goal_id: None,
+        brief: None,
+        acceptance: None,
         title: title.into(),
         assignee: None,
         status: None,

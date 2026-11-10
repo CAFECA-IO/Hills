@@ -278,7 +278,7 @@ pub fn read_items(doc: &AutoCommit) -> Vec<KbItem> {
 }
 
 /// 前端應已清理；這裡擋下明顯未清理的內容（腳本、事件屬性、javascript: 連結）。
-fn has_active_html(body: &str) -> bool {
+pub(crate) fn has_active_html(body: &str) -> bool {
     let l = body.to_ascii_lowercase();
     l.contains("<script")
         || l.contains("javascript:")

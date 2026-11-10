@@ -117,6 +117,20 @@ export function previewLines(p: McpPreview, members: MemberView[]): string[] {
           .filter(Boolean)
           .join(' · '),
       ];
+    case 'taskLog':
+      return [
+        [
+          p.title ? t('mcp.preview.title', { title: p.title }) : '',
+          p.kind && p.kind !== 'category' && p.kind !== 'topic' ? t(`tlog.kind.${p.kind}`) : '',
+          p.percent != null ? `${p.percent}%` : '',
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        p.text ?? '',
+      ];
+    case 'closeTask':
+    case 'reopenTask':
+      return [p.title ? t('mcp.preview.title', { title: p.title }) : '', p.text ?? ''];
     case 'renameKb':
       return [t('mcp.preview.renameFrom', { from: p.from ?? '', title: p.title ?? '' })];
     default:

@@ -1,6 +1,6 @@
 # Hills 設計系統
 
-> 版本：v0.8 · 2026-11-10 · 對應 [feature-plan.md](./feature-plan.md) v1.38（D22、D40、D43、D45、D47、D56、D58）
+> 版本：v0.9 · 2026-11-10 · 對應 [feature-plan.md](./feature-plan.md) v1.42（D22、D40、D43、D45、D47、D56、D58、D59）
 > 本文件定義視覺基礎：原則、token、字級、間距、圓角、陰影、層級、動態、無障礙、圖示與列印。通用元件的規格見 [components.md](./components.md)；畫面結構與流程見 [ui-spec.md](./ui-spec.md)。
 > 實作來源：`apps/desktop/src/styles/tokens.css`（token）、`apps/desktop/src/ui/`（元件）。三者不一致時以本文件為準，並修正程式碼。
 
@@ -48,6 +48,7 @@
 | 啟動動畫 | `--hills-boot-flame-out/-mid/-in`、`--hills-boot-log`、`--hills-boot-glow`（v0.5） | 啟動動畫 F 的營火、木柴、火光（§9） | 只用於啟動動畫；其餘版本重用山景、星空、羅盤、角色、狀態 token |
 | 方向羅盤 | `--hills-drift-floor`、`--hills-drift-floor-edge`、`--hills-drift-zone`（`fill-drift-*`） | 方向羅盤的地面、地面厚度、「在路上」扇形（§9） | 狀態另用 `primary`（在路上）、`warning`（可能偏離）、`muted`（太久沒更新）、`level-year`（小組方向），一律搭配形狀與文字 |
 | 頭像底色（v0.8，D58） | `--hills-avatar-0…6` | 圓形頭像的底色 | 由成員 ID 決定；只用於頭像 |
+| 往山丘走（v0.9，D59） | `--hills-hill-path`、`--hills-hill-path-edge`、`--hills-hill-ground`、`--hills-trail` | 小組方向山丘場景的小路、小路邊線、草地、足跡（§9） | 重用山景 token；角色狀態另用 `st-online`（在路上）、`primary`（走太慢）、`warning`（方向歪了）、`danger`（往後退）、`muted`（停下來），一律搭配形狀與文字 |
 | 角色 | `--hills-ink*`、`--hills-cloud`、`--hills-sun*`、`--hills-moon*`、`--hills-roof`、`--hills-laptop*`、`--hills-shirt-0…5`、`--hills-look-<kind>-<part>-0…5`（v0.7，D56） | 七種角色與天空裝飾 | 只用於 `characters.tsx`、`figures.tsx` 等插畫；`kind` 為 `man`、`woman`、`cat`、`dog`、`elephant`、`sheep`、`tiger`，`part` 為 `a`（部位 1）、`c`（部位 3），衣服共用 `--hills-shirt-*`；成員從色盤選擇（`team.rs` 的 `LOOK_PALETTE` = 6）；角色固定色（筆電、腳底、口鼻白、眼睛、腮紅）用 `--hills-char-*` |
 | 晨光山丘（v0.7，D56） | `--hills-dawn-top/-upper/-lower/-bottom`、`--hills-dawn-sun`、`--hills-dawn-hill-far/-mid/-near` | 設定頁背景；深色模式為夜晚（沿用星空 token 的色調） | 只用於背景插畫 |
 | 毛玻璃（v0.7，D56） | `--hills-glass`、`--hills-glass-strong`、`--hills-glass-line`、`--hills-glass-shadow`；`backdrop-blur` 18 px | `GlassPanel`、`GlassScope` 內的 `Card`、設定頁的分組膠囊與箭頭 | 只放在插畫背景上；模糊畫在內容後面的兄弟層（`GlassLayer`），不要把 `backdrop-filter` 加在含對話框的容器上（會讓 `position: fixed` 錯位）；玻璃上的文字用 `text` / `muted` 並確保 ≥ 4.5 : 1；`prefers-reduced-transparency: reduce` 時改為 `surface` 實色、不模糊 |
@@ -189,6 +190,17 @@ ui-spec「目標 → 團隊」D7 等畫面的資料視覺：
 - **三種尺寸**：完整版（D7，含標籤與人像）、「我」版（只畫我與小組，右欄）、迷你版（110 × 52，只有圓點，小組列）。
 - 人像是按鈕：滑過 / 聚焦放大 8% 並顯示 `Tooltip`；`prefers-reduced-motion` 時不做動畫。
 - 圖上一律有文字（名字、偏幾度、今天應到 N%），顏色不是唯一的訊息。
+
+### 往山丘走（v0.9，D59）
+
+ui-spec「工作 › 小組 › 方向」的遊戲畫面，取代方向羅盤作為小組方向的預設呈現（羅盤保留給「你的方向」小卡）：
+
+- **場景**：天空、遠山（`hill-far`）、正前方的主山（`mountain`，雪頂與小組目標旗子，旗色 `level-year`）；草地（`hill-ground`）上一條往山頂收窄的小路（`hill-path`，兩側虛線 `hill-path-edge`），代表偏 45° 以內；橫越小路的虛線是「今天應到」，右端帶深色標籤；底部「季初出發」。
+- **角色**：D56 的角色（頭肩到腳），越遠越小（依 y 縮放 0.7–1）；腳下地面陰影。位置：往前 = 季目標進度（`quarterProgress`），左右 = 角度（離開小路 = 偏 45° 以上）。
+- **狀態**（形狀 + 文字 + 顏色，不只靠顏色）：在路上（頭上綠色 ▲ 小旗）、走太慢 ▼（`primary` 標籤，足跡很密）、方向歪了 ▲（`warning` 標籤，足跡走出小路、身體朝側邊）、往後退 ↓（`danger` 標籤，朝起點走）、停下來 ◷（`muted` 灰色角色與「z z」）；休假的人在左上角的雲上，不列入。
+- **足跡**：前三週的位置以 3–3.5 px 圓點（`trail`，越舊越淡）連到現在的位置；「四週足跡」開關可關。
+- 角色是按鈕：滑過 / 聚焦放大 8% 並顯示摘要 `Tooltip`；`prefers-reduced-motion` 時角色不做踏步動畫。
+- 場景上一律有名字與狀態文字；「用表格看」切到表格檢視（四項檢查與四週趨勢），作為無障礙替代。
 
 ## 10. 列印
 

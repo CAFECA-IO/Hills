@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.33 草案 · 2026-11-10 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.34 草案 · 2026-11-10 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -104,6 +104,7 @@ CAFECA 帳戶（chainId + 身分合約地址 account，由使用者的 Passkey /
 - DK 為每台裝置隨機產生的 Ed25519 金鑰，同時作為 iroh `SecretKey` / NodeId；私鑰永不離開裝置。
 - `DeviceCert` 保留 `expiresAt?` 欄位（M1 不設期限）。
 - OK 只用來簽發第一張管理者憑證，之後的管理操作由任一管理者 IK 簽章。OK 是信任根與災難復原用途，建立後以密碼加密匯出離線備份。
+- **v0.34（D62）**：新增成員對稱金鑰 `WK_member`（工作紀錄金鑰），封裝給本人與本人所屬各小組的負責人，**不給管理者**；由本人的裝置產生、交接與輪替（§16.18）。
 
 ### 3.2 信任鏈驗證
 
@@ -168,6 +169,8 @@ CAFECA 帳戶（chainId + 身分合約地址 account，由使用者的 Passkey /
 | `member/<id>/tasks` | 本人 | 本人 | `PK_member` | 私人任務（D46，§16.8） |
 | `member/<id>/direction` | 本人 | 全員 | `GK` | 方向摘要與對齊建議（v0.21，D47，§16.14） |
 | `member/<id>/profile` | 本人 | 全員 | `GK` | 顯示名稱、時區、工作時段（v0.31，D57，§16.17） |
+| `member/<id>/timer` | 本人 | 本人 | `PK_member` | 計時原始片段與目前計時狀態（v0.34，D62，§16.18） |
+| `member/<id>/worklog/<yyyy-mm>` | 本人 | 本人、本人所屬小組的負責人 | `WK_member` | 每天整理後的逐筆時間、週計劃快照（v0.34，D62，§16.18） |
 | `approvals/<approverId>` | 核准者本人 | 申請者、管理者 | 申請者的 `AK_member` | 核准 / 退回決定 |
 | `member/<id>/reports/<teamId>/<yyyy>` | 本人 | 該小組成員 | `TK_team` | 日 / 週報（發佈到哪些小組就寫入哪些小組，§16.13） |
 | `kb/meta` | 全體成員 | 全員 | `GK` | 知識庫的分類與主題（§16.11） |
@@ -176,6 +179,7 @@ CAFECA 帳戶（chainId + 身分合約地址 account，由使用者的 Passkey /
 - 申請與核准分屬不同寫入者的文件，申請狀態由投影層組合兩者得出，避免多人寫同一欄位造成衝突或越權。
 - `AK_member`（出勤金鑰）：每位成員一把，封裝給本人、其小組負責人與所有管理者；負責人異動時輪替。
 - `PK_member`（私人金鑰）：只封裝給本人。
+- `WK_member`（工作紀錄金鑰，v0.34，D62）：每位成員一把，封裝給本人與本人所屬各小組的負責人（不含管理者，與 `AK_member` 不同）；負責人名單變動時由本人輪替（§16.18）。
 - `GK`（組織金鑰）：封裝給全員；成員停用時輪替。
 
 ### 4.2 簽章變更與驗證層
@@ -843,6 +847,13 @@ team/<teamId> = {                                         // v0.11（D40）
   - **結案**：寫 `report:` → 任務狀態改為完成 → 寫 `close` 紀錄（refs 可帶產出的知識）。**退回**：任務改回進行中、寫 `reopen` 紀錄（text 為意見，必填）；報告保留，負責人可再結案覆寫。
   - 附件的 `fileKey` 只存在 `TK` 加密的小組文件中，小組成員都能下載；介面上傳前提示。
   - v0.33 實作：結案與退回由 node 在**同一筆 change** 內依序寫入（報告 → 狀態 / `doneAt` → 紀錄），不會只寫一半。紀錄 key 為 `log:<taskId>:<ULID>:<memberId>`，驗證層與 `ack:` 相同（key 以 `:<作者>` 結尾、長度 ≤ 128、只能放入字串）；`report:` 同。私人任務的紀錄與報告存在 `member/<id>/tasks`（只有本人）。讀取報告時取目前負責人的那份，沒有則取最新一份。
+- **v0.34（D60、D62）任務進度、預估時數與紀錄種類**：
+  - **預估時數**：`task.estimate`、`step.estimate`（分鐘，選填，15–60 000）；有步驟且步驟有預估時，任務預估 = 步驟加總（介面計算，不另存）。
+  - **任務進度**（取代上面的 D46 公式）：狀態為完成 → 100；否則 = max（完成步驟數 / 步驟數 × 100（沒有步驟時 0），負責人最新一筆帶 `percent` 的 `progress` 紀錄的百分比）。結案後被退回時，退回之後沒有新的百分比紀錄則只看步驟比例。§16.10 彙總照舊使用任務進度。
+  - **紀錄種類**新增 `step`（勾選步驟完成時由 node 自動寫入，text 為步驟標題，refs = [stepId]）、`blocked`（卡住了，text 必填）、`resolved`（已解決，refs = [被解決的 blocked 紀錄 key]）。`question` 為舊資料，介面以「卡住了」顯示；`answer` 保留為「回覆」。
+  - 誰可以寫：`blocked`：目前負責人（私人任務 = 本人）；`resolved`：負責人、指派者或小組負責人；`step`：只由 node 在步驟完成時寫入（作者 = 勾選的人）。
+  - **卡住了的狀態**：`blocked` 紀錄之後沒有指向它的 `resolved` → 「卡住中」；卡住天數 = 現在 − 紀錄時間（日）。
+  - **通知**：套用含新 `blocked` 紀錄的 change 後，若本人是該小組負責人或該任務的指派者（且不是作者），發桌機通知「〈作者〉卡住了：〈任務〉」（受 §16.17 `notify.blockers` 控制）；小組沒有負責人時通知管理者。伺服器不參與。
 - **私人任務**（v0.19，D46）：存在 `member/<id>/tasks`（`PK_member`，只有本人讀寫），結構與 `team/<id>` 的 `task:` 相同（不含 `profile:`）。介面與命令以 `teamId = "private"` 表示；負責人固定為本人、步驟沒有負責人；不出現在小組頁，不能連結到對話（§14.2）。
 - **焦點**（feature-plan §5.4）：候選（含私人任務）為指派給我、或下一個未完成步驟指派給我的未完成任務；依「期限最近 → 卡住別人（下一步負責人不是我但我負責的步驟未完成）→ 指派給我 → 建立時間」排序。手動選擇的焦點只存在本機（secret 檔 `focus`），任務完成或刪除時回到自動。
 
@@ -928,6 +939,24 @@ Blocker = { text, notified: MemberId[] }
 - **提醒**：組織預設時間存在 org 文件 `scrumReminder: "HH:MM"`（管理者可改，預設 `17:30`），個人可在本機覆寫（本機設定檔，不同步）。工作日依 §7.1；**M1 第一版在假日曆（backlog #6）與請假（#14）尚未實作前，只排除週六與週日**。當天已送出就不提醒，每天最多提醒一次。
 - v0.31（D57）：提醒時間以**本人時區**（§16.17 `timezone`，未設定時用裝置時區）解讀；不在本人 `workHours.days` 的日子不提醒（取代上面的「週六與週日」）；本人的通知偏好 `scrumReminder` 關閉時不提醒。週報提醒（§16.13）套用同樣的工作日與開關。
 
+**v0.34（D60）改名「每日任務」**：文件 key 不變（`member/<id>/scrum/<teamId>/<yyyy-mm>`，`day:<date>`），JSON 改為 v2：
+
+```
+DailyTasks JSON = { v: 2, date,
+  done:    [ { log: "<log key>" | null, ref: Ref, text?, percent? } ],   // 引用任務紀錄；手動項目 log = null
+  today:   [ Ref ],
+  blocked: [ { log: "<blocked log key>", ref: Ref, text, since } ],      // 未解決的卡住了
+  note?,                                                                  // 一句話，≤ 200 字
+  submittedAt, updatedAt }
+```
+
+- **草稿**（本機計算）：`done` = 期間內（昨天以來；週一從上週五起）我寫的 `step`、`progress`（有百分比或文字）、`close` 紀錄，以及沒有紀錄的手動完成項；`today` = 焦點、今天到期、進行中與今天排入的我的任務；`blocked` = 我負責的任務中卡住中的 `blocked` 紀錄。本人可取消勾選、補手動項目與 `note`。私人任務照舊只帶標題（`kind: "text"`）。
+- `blocked` 不再另外通知（紀錄寫入時已通知，§16.8 v0.34）。
+- 讀取 v1（`blockers`）時轉為 `blocked`（`log: null`）；v1 不再寫入。
+- 送出時一併把修正後的前一天時間寫入 worklog（§16.18）。
+- 介面名稱、提醒文字、通知偏好標籤改為「每日任務」；`scrumReminder` 欄位名稱不變。
+- **日報取消**（D60）：`report:daily:*` 不再產生；既有資料唯讀顯示。日報改由匯出產生（§16.13 v0.34）。
+
 ### 16.13 日 / 週報（v0.18，feature-plan §5.5、D32、D16）
 
 ```
@@ -949,6 +978,33 @@ Report JSON = { v: 1, kind, period,
 - **小組彙整**：把同一小組成員同期間已發佈的報表依欄位合併顯示，不另存。
 - 週五（組織時區）到 Scrum 提醒時間時，若本週週報尚未發佈，提醒一次；開啟報表頁時若沒有草稿也沒有已發佈的週報，自動產生草稿。
 - 月報、年報在 M5；AI 摘要在 M3；發佈到小組頻道在 M2（頻道上線後）。
+
+**v0.34（D61）改為「報告」**：週報 JSON v2（同一個 key `report:weekly:<YYYY-Www>`）：
+
+```
+Report JSON v2 = { v: 2, kind: "weekly", period,
+  summary,                          // 一段話；summaryEdited: bool（true 時重新產生不覆蓋）
+  summaryEdited,
+  time:     [ { project: teamGoalId | "other" | "nontask", minutes } ],          // 只到專案層級
+  projects: [ { project: teamGoalId, title, start, end, mine } ],               // 進度 0–100，mine 為我的貢獻（百分點）
+  plan:     { minutes: [ { project, planned, actual } ], tasks: { planned, done, carried } },
+  reasons:  [ { kind: "blocked" | "underestimate" | "unplanned" | "reopened" | "leave" | "other", text, minutes? } ],
+  doneMd, nextMd,                   // Markdown（做了什麼、下期）
+  publishedTo: teamId[], generatedAt, publishedAt, editedAt? }
+```
+
+- 發佈到小組（`TK_team`）的內容**只有專案層級**的時數與比例，不含逐筆時間（D62）。v1（四個 Markdown 欄位）照舊可讀。
+- **計算**（前端，依組織時區）：
+  - `time`：期間內 worklog 的分鐘數依任務 → 週目標 → … → 對齊的小組目標歸到專案；任務沒有連到小組目標 → `other`；會議、訊息與零碎 → `nontask`。組長以外的讀者只看到比例與時數合計。
+  - `projects`：專案期初 / 期末進度取自本人方向摘要（§16.14）與小組目標進度；`mine` = Σ（我對齊該小組目標的個人季目標進度變化）÷ 對齊該小組目標的個人目標數（只計讀得到的）。
+  - `plan`：計劃 = 週計劃快照（§16.18）各專案預估分鐘數；實際 = `time`；**時間偏移** = Σ|實際 − 計劃| ÷ Σ計劃；`tasks` = 快照中的件數、其中完成的件數、延到下期的件數。沒有預估的任務列為「未估」，不計入偏移。
+  - `reasons`（自動找出，本人可增刪）：卡住了（期間內卡住中的天數與受影響專案）、預估過低（實際 ≥ 1.5 × 預估）、計劃外（快照之後新增且有時間的任務）、退回重做（期間內 `reopen` 紀錄）、請假（假勤上線後）。
+  - `summary`：固定句型（投入最多的專案與時數、前進多少；其他專案、計劃外與非任務時間；完成件數、時間偏移、前兩個原因），只在本機產生，不經外部服務。
+- **延到下期**：發佈時對勾選的未完成任務一併 `update_task`（期限移到下週一同一時間；週目標改為本人下週同名週目標，沒有時建立）；在週報 `plan.tasks.carried` 記件數。
+- **只匯出的報告**（日 / 月 / 季 / 年）：本機由 worklog、任務紀錄、週報與方向摘要彙整成同樣的六段，不寫入任何文件。日報 = 當天的每日任務 + worklog；月 / 季 / 年 = 期間內每週資料加總、計劃取每週快照的加總，`projects` 期初取期間第一週的方向摘要（方向摘要只保留 8 週，更早的取當週已發佈週報的 `projects.start`）。
+- **匯出格式**：PDF（系統列印，只印報告內容）、Markdown（六段為 `##` 標題，hills-doc 以外的一般文件）、CSV（每列一筆：日期、任務、專案、分鐘、來源；小組 / 全公司範圍只輸出專案層級彙總）。
+- **範圍**：我自己；小組（該小組負責人：成員逐人時間可讀，§16.18；其他成員只有專案層級）；全公司（管理者：只用已發佈的週報，專案層級）。
+- 月報、年報的發佈（原 M5 規劃）取消；AI 摘要（M3）仍需本人確認（D17）。
 
 ### 16.14 團隊方向（v0.20，D47）
 
@@ -1004,6 +1060,11 @@ Suggestion    = { v: 1, to: memberId, planItemId, goalId, createdAt }
 - **四週軌跡與大家實際走向**（v0.22，第 4 批）：讀者端由摘要的歷史週（最多 8 週，取最近 4 週）計算每週的角度與進度；大家實際走向 = 本週 `units > 0` 的成員角度的向量平均（每人固定畫在左或右側，由成員 ID 決定）。
 - **週一方向時刻的預測**（v0.22）：只在本機計算，不寫入；預測比例 =（本週 `alignedUnits` + 選了對齊鏈週目標的未完成任務數）/（本週 `units` + 列出的未完成任務數）。按「好，開始這一週」只修改這些任務的 `planItemId`（一般的任務更新，§16.8）。
 
+
+**往山丘走**（v0.34，D59）：小組方向的預設畫面，資料與四項檢查同上，另加「往後退」：
+- **狀態**（依序判定，取第一個成立的）：停下來（第 4 項）→ 往後退（本週 `quarterProgress` 比上週低 1 個百分點以上，原因多為退回或回報百分比下降）→ 方向歪了（第 1 或第 2 項）→ 走太慢（第 3 項）→ 在路上；沒有摘要 → 還沒有資料；本人狀態為休假 → 休假（畫在雲上，不列入統計）。
+- **位置**：往前 = `quarterProgress`（0 = 起點、100 = 山頂；「今天應到」虛線 = 本季經過比例）；左右 = 角度（每人固定在左或右側，由成員 ID 決定，同大家實際走向）；足跡 = 前 3 週的位置。
+- 表格檢視列出四項檢查的數字依據與四週的 `alignedUnits / units` 長條，作為無障礙替代。
 
 ### 16.15 小組管理與小組金鑰交接（v0.25，D49）
 
@@ -1087,6 +1148,36 @@ member/<id>/secrets 另加：
   - 對同事：以對方的 `timezone` 與 `workHours` 計算現在是否在工作時段，不在時介面把該成員標為 `offHours`（前端以 `Intl` 計算，後端只回傳個人資料），名牌顯示「下班時間」，敲門提示（§16.8 延後通知）比照「專注中」。對方沒有個人資料時視為在工作時段。
 - **通知偏好**（`secrets.notify`，只有本人的裝置讀得到）：`messages`（私訊與提及）、`assigned`（被指派任務）、`blockers`（小組成員回報阻礙）、`scrumReminder`（Scrum 與週報提醒），缺少的欄位視為 `true`。「新裝置加入」（§17.6）屬於安全通知，不受偏好影響。延後通知（專注、會議、午休）照舊在前；偏好關閉的類型不會進入延後摘要。
 - **營地進度**（D56）由前端依現有資料計算，不寫入任何文件。
+
+### 16.18 計時與工作紀錄（v0.34，D62）
+
+```
+member/<id>/timer = {                                    // PK_member，只有本人
+  "running": "<JSON 字串>" | 不存在,                     // { ref: TaskRef, since, source: "start" | "focus" | "status" }
+  "seg:<yyyy-mm-dd>:<ULID>": "<JSON 字串>"               // { ref: TaskRef | { kind: "meeting" } | { kind: "other" }, start, end, source }
+}
+member/<id>/worklog/<yyyy-mm> = {                        // WK_member，本人與本人所屬小組的負責人
+  "day:<yyyy-mm-dd>": "<JSON 字串>",                     // { v: 1, entries: [ { ref, project?, minutes, source: "auto" | "edited" | "manual" } ], attendance?, updatedAt }
+  "plan:<YYYY-Www>": "<JSON 字串>"                       // { v: 1, tasks: [ { ref, estimate?, project? } ], capacity, createdAt }
+}
+TaskRef = { kind: "task", team, task, step?, title }    // 私人任務 team = "private"，worklog 中只留 title
+```
+
+- **計時**（本機，hills-node 維護 `running`，前端顯示）：
+  - 開始：任務列「開始做」、首頁焦點任務設定、狀態改為「專注」且有焦點任務。同時只有一件；開始另一件時先結束目前的片段。
+  - 暫停：狀態改為會議（之後的時間記為 `meeting` 片段）、午休、暫離、離線，或 App 結束；狀態回到上線 / 專注時，若暫停前有計時則恢復同一件。
+  - 閒置：系統閒置 15 分鐘先結束片段（end = 開始閒置的時間），回來時前端詢問是否補回（補回 = 延長片段）。
+  - 「訊息與零碎」= 出勤（或工作時段）中沒有任何片段的時間，在整理時計算，不另存片段。
+  - 片段跨午夜時切成兩段；`seg:` 保留 62 天，較舊的在整理時刪除。
+- **整理**（每天第一次啟動、送出每日任務時）：把前一天（含未整理的更早日期，最多 7 天）的片段依 TaskRef 加總為 `entries`（15 分鐘四捨五入），寫入 worklog `day:`；`project` 由任務 → 週目標 → … → 對齊的小組目標求得（找不到則省略）。本人在每日任務卡修正後覆寫同一天，修正過的項目 `source = edited`、補的 `manual`。
+- **週計劃快照**：「排這一週」按「好，開始這一週」時寫入 `plan:<week>`（任務、預估、專案，`capacity` = 本人工作時段時數 − 固定會議 − 請假）；一週只寫一次（之後再按會覆寫並記錄 `createdAt`）。週一 12:00 前沒寫的，第一次需要計劃時以「期限在這週、週一 12:00 之前就存在的我的任務」自動建立。
+- **WK_member 交接與輪替**（本人的裝置執行，同步迴圈中）：
+  - 收件人 = 本人的有效裝置 ∪ 本人所屬各小組（`team-roster`）負責人的有效裝置；沒有 WK 時由本人裝置中 DevicePub 最小的一台產生 epoch 1。
+  - 對收件人中還沒拿到的，封裝持有的全部 epoch（本機紀錄 secret 檔 `worklog-handover`，key = `收件成員 / EK / 最新 epoch`）。
+  - **輪替**：上次封裝過的負責人有人不再是本人任何小組的負責人（或本人離開了該小組）時，本人產生下一個 epoch 只封裝給目前的收件人；之後的寫入用新 epoch。舊 epoch 的文件不重新加密（卸任者仍讀得到卸任前的資料，與 TK 移出規則相同）。
+  - **接受規則**（收件端 `accept_keys`）：`member:<id>:worklog` 的封裝，簽署者必須是該成員本人的裝置。mailbox `PutKeys` 只檢查簽署者是有效成員（§16.7）。
+- **權限**：`member/<id>/timer` 只有本人讀寫（`PK_member`）；`member/<id>/worklog/*` 只有本人寫，`can_read` = 本人或「本人所屬任一小組的負責人」（直連同步回應前檢查）。驗證層：兩者都是本人文件（`DocKind::Member`，section `timer` / `worklog/<yyyy-mm>`）。
+- **介面資料**：本人看自己的 worklog 與計時狀態；負責人在「工作 › 小組」點成員時讀該成員 worklog（讀不到 = 金鑰交接中）。發佈的週報只含專案層級（§16.13 v0.34）。
 
 ### 16.9 部署（M0）
 
@@ -1287,6 +1378,10 @@ kind = `recover`，流程與加入相同（產生**新的** IK / EK / DK、`Appl
 `propose_delete_*` 與 `propose_archive_team` 標 `destructiveHint`。
 
 v0.29（D52）：`propose_kb_item` 新增 `format`（markdown | html，預設 markdown），一律以 hills-doc/1 驗證（必填段落在準備階段檢查，HTML 先清理）；新增讀取工具 `get_knowledge(key, sections?)`，回傳標題、格式、來源與 `sections`（只含要求的 key；未指定時全部）。D53 的 `propose_task_log`、`propose_task_close` 與 `propose_task` 的 `brief` / `acceptance` 隨第 2 批加入。 v0.33：新增 `propose_task_log`（kind = start / progress / question / answer，text、percent?）、`propose_task_close`（format、body、criteria；報告在準備階段以 hills-doc/1 驗證；**附件不經 MCP**）、`propose_task_reopen`（text 必填）；`propose_task` 加 `brief` / `acceptance`。權限與 app 內相同，一律待本人確認。確認卡摘要（preview）：`updateTeam` 附 `removed`（被移出的成員；有值時核准會輪替小組金鑰）；`message` 附 `to`（私訊對象 memberId）或 `conv` 與 `count`（群組人數）。
+
+v0.34（D60–D62）：
+- 讀取：`get_scrum` 改名 `get_daily_tasks`（舊名保留為別名）；`get_report` 的 `kind` 改為 daily / weekly / monthly / quarterly / yearly，回傳六段（日 / 月 / 季 / 年為即時彙整）；新增 `get_my_time(from, to)`（本人的 worklog 與目前計時，只有本人）。
+- 寫入：`propose_scrum_draft` 改名 `propose_daily_tasks`（參數：要引用的紀錄 key、手動項目、`note`；舊名保留為別名）；`propose_task_log` 的 `kind` 增加 `blocked` / `resolved`；新增 `propose_time_fix(date, entries)`（修正某天的時間，只有本人）。計時的開始 / 暫停不提供給 MCP。
 
 ### 18.4 待確認變更
 

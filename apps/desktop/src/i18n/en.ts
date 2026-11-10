@@ -1348,4 +1348,6 @@ export const en: Record<MessageKey, string> = {
   'team.online': '{online} online',
   'team.leads': 'Leads',
   'team.you': ' (you)',
+  'status.menu.label': 'My status: {state}',
+  'status.awayFor': 'Away {m} min',
 };

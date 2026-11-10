@@ -11,11 +11,11 @@ import {
   type Overview,
   type PresenceState,
 } from './api';
-import { Portrait, StatusBadge, stateLabel } from './figures';
+import { Avatar, StatusBadge, stateLabel, statusTextClass } from './figures';
 import { formatClock, formatDate, t } from './i18n';
-import { lookOf } from './summit';
 import {
   Button,
+  Chip,
   ErrorText,
   Field,
   LinkButton,
@@ -27,6 +27,8 @@ import {
 } from './ui';
 
 const UNTIL_PRESETS = [15, 30, 60] as const;
+/** 一鍵暫離（ui-spec「設定」狀態選單 v0.39）。 */
+const AWAY_QUICK = [5, 15] as const;
 
 function inLunch(lunch: Overview['lunchBreak'], now: Date): boolean {
   if (!lunch) return false;
@@ -66,10 +68,15 @@ export function StatusMenu({
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((o) => !o)}
-        className="flex flex-col items-center gap-1 rounded-control px-2 py-1 hover:bg-bg"
+        aria-label={t('status.menu.label', { state: stateLabel(me.presence) })}
+        className="flex w-15 flex-col items-center gap-1 rounded-control py-1.5 hover:bg-bg"
       >
-        <Portrait look={lookOf(me)} state={me.presence} size={52} label={t('status.menu')} />
-        <StatusBadge state={me.presence} />
+        <Avatar member={me} size={48} />
+        <span
+          className={`max-w-full truncate text-2xs font-semibold ${statusTextClass[me.presence ?? 'Offline']}`}
+        >
+          {stateLabel(me.presence)}
+        </span>
       </Pressable>
       {open && (
         <StatusPanel
@@ -106,7 +113,7 @@ function StatusPanel({
       label={t('status.menu')}
       onClose={onClose}
       anchorRef={anchorRef}
-      className="absolute bottom-0 left-full ml-3 flex w-80 flex-col gap-3 p-4"
+      className="absolute bottom-0 left-full z-20 ml-3 flex w-88 flex-col gap-3 p-4"
     >
       <StatusFields me={me} overview={overview} onDone={onClose} onCancel={onClose} />
       <LinkButton onClick={onOpenLook}>{t('status.myLook')}</LinkButton>
@@ -138,6 +145,19 @@ export function StatusFields({
   };
   return (
     <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 gap-2">
+        {AWAY_QUICK.map((m) => (
+          <Button
+            key={m}
+            variant="soft"
+            disabled={busy}
+            onClick={() => void save('Away', Date.now() + m * 60_000)}
+          >
+            <StatusBadge state="Away" withText={false} size={16} />
+            {t('status.awayFor', { m })}
+          </Button>
+        ))}
+      </div>
       {lunch && inLunch(lunch, new Date()) && state !== 'Lunch' && (
         <Button
           variant="soft"
@@ -147,22 +167,23 @@ export function StatusFields({
           {t('status.lunchNow', { end: lunch.end })}
         </Button>
       )}
-      <div className="flex flex-col gap-1">
-        <label htmlFor={ids.state} className="text-sm font-medium">
+      <div className="flex flex-col gap-1.5">
+        <span id={ids.state} className="text-sm font-medium">
           {t('team.myStatus')}
-        </label>
-        <Select
-          id={ids.state}
-          className="w-full"
-          value={state}
-          onChange={(e) => setState(e.target.value as PresenceState)}
-        >
+        </span>
+        <div role="group" aria-labelledby={ids.state} className="grid grid-cols-4 gap-1.5">
           {PRESENCE_STATES.map((s) => (
-            <option key={s} value={s}>
-              {stateLabel(s)}
-            </option>
+            <Chip
+              key={s}
+              selected={state === s}
+              onClick={() => setState(s)}
+              className="flex-col justify-center gap-1 rounded-control py-2"
+            >
+              <StatusBadge state={s} withText={false} size={18} />
+              <span className="text-xs">{stateLabel(s)}</span>
+            </Chip>
           ))}
-        </Select>
+        </div>
       </div>
       <div className="flex flex-col gap-1">
         <span id={ids.until} className="text-sm font-medium">

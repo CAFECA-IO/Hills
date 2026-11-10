@@ -1308,6 +1308,8 @@ export const zhTW = {
   'team.online': '{online} 位在線',
   'team.leads': '負責人',
   'team.you': '（你）',
+  'status.menu.label': '我的狀態：{state}',
+  'status.awayFor': '暫離 {m} 分鐘',
 } as const;
 
 export type MessageKey = keyof typeof zhTW;

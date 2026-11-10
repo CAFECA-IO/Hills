@@ -1153,14 +1153,14 @@ member/<id>/secrets 另加：
 
 ```
 member/<id>/timer = {                                    // PK_member，只有本人
-  "running": "<JSON 字串>" | 不存在,                     // { ref: TaskRef, since, source: "start" | "focus" | "status" }
-  "seg:<yyyy-mm-dd>:<ULID>": "<JSON 字串>"               // { ref: TaskRef | { kind: "meeting" } | { kind: "other" }, start, end, source }
+  "running": "<JSON 字串>" | 不存在,                     // { current: WorkRef | null（暫停）, since, source: "start" | "focus" | "status", resume?: WorkRef }
+  "seg:<ULID>": "<JSON 字串>"                            // { ref: WorkRef, start, end, source }；短於 30 秒不記
 }
 member/<id>/worklog/<yyyy-mm> = {                        // WK_member，本人與本人所屬小組的負責人
   "day:<yyyy-mm-dd>": "<JSON 字串>",                     // { v: 1, entries: [ { ref, project?, minutes, source: "auto" | "edited" | "manual" } ], attendance?, updatedAt }
   "plan:<YYYY-Www>": "<JSON 字串>"                       // { v: 1, tasks: [ { ref, estimate?, project? } ], capacity, createdAt }
 }
-TaskRef = { kind: "task", team, task, step?, title }    // 私人任務 team = "private"，worklog 中只留 title
+WorkRef = { kind: "task", team, task, step?, title } | { kind: "meeting" } | { kind: "other", title }   // 私人任務 team = "private"
 ```
 
 - **計時**（本機，hills-node 維護 `running`，前端顯示）：
@@ -1168,14 +1168,15 @@ TaskRef = { kind: "task", team, task, step?, title }    // 私人任務 team = "
   - 暫停：狀態改為會議（之後的時間記為 `meeting` 片段）、午休、暫離、離線，或 App 結束；狀態回到上線 / 專注時，若暫停前有計時則恢復同一件。
   - 閒置：系統閒置 15 分鐘先結束片段（end = 開始閒置的時間），回來時前端詢問是否補回（補回 = 延長片段）。
   - 「訊息與零碎」= 出勤（或工作時段）中沒有任何片段的時間，在整理時計算，不另存片段。
-  - 片段跨午夜時切成兩段；`seg:` 保留 62 天，較舊的在整理時刪除。
+  - 片段跨午夜時由整理時依組織時區切開；`seg:` 保留 62 天，較舊的在寫入時刪除。
+  - 週計劃快照存在週一所在月份的 worklog 文件。
 - **整理**（每天第一次啟動、送出每日任務時）：把前一天（含未整理的更早日期，最多 7 天）的片段依 TaskRef 加總為 `entries`（15 分鐘四捨五入），寫入 worklog `day:`；`project` 由任務 → 週目標 → … → 對齊的小組目標求得（找不到則省略）。本人在每日任務卡修正後覆寫同一天，修正過的項目 `source = edited`、補的 `manual`。
 - **週計劃快照**：「排這一週」按「好，開始這一週」時寫入 `plan:<week>`（任務、預估、專案，`capacity` = 本人工作時段時數 − 固定會議 − 請假）；一週只寫一次（之後再按會覆寫並記錄 `createdAt`）。週一 12:00 前沒寫的，第一次需要計劃時以「期限在這週、週一 12:00 之前就存在的我的任務」自動建立。
 - **WK_member 交接與輪替**（本人的裝置執行，同步迴圈中）：
   - 收件人 = 本人的有效裝置 ∪ 本人所屬各小組（`team-roster`）負責人的有效裝置；沒有 WK 時由本人裝置中 DevicePub 最小的一台產生 epoch 1。
   - 對收件人中還沒拿到的，封裝持有的全部 epoch（本機紀錄 secret 檔 `worklog-handover`，key = `收件成員 / EK / 最新 epoch`）。
   - **輪替**：上次封裝過的負責人有人不再是本人任何小組的負責人（或本人離開了該小組）時，本人產生下一個 epoch 只封裝給目前的收件人；之後的寫入用新 epoch。舊 epoch 的文件不重新加密（卸任者仍讀得到卸任前的資料，與 TK 移出規則相同）。
-  - **接受規則**（收件端 `accept_keys`）：`member:<id>:worklog` 的封裝，簽署者必須是該成員本人的裝置。mailbox `PutKeys` 只檢查簽署者是有效成員（§16.7）。
+  - **接受規則**（收件端 `accept_keys`）：`member:<id>:worklog` 的封裝，簽署者必須是該成員本人的裝置；mailbox `PutKeys` 同樣只接受本人封裝（比照 `PK_member`）。
 - **權限**：`member/<id>/timer` 只有本人讀寫（`PK_member`）；`member/<id>/worklog/*` 只有本人寫，`can_read` = 本人或「本人所屬任一小組的負責人」（直連同步回應前檢查）。驗證層：兩者都是本人文件（`DocKind::Member`，section `timer` / `worklog/<yyyy-mm>`）。
 - **介面資料**：本人看自己的 worklog 與計時狀態；負責人在「工作 › 小組」點成員時讀該成員 worklog（讀不到 = 金鑰交接中）。發佈的週報只含專案層級（§16.13 v0.34）。
 

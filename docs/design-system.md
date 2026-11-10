@@ -1,6 +1,6 @@
 # Hills 設計系統
 
-> 版本：v0.7 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.37（D22、D40、D43、D45、D47、D56）
+> 版本：v0.8 · 2026-11-10 · 對應 [feature-plan.md](./feature-plan.md) v1.38（D22、D40、D43、D45、D47、D56、D58）
 > 本文件定義視覺基礎：原則、token、字級、間距、圓角、陰影、層級、動態、無障礙、圖示與列印。通用元件的規格見 [components.md](./components.md)；畫面結構與流程見 [ui-spec.md](./ui-spec.md)。
 > 實作來源：`apps/desktop/src/styles/tokens.css`（token）、`apps/desktop/src/ui/`（元件）。三者不一致時以本文件為準，並修正程式碼。
 
@@ -47,6 +47,7 @@
 | 狀態 | `--hills-st-<狀態>`（徽章色）、`--hills-st-<狀態>-text`（文字色，對 surface ≥ 4.5 : 1） | Presence 徽章、狀態文字、成功 / 進行中標示 | 搭配徽章形狀與文字（ui-spec 狀態表） |
 | 啟動動畫 | `--hills-boot-flame-out/-mid/-in`、`--hills-boot-log`、`--hills-boot-glow`（v0.5） | 啟動動畫 F 的營火、木柴、火光（§9） | 只用於啟動動畫；其餘版本重用山景、星空、羅盤、角色、狀態 token |
 | 方向羅盤 | `--hills-drift-floor`、`--hills-drift-floor-edge`、`--hills-drift-zone`（`fill-drift-*`） | 方向羅盤的地面、地面厚度、「在路上」扇形（§9） | 狀態另用 `primary`（在路上）、`warning`（可能偏離）、`muted`（太久沒更新）、`level-year`（小組方向），一律搭配形狀與文字 |
+| 頭像底色（v0.8，D58） | `--hills-avatar-0…6` | 圓形頭像的底色 | 由成員 ID 決定；只用於頭像 |
 | 角色 | `--hills-ink*`、`--hills-cloud`、`--hills-sun*`、`--hills-moon*`、`--hills-roof`、`--hills-laptop*`、`--hills-shirt-0…5`、`--hills-look-<kind>-<part>-0…5`（v0.7，D56） | 七種角色與天空裝飾 | 只用於 `characters.tsx`、`figures.tsx` 等插畫；`kind` 為 `man`、`woman`、`cat`、`dog`、`elephant`、`sheep`、`tiger`，`part` 為 `a`（部位 1）、`c`（部位 3），衣服共用 `--hills-shirt-*`；成員從色盤選擇（`team.rs` 的 `LOOK_PALETTE` = 6）；角色固定色（筆電、腳底、口鼻白、眼睛、腮紅）用 `--hills-char-*` |
 | 晨光山丘（v0.7，D56） | `--hills-dawn-top/-upper/-lower/-bottom`、`--hills-dawn-sun`、`--hills-dawn-hill-far/-mid/-near` | 設定頁背景；深色模式為夜晚（沿用星空 token 的色調） | 只用於背景插畫 |
 | 毛玻璃（v0.7，D56） | `--hills-glass`、`--hills-glass-strong`、`--hills-glass-line`、`--hills-glass-shadow`；`backdrop-blur` 18 px | `GlassPanel`、`GlassScope` 內的 `Card`、設定頁的分組膠囊與箭頭 | 只放在插畫背景上；模糊畫在內容後面的兄弟層（`GlassLayer`），不要把 `backdrop-filter` 加在含對話框的容器上（會讓 `position: fixed` 錯位）；玻璃上的文字用 `text` / `muted` 並確保 ≥ 4.5 : 1；`prefers-reduced-transparency: reduce` 時改為 `surface` 實色、不模糊 |
@@ -132,6 +133,16 @@ SVG 插畫用 `var(--hills-*)` 指定 `fill` / `stroke`（`figures.tsx`、`home.
 - 圖示為自繪內嵌 SVG（`viewBox="0 0 20 20"`、線寬 1.6、圓端點），顏色用 `currentColor`；尺寸 14 / 16 / 18 / 20。不引入圖示字型或第三方圖示套件。
 - 插畫（角色、山景、星空、月相）只用 §2.2 token；角色為原創簡筆圖形（D40）。
 - 文字型符號（`×`、`◀`、`▶`、`✓`、`⚑`）可作為圖示，但必須放在 `IconButton` 或有文字說明的元素內。
+
+### 圓形頭像（v0.8，D58）
+
+- **取景**：同一個角色（`characters.tsx`）只取頭與肩，頭部中心在圓的上方約 40%；耳朵、頭髮可超出頭但不超出圓。
+- **尺寸**：72（名片）、64（團隊卡片）、44（對話頂列）、40（對話列表、團隊清單）、36（訊息）、22–27（系統列、交疊、負責人）。
+- **底色**：`--hills-avatar-0…6`，由成員 ID 的雜湊選一個，每人固定；深色模式另有一組。
+- **狀態徽章**：右下角，與場景相同的形狀（`BadgeShape`）與 `--hills-st-*` 色，白邊（`surface`）；尺寸 ≤ 24 時不畫。
+- **我**：`primary` 外圈；**離線**：整顆 55% 透明。
+- **AI Agent（D54）**：專屬機器人（螢幕臉、天線、胸前燈），頭像為圓角方形（圓角 = 邊長 30%）加右上「AI」標籤（≥ 32 px）；臉隨狀態變化（執行中亮眼、閒置瞇眼、已暫停「‖」、離線全暗）。一般成員不能選機器人。
+- 列表中的頭像不播放踏步動畫。
 
 ### 空狀態插畫（v0.6）
 

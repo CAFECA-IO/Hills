@@ -1,6 +1,6 @@
 # Hills 通用元件
 
-> 版本：v0.10 · 2026-11-09 · 對應 [feature-plan.md](./feature-plan.md) v1.37（D45、D47、D56）
+> 版本：v0.11 · 2026-11-10 · 對應 [feature-plan.md](./feature-plan.md) v1.38（D45、D47、D56、D58）
 > 本文件定義 `apps/desktop/src/ui/` 的通用元件：用途、何時用、變體、狀態、鍵盤與無障礙、API。視覺基礎（token、字級、間距）見 [design-system.md](./design-system.md)。
 > 畫面只能組合這些元件（design-system §1、§11）。需要新元件或新變體時，**先改本文件，再改 `src/ui/`**，並補 `src/ui/ui.test.tsx`。
 
@@ -413,6 +413,8 @@ v0.7：
 ### Character、CharacterStage（v0.10，D56）
 
 `Character`（`characters.tsx`，插畫元件，不在 `ui/`）：七種角色的 SVG。props `kind`、`look`、`pose`（`stand` \| `walk` \| `wave` \| `sit`）、`animate`（原地踏步）。在 `<svg>` 內以 `<g>` 繪製，原點在兩腳中間，高度 64 單位。
+
+`Avatar`、`AvatarPair`（`figures.tsx`，插畫元件，v0.11，D58）：圓形頭肩像。`Avatar` props：`member`（`id`、`look`、`presence`）、`size`、`me`（主色外圈）、`badge`（預設 true；size ≤ 24 時不畫）。離線自動 55% 透明；`aria-hidden`，名字與狀態由畫面以文字提供。`AvatarPair` 給群組：兩位成員交疊，後者右下、各帶背景色的白邊。
 
 `CharacterStage`（`ui/`）：設定頁的角色切換舞台。
 

@@ -8,6 +8,7 @@ import {
   type ReportInput,
   type ReportKind,
   type ReportSections,
+  type PlanView,
   type ScrumReport,
   type Task,
   type TeamView,
@@ -18,9 +19,11 @@ import { effectiveTimezone } from './profile-utils';
 import { formatTime, t, type MessageKey } from './i18n';
 import { PageHead } from './layout';
 import {
+  carryCandidates,
   daysOf,
   generate,
   mergeTeam,
+  nextMondaySameTime,
   periodOf,
   shiftPeriod,
   toMarkdown,
@@ -35,7 +38,6 @@ import {
   IconButton,
   Markdown,
   Pressable,
-  SegmentedControl,
   Select,
   TextArea,
   useAction,
@@ -72,7 +74,8 @@ interface Props {
 }
 
 export function Reports({ members, teams, tasks, timezone }: Props) {
-  const [kind, setKind] = useState<ReportKind>('weekly');
+  // 日報已由每日任務取代（D60），這裡只剩週報
+  const kind: ReportKind = 'weekly';
   const [now] = useState(() => Date.now());
   const today = periodsAt(now, timezone).day;
   const [shift, setShift] = useState(0);
@@ -89,18 +92,6 @@ export function Reports({ members, teams, tasks, timezone }: Props) {
         subtitle={titleOf(kind, period)}
         actions={
           <>
-            <SegmentedControl
-              label={t('report.page')}
-              value={kind}
-              onChange={(k) => {
-                setKind(k);
-                setShift(0);
-              }}
-              options={(['daily', 'weekly'] as const).map((k) => ({
-                value: k,
-                label: t(`report.kind.${k}` as MessageKey),
-              }))}
-            />
             <div className="flex items-center gap-1">
               <IconButton
                 variant="secondary"
@@ -110,7 +101,7 @@ export function Reports({ members, teams, tasks, timezone }: Props) {
                 ◀
               </IconButton>
               <Button variant="secondary" disabled={shift === 0} onClick={() => setShift(0)}>
-                {t(kind === 'daily' ? 'goals.today' : 'report.thisWeek')}
+                {t('report.thisWeek')}
               </Button>
               <IconButton
                 variant="secondary"
@@ -176,6 +167,7 @@ function MyReport({
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [confirmRegen, setConfirmRegen] = useState(false);
+  const [skipCarry, setSkipCarry] = useState<string[]>([]);
   const { busy, error, attempt } = useAction();
   const L = useMemo(() => labels(), []);
   const build = (): ReportSections =>
@@ -238,6 +230,8 @@ function MyReport({
     setStatus(null);
   };
   const published = mine.data?.report ?? null;
+  const candidates = carryCandidates(tasks, me, period, timezone, plans.data ?? []);
+  const carried = candidates.filter((x) => !skipCarry.includes(x.id));
   const md = toMarkdown(titleOf(kind, period), form.sections, L);
   return (
     <Card className="scroll-panel flex min-h-0 flex-col gap-3">
@@ -324,6 +318,24 @@ function MyReport({
           )}
         </section>
       ))}
+      {!published && candidates.length > 0 && (
+        <fieldset className="flex flex-col gap-1 text-sm">
+          <legend className="mb-1 text-xs text-muted">{t('report.carry')}</legend>
+          {candidates.map((x) => (
+            <Checkbox
+              key={x.id}
+              label={x.title}
+              checked={!skipCarry.includes(x.id)}
+              onChange={(e) =>
+                setSkipCarry(
+                  e.target.checked ? skipCarry.filter((y) => y !== x.id) : [...skipCarry, x.id],
+                )
+              }
+            />
+          ))}
+          <p className="text-xs text-muted">{t('report.carry.hint')}</p>
+        </fieldset>
+      )}
       <fieldset className="flex flex-wrap items-center gap-3 text-sm">
         <legend className="mb-1 text-xs text-muted">{t('report.publishTo')}</legend>
         {myTeams.map((x) => (
@@ -363,7 +375,11 @@ function MyReport({
         <Button
           disabled={busy || form.publishedTo.length === 0}
           onClick={async () => {
-            if (await attempt(() => api.reportPublish(form))) {
+            const ok = await attempt(async () => {
+              await api.reportPublish(form);
+              if (!published) await carryOver(carried, period, plans.data ?? []);
+            });
+            if (ok) {
               setDirty(false);
               setStatus(t('report.published'));
               mine.reload();
@@ -375,6 +391,47 @@ function MyReport({
       </div>
     </Card>
   );
+}
+
+/**
+ * 延到下期（D61）：期限移到下週一同一時間；連到這週週目標的任務改連到下週同名的週目標，沒有時建立。
+ */
+async function carryOver(list: Task[], week: string, plans: PlanView[]) {
+  const next = shiftPeriod('weekly', week, 1);
+  const created = new Map<string, string>();
+  for (const x of list) {
+    let planItemId = x.planItemId;
+    const goal = plans.find((p) => p.id === x.planItemId && p.period === week);
+    if (goal) {
+      const same = plans.find(
+        (p) => p.mine && p.level === 'week' && p.period === next && p.title === goal.title,
+      );
+      planItemId =
+        same?.id ??
+        created.get(goal.title) ??
+        (await api.savePlan({
+          level: 'week',
+          period: next,
+          title: goal.title,
+          parentId: null,
+          krRef: null,
+          done: false,
+          progressOverride: null,
+          keyResults: [],
+          visibility: goal.visibility,
+        }));
+      created.set(goal.title, planItemId);
+    }
+    await api.updateTask(x.team, x.id, {
+      title: x.title,
+      assignee: x.assignee,
+      status: x.status,
+      dueAt: nextMondaySameTime(x.dueAt, Date.now()),
+      steps: x.steps.map((s) => ({ id: s.id, title: s.title, assignee: s.assignee, done: s.done })),
+      planItemId,
+      teamGoalId: x.teamGoalId,
+    });
+  }
 }
 
 /** 列印 / 存成 PDF：把 Markdown 轉成 HTML 放進列印區，呼叫系統列印對話框（可選「存成 PDF」）。 */

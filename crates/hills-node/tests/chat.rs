@@ -320,6 +320,7 @@ async fn conversation_task_link() {
         team_goal_id: None,
         brief: None,
         acceptance: None,
+        estimate: None,
         title: title.into(),
         assignee: None,
         status: None,

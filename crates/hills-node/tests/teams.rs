@@ -11,6 +11,7 @@ fn task(title: &str) -> TaskInput {
         team_goal_id: None,
         brief: None,
         acceptance: None,
+        estimate: None,
         title: title.into(),
         assignee: None,
         status: None,

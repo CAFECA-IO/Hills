@@ -108,6 +108,16 @@ export interface TaskStep {
   assignee: string | null;
   done: boolean;
   doneAt: number | null;
+  /** 預估分鐘數（D62） */
+  estimate?: number | null;
+}
+
+/** 卡住中（D60）：最新一筆未解決的「卡住了」。 */
+export interface TaskBlocked {
+  log: string;
+  author: string;
+  text: string;
+  since: number;
 }
 
 export interface Task {
@@ -138,6 +148,12 @@ export interface Task {
   brief: string | null;
   /** 完成條件（D53） */
   acceptance: Criterion[];
+  /** 預估分鐘數（D62） */
+  estimate?: number | null;
+  /** 負責人最新回報的百分比（D60） */
+  reported?: number | null;
+  /** 卡住中（D60） */
+  blocked?: TaskBlocked | null;
 }
 
 /** 任務的一條完成條件（D53）。 */
@@ -146,7 +162,24 @@ export interface Criterion {
   text: string;
 }
 
-export type LogKind = 'start' | 'progress' | 'question' | 'answer' | 'close' | 'reopen';
+export type LogKind =
+  | 'start'
+  | 'progress'
+  | 'question'
+  | 'answer'
+  | 'close'
+  | 'reopen'
+  | 'step'
+  | 'blocked'
+  | 'resolved';
+
+/** 我寫的一筆紀錄與所屬任務（每日任務草稿，D60）。 */
+export interface MyLog {
+  team: string;
+  task: string;
+  title: string;
+  log: TaskLog;
+}
 
 /** 一筆執行紀錄（technical-design §16.8 v0.29，D53）。 */
 export interface TaskLog {
@@ -199,6 +232,8 @@ export interface StepInput {
   title: string;
   assignee: string | null;
   done: boolean;
+  /** 預估分鐘數；不傳 = 沿用，0 = 清除（D62） */
+  estimate?: number | null;
 }
 
 export interface TaskInput {
@@ -214,16 +249,25 @@ export interface TaskInput {
   brief?: string | null;
   /** 完成條件；不傳 = 不變更（D53） */
   acceptance?: { id?: string | null; text: string }[] | null;
+  /** 預估分鐘數；不傳 = 不變更，0 = 清除（D62） */
+  estimate?: number | null;
 }
 
 /** 私人任務的「小組」值（technical-design §16.8 v0.19，D46）。 */
 export const PRIVATE_TEAM = 'private';
 export const isPrivateTask = (t: { team: string }) => t.team === PRIVATE_TEAM;
 
-/** 任務進度 0–100：完成步驟比例；沒有步驟時完成 = 100（D46）。 */
-export function taskProgress(t: Pick<Task, 'steps' | 'status'>): number {
-  if (t.steps.length === 0) return t.status === 'done' ? 100 : 0;
-  return (t.steps.filter((s) => s.done).length * 100) / t.steps.length;
+/**
+ * 任務進度 0–100（technical-design §16.8 v0.34，D60）：完成 = 100；
+ * 否則取完成步驟比例與負責人最新回報百分比較大者。
+ */
+export function taskProgress(
+  t: Pick<Task, 'steps' | 'status'> & { reported?: number | null },
+): number {
+  if (t.status === 'done') return 100;
+  const steps =
+    t.steps.length === 0 ? 0 : (t.steps.filter((s) => s.done).length * 100) / t.steps.length;
+  return Math.max(steps, t.reported ?? 0);
 }
 
 export interface FocusView {
@@ -372,7 +416,15 @@ export interface KbInput {
 // ── 每日 Scrum（technical-design §16.12）──
 
 export type ScrumRef =
-  | { kind: 'task'; teamId: string; taskId: string; title: string }
+  | {
+      kind: 'task';
+      teamId: string;
+      taskId: string;
+      title: string;
+      /** 引用的任務紀錄 id（v2，D60） */
+      log?: string | null;
+      percent?: number | null;
+    }
   | { kind: 'plan'; planId: string; title: string }
   | { kind: 'text'; title: string };
 
@@ -381,12 +433,24 @@ export interface ScrumBlocker {
   notified: string[];
 }
 
+/** 每日任務的「卡住了」（v2，D60）。 */
+export interface ScrumBlocked {
+  log: string | null;
+  teamId?: string | null;
+  taskId?: string | null;
+  title: string;
+  text: string;
+  since: number;
+}
+
 export interface ScrumReport {
   member: string;
   date: string;
   done: ScrumRef[];
   today: ScrumRef[];
   blockers: ScrumBlocker[];
+  blocked: ScrumBlocked[];
+  note: string | null;
   submittedAt: number;
   updatedAt: number;
 }
@@ -395,7 +459,10 @@ export interface ScrumInput {
   date: string;
   done: ScrumRef[];
   today: ScrumRef[];
+  /** v1 的文字阻礙（介面不再新增） */
   blockers: string[];
+  blocked: ScrumBlocked[];
+  note?: string | null;
 }
 
 export interface ScrumMine {
@@ -863,6 +930,9 @@ export const api = {
   taskLogs: (team: string, task: string) => call<TaskLog[]>('task_logs', { team, task }),
   addTaskLog: (team: string, task: string, kind: LogKind, text: string, percent: number | null) =>
     call<void>('add_task_log', { team, task, kind, text, percent }),
+  resolveTaskBlocked: (team: string, task: string, blocked: string, text: string) =>
+    call<void>('resolve_task_blocked', { team, task, blocked, text }),
+  myLogsSince: (since: number) => call<MyLog[]>('my_logs_since', { since }),
   closeTask: (team: string, task: string, input: CloseInput) =>
     call<void>('close_task', { team, task, input }),
   reopenTask: (team: string, task: string, text: string) =>

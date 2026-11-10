@@ -1,8 +1,12 @@
-/** 每日 Scrum（ui-spec「Scrum」，feature-plan §5.4；technical-design §16.12）。 */
+/**
+ * 每日任務（原每日 Scrum；ui-spec「Scrum」→「工作 › 今天」，D60；technical-design §16.12 v0.34）：
+ * 草稿由任務紀錄產生，卡住了引用任務上未解決的紀錄。
+ */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   api,
   type MemberView,
+  type ScrumBlocked,
   type ScrumInput,
   type ScrumRef,
   type ScrumReport,
@@ -16,9 +20,13 @@ import { formatTime, t, type MessageKey } from './i18n';
 import { PageHead } from './layout';
 import {
   addDays,
+  blockedOf,
+  dayStartMs,
+  doneFromLogs,
   doneSince,
   isWorkday,
   mergeRefs,
+  prevWorkday,
   refKey,
   shouldRemind,
   teamStatus,
@@ -45,7 +53,14 @@ interface Props {
   timezone: string;
 }
 
-const empty = (date: string): ScrumInput => ({ date, done: [], today: [], blockers: [] });
+const empty = (date: string): ScrumInput => ({
+  date,
+  done: [],
+  today: [],
+  blockers: [],
+  blocked: [],
+  note: '',
+});
 
 export function Scrum({ members, teams, tasks, focusId, timezone }: Props) {
   const [now, setNow] = useState(() => Date.now());
@@ -127,6 +142,19 @@ function MyScrum({
   me: string;
 }) {
   const mine = useLoad(() => api.scrumMine(date), ['doc', 'org']);
+  const logs = useLoad(() => api.myLogsSince(dayStartMs(prevWorkday(date))), ['doc']);
+  // 草稿（D60）：昨天以來的紀錄 + 沒有紀錄的完成項、今天要做、卡住了
+  const draftFrom = (): ScrumInput => ({
+    ...empty(date),
+    done: mergeRefs(
+      doneFromLogs(logs.data ?? [], date, timezone),
+      doneSince(tasks, me, date, timezone).filter(
+        (r) => r.kind !== 'task' || !(logs.data ?? []).some((l) => l.task === r.taskId),
+      ),
+    ),
+    today: todayPlan(tasks, me, focusId, date, timezone),
+    blocked: blockedOf(tasks, me),
+  });
   const [form, setForm] = useState<ScrumInput | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState<'draft' | 'submitted' | null>(null);
@@ -134,7 +162,7 @@ function MyScrum({
   // 第一次讀到資料時：草稿優先，其次已送出的內容
   const inited = useRef(false);
   useEffect(() => {
-    if (inited.current || !mine.data) return;
+    if (inited.current || !mine.data || (editable && !logs.data)) return;
     inited.current = true;
     const d = mine.data;
     let v: ScrumInput = empty(date);
@@ -149,11 +177,17 @@ function MyScrum({
         date,
         done: d.report.done,
         today: d.report.today,
-        blockers: d.report.blockers.map((b) => b.text),
+        blockers: [],
+        blocked: d.report.blocked,
+        note: d.report.note ?? '',
       };
+    } else if (editable) {
+      v = draftFrom();
     }
     setForm(v);
-  }, [mine.data, date]);
+    // draftFrom 只在第一次讀到資料時使用
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mine.data, logs.data, date, editable]);
   const v = form ?? empty(date);
   const set = (p: Partial<ScrumInput>) => {
     setForm({ ...v, ...p });
@@ -196,7 +230,7 @@ function MyScrum({
           <Button
             variant="secondary"
             className="h-8 px-3 py-0 text-xs"
-            onClick={() => set({ done: mergeRefs(v.done, doneSince(tasks, me, date, timezone)) })}
+            onClick={() => set({ done: mergeRefs(v.done, draftFrom().done) })}
           >
             {t('scrum.fromTasks')}
           </Button>
@@ -218,17 +252,23 @@ function MyScrum({
           </Button>
         }
       />
-      <TextSection
-        title={t('scrum.blockers')}
-        items={v.blockers}
-        onChange={(blockers) => set({ blockers })}
+      <BlockedSection
+        items={v.blocked}
+        onChange={(blocked) => set({ blocked })}
         hint={
-          v.blockers.length > 0 && notifyNames
+          v.blocked.length > 0 && notifyNames
             ? t('scrum.notify', { names: notifyNames })
-            : undefined
+            : t('scrum.blocked.hint')
         }
       />
-      <ErrorText message={error ?? mine.error} />
+      <TextInput
+        aria-label={t('scrum.note')}
+        placeholder={t('scrum.note.placeholder')}
+        maxLength={200}
+        value={v.note ?? ''}
+        onChange={(e) => set({ note: e.target.value })}
+      />
+      <ErrorText message={error ?? mine.error ?? logs.error} />
       <div className="mt-auto flex items-center justify-end gap-2">
         {saved && (
           <span role="status" className="text-xs text-st-online-text">
@@ -248,9 +288,7 @@ function MyScrum({
           {t('scrum.saveDraft')}
         </Button>
         <Button
-          disabled={
-            busy || (v.done.length === 0 && v.today.length === 0 && v.blockers.length === 0)
-          }
+          disabled={busy || (v.done.length === 0 && v.today.length === 0 && v.blocked.length === 0)}
           onClick={async () => {
             if (await attempt(() => api.scrumSubmit(v))) {
               setDirty(false);
@@ -314,30 +352,32 @@ function RefSection({
   );
 }
 
-function TextSection({
-  title,
+function BlockedSection({
   items,
   onChange,
   hint,
 }: {
-  title: string;
-  items: string[];
-  onChange: (v: string[]) => void;
+  items: ScrumBlocked[];
+  onChange: (v: ScrumBlocked[]) => void;
   hint?: string;
 }) {
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="text-sm font-semibold">{title}</h3>
+      <h3 className="text-sm font-semibold">{t('scrum.blockers')}</h3>
+      {items.length === 0 && <p className="text-xs text-muted">{t('scrum.blocked.empty')}</p>}
       <ul className="flex flex-col gap-1">
         {items.map((b, i) => (
           <li
-            key={`${i}-${b}`}
-            className="flex items-center justify-between gap-2 rounded-control border border-danger/40 px-3 py-1.5 text-sm"
+            key={`${b.log ?? i}`}
+            className="flex items-center justify-between gap-2 rounded-control border border-warning/50 bg-warning/10 px-3 py-1.5 text-sm"
           >
-            <span className="truncate">{b}</span>
+            <span className="min-w-0 truncate">
+              {b.title && <strong className="font-semibold">{b.title}：</strong>}
+              {b.text}
+            </span>
             <IconButton
               size="sm"
-              label={t('scrum.remove', { title: b })}
+              label={t('scrum.remove', { title: b.title || b.text })}
               className="hover:text-danger"
               onClick={() => onChange(items.filter((_, j) => j !== i))}
             >
@@ -346,10 +386,6 @@ function TextSection({
           </li>
         ))}
       </ul>
-      <AddLine
-        label={t('scrum.addItem', { section: title })}
-        onAdd={(text) => onChange(items.includes(text) ? items : [...items, text])}
-      />
       {hint && <p className="text-xs text-muted">{hint}</p>}
     </section>
   );
@@ -403,16 +439,20 @@ function ReportView({ report }: { report: ScrumReport }) {
         <h3 className="text-xs font-semibold text-muted">{t('scrum.today')}</h3>
         {list(report.today)}
       </div>
-      {report.blockers.length > 0 && (
+      {report.blocked.length > 0 && (
         <div>
-          <h3 className="text-xs font-semibold text-danger">{t('scrum.blockers')}</h3>
-          <ul className="list-disc pl-5 text-sm text-danger">
-            {report.blockers.map((b, i) => (
-              <li key={i}>{b.text}</li>
+          <h3 className="text-xs font-semibold text-warning">{t('scrum.blockers')}</h3>
+          <ul className="list-disc pl-5 text-sm">
+            {report.blocked.map((b, i) => (
+              <li key={b.log ?? i}>
+                {b.title && <strong className="font-semibold">{b.title}：</strong>}
+                {b.text}
+              </li>
             ))}
           </ul>
         </div>
       )}
+      {report.note && <p className="text-sm text-muted">{report.note}</p>}
     </div>
   );
 }
@@ -507,10 +547,10 @@ function TeamOverview({
                   : t(`scrum.status.${status}` as MessageKey)}
               </span>
             </Pressable>
-            {report && report.blockers.length > 0 && (
-              <p className="mt-1 flex items-start gap-1 pl-6 text-xs text-danger">
+            {report && report.blocked.length > 0 && (
+              <p className="mt-1 flex items-start gap-1 pl-6 text-xs text-warning">
                 <span aria-hidden>⚠</span>
-                {report.blockers.map((b) => b.text).join('；')}
+                {report.blocked.map((b) => (b.title ? `${b.title}：${b.text}` : b.text)).join('；')}
               </p>
             )}
             {open === member.id && report && (

@@ -10,6 +10,8 @@ import {
   shiftPeriod,
   toMarkdown,
   type ReportLabels,
+  carryCandidates,
+  nextMondaySameTime,
 } from './reports-utils';
 
 const L: ReportLabels = {
@@ -104,6 +106,8 @@ describe('generate', () => {
         { kind: 'text', title: '寫測試' },
       ],
       blockers: [{ text: '需要測試機', notified: [] }],
+      blocked: [],
+      note: null,
       submittedAt: 0,
       updatedAt: 0,
     },
@@ -113,6 +117,8 @@ describe('generate', () => {
       done: [{ kind: 'text', title: '別人' }],
       today: [],
       blockers: [],
+      blocked: [],
+      note: null,
       submittedAt: 0,
       updatedAt: 0,
     },
@@ -209,5 +215,32 @@ describe('markdown and team merge', () => {
     const m = mergeTeam([r('a'), r('b')], (id) => id.toUpperCase(), L);
     expect(m.progress).toBe('**A**\n\n- a\n\n**B**\n\n- a');
     expect(mergeTeam([], (x) => x, L).next).toBe('- 無');
+  });
+});
+
+describe('carry over (D61)', () => {
+  it('picks my unfinished tasks of this week', () => {
+    const wk = '2026-W46';
+    const inWeek = Date.UTC(2026, 10, 11, 4);
+    const out = carryCandidates(
+      [
+        task('due', { assignee: 'me', dueAt: inWeek }),
+        task('goal', { assignee: 'me', planItemId: 'w' }),
+        task('other', { assignee: 'x', dueAt: inWeek }),
+        task('done', { assignee: 'me', dueAt: inWeek, status: 'done' }),
+        task('later', { assignee: 'me', dueAt: inWeek + 14 * 86_400_000 }),
+      ],
+      'me',
+      wk,
+      'Asia/Taipei',
+      [{ id: 'w', level: 'week', period: wk } as never],
+    );
+    expect(out.map((x) => x.id)).toEqual(['due', 'goal']);
+  });
+
+  it('moves the due date to next Monday at the same time', () => {
+    const wed = new Date(2026, 10, 11, 17, 30).getTime();
+    const d = new Date(nextMondaySameTime(wed, 0));
+    expect([d.getDay(), d.getDate(), d.getHours(), d.getMinutes()]).toEqual([1, 16, 17, 30]);
   });
 });

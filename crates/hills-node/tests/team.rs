@@ -26,6 +26,7 @@ async fn tasks_profiles_offices_and_presence_sync() {
                 team_goal_id: None,
                 brief: None,
                 acceptance: None,
+                estimate: None,
                 title: "Windows 驗收".into(),
                 assignee: Some(a),
                 status: None,
@@ -68,6 +69,11 @@ async fn tasks_profiles_offices_and_presence_sync() {
         .await
     );
     assert_eq!(admin.tasks().unwrap()[0].status, TaskStatus::Doing);
+    // 勾選步驟會寫一筆「步驟完成」紀錄（D60）
+    let logs = admin.task_logs(DEFAULT_TEAM, &id).unwrap();
+    assert_eq!(logs.len(), 1);
+    assert_eq!(logs[0].kind, hills_node::task_report::LogKind::Step);
+    assert_eq!(logs[0].text, "relay 更新");
     // 下一步已不是 admin 的：admin 沒有焦點
     assert!(admin.focus().unwrap().task.is_none());
 

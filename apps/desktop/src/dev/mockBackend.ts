@@ -161,6 +161,8 @@ interface MockTask {
   // 交付說明與完成條件（D53）
   brief?: string | null;
   acceptance?: { id: string; text: string }[];
+  // 預估分鐘數（D62）
+  estimate?: number | null;
 }
 const st = (id: string, title: string, assignee: string | null, done = false): MockStep => ({
   id,
@@ -304,7 +306,50 @@ const taskLogs: (TaskLog & { task: string })[] = [
     refs: [],
     at: now0 - 1800_000,
   },
+  // 卡住了（D60）與進度回報：我的任務
+  {
+    task: 't4',
+    id: '4',
+    author: 'mem-me',
+    kind: 'blocked',
+    text: '需要 relay 測試主機',
+    percent: null,
+    refs: [],
+    at: now0 - 2 * 86400_000,
+  },
+  {
+    task: 't2',
+    id: '5',
+    author: 'mem-me',
+    kind: 'progress',
+    text: '完成安裝章節',
+    percent: 60,
+    refs: [],
+    at: now0 - 20 * 3600_000,
+  },
 ];
+/** 紀錄摘要：負責人最新百分比、未解決的卡住了（technical-design §16.8 v0.34）。 */
+const logSummary = (t: MockTask) => {
+  let reported: number | null = null;
+  let open: (TaskLog & { task: string })[] = [];
+  for (const l of taskLogs.filter((x) => x.task === t.id).sort((a, b) => a.at - b.at)) {
+    if (
+      l.kind === 'progress' &&
+      l.percent !== null &&
+      (l.author === t.assignee || t.team === 'private')
+    )
+      reported = l.percent;
+    else if (l.kind === 'reopen') reported = null;
+    else if (l.kind === 'blocked' || l.kind === 'question') open.push(l);
+    else if (l.kind === 'resolved') open = open.filter((b) => !l.refs.includes(b.id));
+    else if (l.kind === 'close') open = [];
+  }
+  const b = open.at(-1);
+  return {
+    reported,
+    blocked: b ? { log: b.id, author: b.author, text: b.text, since: b.at } : null,
+  };
+};
 const taskReports = new Map<string, TaskReport>();
 /** 待接下：別人指派、還沒接下（D50） */
 const withAck = (t: MockTask) => ({
@@ -315,6 +360,8 @@ const withAck = (t: MockTask) => ({
   ack: t.ack ?? null,
   brief: t.brief ?? null,
   acceptance: t.acceptance ?? [],
+  estimate: t.estimate ?? null,
+  ...logSummary(t),
   pendingAck: Boolean(
     t.assignee &&
     t.assignedBy &&
@@ -766,6 +813,8 @@ let scrumReports: ScrumReport[] = [
       { kind: 'text', title: '寫測試' },
     ],
     blockers: [{ text: '需要 relay 測試主機', notified: ['mem-me'] }],
+    blocked: [],
+    note: null,
     submittedAt: now0 - 3600_000,
     updatedAt: now0 - 3600_000,
   },
@@ -775,6 +824,8 @@ let scrumReports: ScrumReport[] = [
     done: [{ kind: 'text', title: 'Mac 驗收' }],
     today: [{ kind: 'text', title: '通知測試' }],
     blockers: [],
+    blocked: [],
+    note: null,
     submittedAt: now0 - 7200_000,
     updatedAt: now0 - 7200_000,
   },
@@ -1123,7 +1174,9 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
       date: input.date,
       done: input.done,
       today: input.today,
-      blockers: input.blockers.map((text) => ({ text, notified: [] })),
+      blockers: (input.blockers ?? []).map((text) => ({ text, notified: [] })),
+      blocked: input.blocked ?? [],
+      note: input.note ?? null,
       submittedAt: old?.submittedAt ?? Date.now(),
       updatedAt: Date.now(),
     };
@@ -1391,6 +1444,7 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
         assignedAt: input.assignee ? Date.now() : null,
         teamGoalId: input.teamGoalId ?? null,
         brief: input.brief || null,
+        estimate: input.estimate || null,
         acceptance: (input.acceptance ?? []).map((c, i) => ({
           id: c.id || `${id}-c${i}`,
           text: c.text,
@@ -1412,6 +1466,10 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
             ...input,
             brief:
               input.brief === undefined || input.brief === null ? x.brief : input.brief || null,
+            estimate:
+              input.estimate === undefined || input.estimate === null
+                ? x.estimate
+                : input.estimate || null,
             acceptance: input.acceptance
               ? input.acceptance.map((c, i) => ({ id: c.id || `${x.id}-c${i}`, text: c.text }))
               : x.acceptance,
@@ -1443,6 +1501,17 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
       stp.done = Boolean(a.done);
       stp.doneAt = stp.done ? Date.now() : null;
       syncStatus(task);
+      if (stp.done)
+        taskLogs.push({
+          task: task.id,
+          id: String(Date.now()),
+          author: state.me,
+          kind: 'step',
+          text: stp.title,
+          percent: null,
+          refs: [stp.id],
+          at: Date.now(),
+        });
     }
     touch();
   },
@@ -1459,7 +1528,7 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
       task: String(a.task),
       id: String(Date.now()),
       author: state.me,
-      kind: a.kind as LogKind,
+      kind: a.kind === 'question' ? 'blocked' : (a.kind as LogKind),
       text: String(a.text ?? ''),
       percent: (a.percent as number | null) ?? null,
       refs: [],
@@ -1467,6 +1536,27 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     });
     touch();
   },
+  resolve_task_blocked: (a) => {
+    taskLogs.push({
+      task: String(a.task),
+      id: String(Date.now()),
+      author: state.me,
+      kind: 'resolved',
+      text: String(a.text ?? ''),
+      percent: null,
+      refs: [String(a.blocked)],
+      at: Date.now(),
+    });
+    touch();
+  },
+  my_logs_since: (a) =>
+    taskLogs
+      .filter((l) => l.author === state.me && l.at >= Number(a.since))
+      .map((l) => {
+        const { task, ...log } = l;
+        const t = tasks.find((x) => x.id === task);
+        return { team: t?.team ?? 'default', task, title: t?.title ?? '', log };
+      }),
   close_task: (a) => {
     const task = tasks.find((x) => x.id === a.task);
     if (!task) throw new Error('找不到任務');

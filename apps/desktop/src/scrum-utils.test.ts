@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { MemberView, ScrumReport, Task } from './api';
 import {
   addDays,
+  blockedOf,
   clockIn,
+  doneFromLogs,
   doneSince,
   isWorkday,
   mergeRefs,
@@ -113,6 +115,8 @@ describe('team status and reminders', () => {
     done: [],
     today: [],
     blockers: [],
+    blocked: [],
+    note: null,
     submittedAt: 0,
     updatedAt: 0,
   };
@@ -133,5 +137,56 @@ describe('team status and reminders', () => {
     expect(shouldRemind(MON, TZ, '09:30', [2, 3])).toBe(false);
     expect(shouldRemind(Date.UTC(2026, 10, 8, 12), TZ, '09:30', [7])).toBe(true);
     expect(shouldRemind(MON, TZ, '09:30', [])).toBe(false);
+  });
+});
+
+describe('daily tasks v2 (D60)', () => {
+  const log = (
+    id: string,
+    kind: 'step' | 'progress' | 'close' | 'answer',
+    at: number,
+    percent: number | null = null,
+  ) => ({
+    id,
+    author: 'me',
+    kind,
+    text: kind === 'step' ? 'relay 更新' : '完成安裝章節',
+    percent,
+    refs: [],
+    at,
+  });
+  it('fills done from my logs since the previous workday', () => {
+    const fri = Date.UTC(2026, 10, 6, 3); // 週五
+    const thu = Date.UTC(2026, 10, 5, 3); // 週四：太早
+    const out = doneFromLogs(
+      [
+        { team: 'g', task: 't1', title: 'Windows 驗收', log: log('a', 'step', fri) },
+        { team: 'g', task: 't2', title: '部署說明', log: log('b', 'progress', MON, 60) },
+        { team: 'private', task: 't3', title: '寫週報', log: log('c', 'close', MON) },
+        { team: 'g', task: 't4', title: '舊的', log: log('d', 'step', thu) },
+        { team: 'g', task: 't5', title: '回覆', log: log('e', 'answer', MON) },
+      ],
+      '2026-11-09',
+      TZ,
+    );
+    expect(out).toHaveLength(3);
+    expect(out[0]).toMatchObject({ kind: 'task', taskId: 't1', log: 'a' });
+    expect(out[1]).toMatchObject({ kind: 'task', taskId: 't2', percent: 60 });
+    expect(out[2]?.kind).toBe('text');
+  });
+
+  it('lists my unresolved blockers', () => {
+    const b = { log: 'L', author: 'me', text: '需要測試機', since: 1 };
+    const out = blockedOf(
+      [
+        task('a', { assignee: 'me', blocked: b }),
+        task('b', { assignee: 'x', blocked: b }),
+        task('c', { assignee: 'me', blocked: b, status: 'done' }),
+        task('d', { assignee: 'me', team: 'private', blocked: b }),
+      ],
+      'me',
+    );
+    expect(out.map((x) => x.title)).toEqual(['a', 'd']);
+    expect(out[1]?.teamId).toBeNull();
   });
 });

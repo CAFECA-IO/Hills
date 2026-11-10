@@ -108,6 +108,8 @@ pub fn run() {
             commands::set_task_ack,
             commands::task_logs,
             commands::add_task_log,
+            commands::resolve_task_blocked,
+            commands::my_logs_since,
             commands::close_task,
             commands::reopen_task,
             commands::task_report,

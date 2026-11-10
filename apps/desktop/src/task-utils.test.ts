@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { Task, TaskLog, TeamView } from './api';
 import {
   canAnswer,
-  canAsk,
+  blockedDays,
+  canBlock,
   canClose,
   canReopen,
   canReport,
+  canResolve,
   closeIsPrimary,
   lastClose,
   latestPercent,
@@ -65,7 +67,7 @@ describe('task close permissions (D53)', () => {
   it('private tasks: always mine, no questions or reopen', () => {
     const p = task({ team: 'private', assignee: 'me', status: 'done' });
     expect(canReport(p, 'me')).toBe(true);
-    expect(canAsk(p, 'me')).toBe(false);
+    expect(canBlock(p, 'me')).toBe(true);
     expect(canAnswer(p)).toBe(false);
     expect(canReopen(p, 'me', teams)).toBe(false);
   });
@@ -84,5 +86,22 @@ describe('task close permissions (D53)', () => {
     expect(lastClose([log('close'), log('reopen')])).toBeNull();
     expect(latestPercent([log('progress', 30), log('question'), log('progress', 60)])).toBe(60);
     expect(latestPercent([log('start')])).toBeNull();
+  });
+});
+
+describe('blocked (D60)', () => {
+  it('resolve by assignee, assigner or team lead', () => {
+    const b = task();
+    expect(canBlock(b, 'me')).toBe(true);
+    expect(canBlock(b, 'boss')).toBe(false);
+    expect(canResolve(b, 'me', teams)).toBe(true);
+    expect(canResolve(b, 'boss', teams)).toBe(true);
+    expect(canResolve(b, 'lead', teams)).toBe(true);
+    expect(canResolve(task({ assignedBy: null }), 'other', teams)).toBe(false);
+  });
+
+  it('counts blocked days, at least one', () => {
+    expect(blockedDays(0, 1000)).toBe(1);
+    expect(blockedDays(0, 2.5 * 86_400_000)).toBe(3);
   });
 });

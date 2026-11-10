@@ -79,9 +79,18 @@ pub fn all() -> Vec<ToolDef> {
             ),
         },
         ToolDef {
+            name: "get_daily_tasks",
+            kind: Kind::Read,
+            description: "The user's daily tasks check-in (formerly \"scrum\") for a day (submitted and draft) and the check-ins of the user's teams for that day. Done items may reference task log entries; `blocked` lists unresolved \"blocked\" log entries.",
+            schema: obj(
+                json!({ "date": { "type": "string", "description": "YYYY-MM-DD" } }),
+                &["date"],
+            ),
+        },
+        ToolDef {
             name: "get_scrum",
             kind: Kind::Read,
-            description: "The user's daily scrum for a day (submitted report and draft) and the scrum reports of the user's teams for that day.",
+            description: "Alias of get_daily_tasks (kept for older agents).",
             schema: obj(
                 json!({ "date": { "type": "string", "description": "YYYY-MM-DD" } }),
                 &["date"],
@@ -194,12 +203,13 @@ pub fn all() -> Vec<ToolDef> {
         ToolDef {
             name: "propose_task_log",
             kind: Kind::Write,
-            description: "Propose adding an entry to a task's progress log: `start`, `progress` (optional `percent` 0–100) or `question` by the assignee, or `answer` by any team member. Needs approval in Hills.",
+            description: "Propose adding an entry to a task's progress log: `start`, `progress` (optional `percent` 0–100, counts toward goal progress) or `blocked` (\"I'm stuck\", notifies the team lead and the assigner) by the assignee; `answer` by any team member; `resolved` (requires `blocked`: the id of the blocked entry) by the assignee, assigner or team lead. `question` is treated as `blocked`. Needs approval in Hills.",
             schema: obj(
                 json!({
                     "team": { "type": "string" },
                     "task": { "type": "string" },
-                    "kind": { "type": "string", "enum": ["start", "progress", "question", "answer"] },
+                    "kind": { "type": "string", "enum": ["start", "progress", "blocked", "resolved", "answer", "question"] },
+                    "blocked": { "type": "string", "description": "For `resolved`: the id of the blocked log entry." },
                     "text": { "type": "string", "description": "Markdown, ≤ 4 KB." },
                     "percent": { "type": "integer", "minimum": 0, "maximum": 100 }
                 }),
@@ -250,9 +260,21 @@ pub fn all() -> Vec<ToolDef> {
             ),
         },
         ToolDef {
+            name: "propose_daily_tasks",
+            kind: Kind::Write,
+            description: "Propose replacing the user's daily tasks draft (formerly \"scrum\") for a day. The user still submits it themselves. Needs approval in Hills.",
+            schema: obj(
+                json!({
+                    "date": { "type": "string", "description": "YYYY-MM-DD" },
+                    "draft": { "type": "string" }
+                }),
+                &["date", "draft"],
+            ),
+        },
+        ToolDef {
             name: "propose_scrum_draft",
             kind: Kind::Write,
-            description: "Propose replacing the user's daily scrum draft for a day (Markdown). The user still submits the scrum themselves. Needs approval in Hills.",
+            description: "Alias of propose_daily_tasks (kept for older agents).",
             schema: obj(
                 json!({
                     "date": { "type": "string", "description": "YYYY-MM-DD" },

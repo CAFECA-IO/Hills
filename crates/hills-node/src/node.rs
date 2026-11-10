@@ -121,6 +121,14 @@ pub enum Event {
         title: String,
         by: MemberId,
     },
+    /// 小組成員在任務上回報「卡住了」，本人是該小組負責人或指派者（§16.8 v0.34，D60）
+    TaskBlocked {
+        team: String,
+        task: String,
+        title: String,
+        member: MemberId,
+        text: String,
+    },
     /// 收到別人的新訊息（§14.2 通知）
     Message {
         conv: String,
@@ -422,6 +430,11 @@ impl Inner {
                 return Ok(0);
             }
             let me = self.me();
+            let am_admin = st
+                .trust
+                .verify_device(&self.secrets.device.public())
+                .map(|v| v.is_admin())
+                .unwrap_or(false);
             let State { docs, .. } = &mut *st;
             let local = self.load_doc(docs, doc_id)?;
             let fresh: Vec<_> = ok
@@ -492,6 +505,25 @@ impl Inner {
                             task: t.id.clone(),
                             title: t.title.clone(),
                             by,
+                        });
+                    }
+                }
+                // 卡住了（D60）：通知小組負責人與指派者；小組沒有負責人時通知管理者
+                let lead = hills_sync::Directory::is_team_lead(&dir, &team, &me);
+                let no_lead = dir.teams.get(&team).is_some_and(|x| x.leads.is_empty());
+                for t in crate::team::read_tasks(&local.doc, &team) {
+                    let Some(b) = &t.blocked else { continue };
+                    let to_me = lead || t.assigned_by == Some(me) || (no_lead && am_admin);
+                    if b.author == me || b.since < recent || !to_me {
+                        continue;
+                    }
+                    if lock(&self.task_seen).insert(format!("blocked/{team}/{}/{}", t.id, b.log)) {
+                        self.emit(Event::TaskBlocked {
+                            team: team.clone(),
+                            task: t.id.clone(),
+                            title: t.title.clone(),
+                            member: b.author,
+                            text: b.text.clone(),
                         });
                     }
                 }

@@ -7,6 +7,7 @@ import {
   api,
   isPrivateTask,
   PRIVATE_TEAM,
+  taskProgress,
   type FocusView,
   type MemberView,
   type PlanView,
@@ -22,7 +23,7 @@ import { useLoad } from './hooks';
 import { formatClock, t } from './i18n';
 import { TaskCloseDialog } from './task-close';
 import { TaskDetail } from './task-detail';
-import { canClose, closeIsPrimary } from './task-utils';
+import { blockedDays, canClose, closeIsPrimary } from './task-utils';
 import {
   Badge,
   Button,
@@ -257,6 +258,7 @@ function TaskRow({
   onClose: () => void;
 }) {
   const [open, setOpen] = useState(isFocus);
+  const [now] = useState(() => Date.now());
   const { error, attempt } = useAction();
   const done = task.steps.filter((s) => s.done).length;
   const priv = isPrivateTask(task);
@@ -282,6 +284,11 @@ function TaskRow({
           )}
         </Pressable>
         {isFocus && <Badge tone="primary">{t('tasks.focus')}</Badge>}
+        {task.blocked && task.status !== 'done' && (
+          <Badge tone="alert">
+            {t('tasks.blocked', { days: blockedDays(task.blocked.since, now) })}
+          </Badge>
+        )}
         {!priv && <span className="text-sm text-muted">{nameOf(task.assignee)}</span>}
         <span className="text-sm text-muted">
           {task.dueAt ? formatClock(task.dueAt) : t('tasks.noDue')}
@@ -292,7 +299,7 @@ function TaskRow({
               size="sm"
               className="w-16"
               barClassName="bg-st-online"
-              value={done / task.steps.length}
+              value={taskProgress(task) / 100}
               label={t('tasks.progress', { done, total: task.steps.length })}
             />
             {done} / {task.steps.length}
@@ -383,6 +390,7 @@ export function TaskDialog({
       title: task?.title ?? '',
       assignee: task ? (task.assignee ?? '') : me,
       due: toLocalInput(task?.dueAt ?? null),
+      estimate: task?.estimate ? String(task.estimate / 60) : '',
       planItemId: task?.planItemId ?? draft?.planItemId ?? '',
       brief: task?.brief ?? '',
       acceptance: task?.acceptance.map((c) => ({ id: c.id as string | null, text: c.text })) ?? [],
@@ -444,6 +452,8 @@ export function TaskDialog({
       assignee: priv ? me : v.assignee || null,
       status: task?.status ?? null,
       dueAt: v.due ? new Date(v.due).getTime() : null,
+      // 預估時數（D62）：0 = 清除
+      estimate: v.estimate.trim() ? Math.round(Math.max(0, Number(v.estimate)) * 60) : 0,
       steps: v.steps
         .filter((s) => s.title.trim())
         .map((s) => (priv ? { ...s, assignee: null } : s)),
@@ -517,7 +527,7 @@ export function TaskDialog({
           ))}
         </Select>
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         {!priv && (
           <Field label={t('tasks.field.assignee')}>
             <Select
@@ -538,6 +548,15 @@ export function TaskDialog({
             type="datetime-local"
             value={v.due}
             onChange={(e) => set({ due: e.target.value })}
+          />
+        </Field>
+        <Field label={t('tasks.field.estimate')} hint={t('tasks.estimate.hours')}>
+          <TextInput
+            type="number"
+            min={0}
+            step={0.5}
+            value={v.estimate}
+            onChange={(e) => set({ estimate: e.target.value })}
           />
         </Field>
       </div>

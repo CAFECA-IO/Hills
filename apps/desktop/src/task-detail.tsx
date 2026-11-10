@@ -1,6 +1,6 @@
 /**
  * 任務詳情（ui-spec「任務 → 執行紀錄與結案」v0.41，D53）：交付說明、完成條件、
- * （步驟由呼叫端插入）、執行紀錄時間軸、回報進度 / 提出問題 / 回覆、結案卡與退回。
+ * （步驟由呼叫端插入）、執行紀錄時間軸、回報進度 / 卡住了（D60）/ 回覆 / 已解決、結案卡與退回。
  */
 import { useState, type ReactNode } from 'react';
 import { api, type MemberView, type Task, type TaskLog, type TeamView } from './api';
@@ -10,7 +10,15 @@ import { Avatar } from './figures';
 import { useLoad } from './hooks';
 import { formatTime, t, type MessageKey } from './i18n';
 import { parseAttachments } from './share';
-import { canAnswer, canAsk, canReopen, canReport, lastClose, latestPercent } from './task-utils';
+import {
+  canAnswer,
+  canBlock,
+  canReopen,
+  canReport,
+  canResolve,
+  lastClose,
+  latestPercent,
+} from './task-utils';
 import {
   Badge,
   Button,
@@ -30,11 +38,17 @@ import {
 const KIND_LABEL: Record<TaskLog['kind'], MessageKey> = {
   start: 'tlog.kind.start',
   progress: 'tlog.kind.progress',
-  question: 'tlog.kind.question',
+  // 「提出問題」已併入「卡住了」（D60）
+  question: 'tlog.kind.blocked',
   answer: 'tlog.kind.answer',
   close: 'tlog.kind.close',
   reopen: 'tlog.kind.reopen',
+  step: 'tlog.kind.step',
+  blocked: 'tlog.kind.blocked',
+  resolved: 'tlog.kind.resolved',
 };
+
+const isBlocked = (l: TaskLog) => l.kind === 'blocked' || l.kind === 'question';
 
 export function TaskDetail({
   task,
@@ -121,6 +135,7 @@ export function TaskDetail({
               name={byId.get(l.author)?.name ?? '?'}
               report={l === lastCloseLog ? report.data : null}
               canReopenIt={l === closed && canReopen(task, me, teams)}
+              canResolveIt={task.blocked?.log === l.id && canResolve(task, me, teams)}
               onChanged={() => {
                 logs.reload();
                 report.reload();
@@ -128,7 +143,7 @@ export function TaskDetail({
             />
           ))}
         </ol>
-        {(canReport(task, me) || canAsk(task, me)) && task.status !== 'done' && (
+        {canReport(task, me) && task.status !== 'done' && (
           <LogComposer task={task} me={me} onSent={logs.reload} />
         )}
       </section>
@@ -143,6 +158,7 @@ function LogItem({
   name,
   report,
   canReopenIt,
+  canResolveIt,
   onChanged,
 }: {
   log: TaskLog;
@@ -151,9 +167,12 @@ function LogItem({
   name: string;
   report: Awaited<ReturnType<typeof api.taskReport>> | null | undefined;
   canReopenIt: boolean;
+  canResolveIt: boolean;
   onChanged: () => void;
 }) {
   const [answering, setAnswering] = useState(false);
+  const resolve = useAction();
+  const open = task.blocked?.log === log.id;
   const [reading, setReading] = useState(false);
   const [reopening, setReopening] = useState(false);
   const close = log.kind === 'close';
@@ -165,13 +184,15 @@ function LogItem({
   const files = close && report ? parseAttachments(report.attachments) : [];
   return (
     <li
-      className={`flex gap-2.5 ${close ? 'rounded-control border border-st-online bg-bg p-3' : ''} ${log.kind === 'reopen' ? 'rounded-control border border-warning p-3' : ''}`}
+      className={`flex gap-2.5 ${close ? 'rounded-control border border-st-online bg-bg p-3' : ''} ${log.kind === 'reopen' || (isBlocked(log) && open) ? 'rounded-control border border-warning p-3' : ''}`}
     >
       {author ? <Avatar member={author} size={22} /> : <span className="size-5.5" />}
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
           <span className="font-bold text-fg">{name}</span>
-          <Badge tone={close ? 'primary' : 'neutral'}>{t(KIND_LABEL[log.kind])}</Badge>
+          <Badge tone={close ? 'primary' : isBlocked(log) && open ? 'alert' : 'neutral'}>
+            {t(KIND_LABEL[log.kind])}
+          </Badge>
           {log.percent !== null && <span>{log.percent}%</span>}
           <span>{formatTime(log.at)}</span>
         </p>
@@ -201,7 +222,30 @@ function LogItem({
             )}
           </div>
         )}
-        {log.kind === 'question' && canAnswer(task) && (
+        {isBlocked(log) && open && (canAnswer(task) || canResolveIt) && (
+          <div className="flex flex-col gap-1">
+            {canResolveIt && !answering && (
+              <div>
+                <LinkButton
+                  className="text-xs"
+                  disabled={resolve.busy}
+                  onClick={async () => {
+                    if (
+                      await resolve.attempt(() =>
+                        api.resolveTaskBlocked(task.team, task.id, log.id, ''),
+                      )
+                    )
+                      onChanged();
+                  }}
+                >
+                  {t('tdetail.resolve')}
+                </LinkButton>
+              </div>
+            )}
+            <ErrorText message={resolve.error} />
+          </div>
+        )}
+        {isBlocked(log) && open && canAnswer(task) && (
           <div>
             {answering ? (
               <AnswerBox
@@ -268,7 +312,7 @@ function LogComposer({ task, me, onSent }: { task: Task; me: string; onSent: () 
   const [percent, setPercent] = useState('');
   const { busy, error, attempt } = useAction();
   const pct = percent.trim() === '' ? null : Math.max(0, Math.min(100, Number(percent)));
-  const send = async (kind: 'progress' | 'question') => {
+  const send = async (kind: 'progress' | 'blocked') => {
     if (
       await attempt(() =>
         api.addTaskLog(task.team, task.id, kind, text, kind === 'progress' ? pct : null),
@@ -312,17 +356,20 @@ function LogComposer({ task, me, onSent }: { task: Task; me: string; onSent: () 
             </Button>
           </>
         )}
-        {canAsk(task, me) && (
+        {canBlock(task, me) && (
           <Button
             size="sm"
             variant="secondary"
             disabled={busy || !text.trim()}
-            onClick={() => void send('question')}
+            onClick={() => void send('blocked')}
           >
             {t('tdetail.question')}
           </Button>
         )}
       </div>
+      {canBlock(task, me) && task.team !== 'private' && (
+        <p className="text-xs text-muted">{t('tdetail.blocked.hint')}</p>
+      )}
       <ErrorText message={error} />
     </div>
   );

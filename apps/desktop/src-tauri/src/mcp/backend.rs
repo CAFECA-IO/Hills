@@ -304,7 +304,7 @@ impl McpBackend for RealBackend {
                     .collect();
                 Ok(Value::Array(list))
             }
-            "get_scrum" => {
+            "get_scrum" | "get_daily_tasks" => {
                 let date = need(&args, "date")?;
                 if !is_date(date) {
                     return Err("`date` must be YYYY-MM-DD".into());
@@ -543,7 +543,7 @@ impl McpBackend for RealBackend {
                     preview,
                 ))
             }
-            "propose_scrum_draft" => {
+            "propose_scrum_draft" | "propose_daily_tasks" => {
                 let date = need(&args, "date")?;
                 if !is_date(date) {
                     return Err("`date` must be YYYY-MM-DD".into());
@@ -774,11 +774,21 @@ impl McpBackend for RealBackend {
                 let team = need(&args, "team")?;
                 let task = need(&args, "task")?;
                 let kind = need(&args, "kind")?;
-                if !["start", "progress", "question", "answer"].contains(&kind) {
-                    return Err("`kind` must be start, progress, question or answer".into());
+                if ![
+                    "start", "progress", "question", "answer", "blocked", "resolved",
+                ]
+                .contains(&kind)
+                {
+                    return Err(
+                        "`kind` must be start, progress, blocked, resolved or answer".into(),
+                    );
+                }
+                let blocked = s(&args, "blocked").unwrap_or_default();
+                if kind == "resolved" && blocked.is_empty() {
+                    return Err("`blocked` is required for `resolved`".into());
                 }
                 let text = s(&args, "text").unwrap_or_default();
-                if kind != "start" && text.trim().is_empty() {
+                if !["start", "resolved"].contains(&kind) && text.trim().is_empty() {
                     return Err("`text` is required".into());
                 }
                 let percent = args["percent"].as_u64();
@@ -791,7 +801,7 @@ impl McpBackend for RealBackend {
                     "text": clip(text, 120), "percent": percent
                 });
                 Ok((
-                    json!({ "team": team, "task": task, "kind": kind, "text": text, "percent": percent }),
+                    json!({ "team": team, "task": task, "kind": kind, "text": text, "percent": percent, "blocked": blocked }),
                     preview,
                 ))
             }
@@ -1014,7 +1024,7 @@ impl McpBackend for RealBackend {
                 )
                 .await,
             ),
-            "propose_scrum_draft" => to_v(
+            "propose_scrum_draft" | "propose_daily_tasks" => to_v(
                 commands::scrum_draft_set(
                     st,
                     need(&args, "date")?.to_owned(),
@@ -1091,6 +1101,16 @@ impl McpBackend for RealBackend {
                     .await,
                 )
             }
+            "propose_task_log" if args["kind"] == "resolved" => to_v(
+                commands::resolve_task_blocked(
+                    st,
+                    need(&args, "team")?.to_owned(),
+                    need(&args, "task")?.to_owned(),
+                    need(&args, "blocked")?.to_owned(),
+                    s(&args, "text").unwrap_or_default().to_owned(),
+                )
+                .await,
+            ),
             "propose_task_log" => {
                 let kind: hills_node::task_report::LogKind =
                     serde_json::from_value(args["kind"].clone()).map_err(|e| e.to_string())?;

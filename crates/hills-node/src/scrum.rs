@@ -1,4 +1,7 @@
-//! 每日 Scrum（technical-design §16.12 v0.17，feature-plan §5.4、D21）。
+//! 每日 Scrum → 每日任務（technical-design §16.12 v0.17 / v0.34，feature-plan §5.4、D21、D60）。
+//!
+//! v0.34：JSON v2 的完成項可引用任務紀錄（`log`、`percent`），卡住了改為引用任務上未解決的
+//! 「卡住了」紀錄（`blocked`），另加一句話 `note`。v1 照舊可讀。
 //!
 //! `member/<id>/scrum/<teamId>/<yyyy-mm>`：根物件 `day:<yyyy-mm-dd>` → JSON 字串；
 //! 送出時寫入每個所屬小組的文件，讀取時同一天取 `updatedAt` 較新者。
@@ -63,6 +66,12 @@ pub enum ScrumRef {
         #[serde(rename = "taskId")]
         task_id: String,
         title: String,
+        /// 引用的任務紀錄 id（v2，D60）
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        log: Option<String>,
+        /// 紀錄的百分比（v2）
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        percent: Option<u8>,
     },
     Plan {
         #[serde(rename = "planId")]
@@ -89,6 +98,24 @@ pub struct Blocker {
     pub notified: Vec<String>,
 }
 
+/// 卡住了（v2，D60）：引用任務上未解決的紀錄。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockedItem {
+    /// 紀錄 id；v1 的阻礙轉換時為 None
+    #[serde(default)]
+    pub log: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    #[serde(default)]
+    pub title: String,
+    pub text: String,
+    #[serde(default)]
+    pub since: Timestamp,
+}
+
 /// 文件中的 JSON 內容。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -97,7 +124,12 @@ struct ReportBody {
     date: String,
     done: Vec<ScrumRef>,
     today: Vec<ScrumRef>,
+    #[serde(default)]
     blockers: Vec<Blocker>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    blocked: Vec<BlockedItem>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
     submitted_at: Timestamp,
     updated_at: Timestamp,
 }
@@ -110,7 +142,10 @@ pub struct ScrumReport {
     pub date: String,
     pub done: Vec<ScrumRef>,
     pub today: Vec<ScrumRef>,
+    /// v1 的阻礙（v2 不再寫入；讀取時也轉進 `blocked`）
     pub blockers: Vec<Blocker>,
+    pub blocked: Vec<BlockedItem>,
+    pub note: Option<String>,
     pub submitted_at: Timestamp,
     pub updated_at: Timestamp,
 }
@@ -128,8 +163,14 @@ pub struct ScrumInput {
     pub done: Vec<ScrumRef>,
     #[serde(default)]
     pub today: Vec<ScrumRef>,
+    /// v1 的文字阻礙（MCP 舊參數；仍會通知負責人）
     #[serde(default)]
     pub blockers: Vec<String>,
+    /// v2：引用的卡住了紀錄
+    #[serde(default)]
+    pub blocked: Vec<BlockedItem>,
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 fn validate(input: &ScrumInput) -> Result<()> {
@@ -154,6 +195,21 @@ fn validate(input: &ScrumInput) -> Result<()> {
         })
     {
         bail!("阻礙最多 {MAX_ITEMS} 項，每項 1–{MAX_TEXT} 字");
+    }
+    if input.blocked.len() > MAX_ITEMS
+        || input
+            .blocked
+            .iter()
+            .any(|b| b.text.chars().count() > 4 * 1024 || b.title.chars().count() > MAX_TEXT)
+    {
+        bail!("卡住了最多 {MAX_ITEMS} 項");
+    }
+    if input
+        .note
+        .as_ref()
+        .is_some_and(|n| n.chars().count() > MAX_TEXT)
+    {
+        bail!("補充最多 {MAX_TEXT} 字");
     }
     Ok(())
 }
@@ -187,12 +243,24 @@ fn parse(member: MemberId, json: &str) -> Option<ScrumReport> {
     if !valid_date(&b.date) {
         return None;
     }
+    let mut blocked = b.blocked;
+    // v1 的阻礙轉為沒有紀錄的卡住了
+    blocked.extend(b.blockers.iter().map(|x| BlockedItem {
+        log: None,
+        team_id: None,
+        task_id: None,
+        title: String::new(),
+        text: x.text.clone(),
+        since: b.submitted_at,
+    }));
     Some(ScrumReport {
         member,
         date: b.date,
         done: b.done,
         today: b.today,
         blockers: b.blockers,
+        blocked,
+        note: b.note.filter(|n| !n.trim().is_empty()),
         submitted_at: b.submitted_at,
         updated_at: b.updated_at,
     })
@@ -273,10 +341,15 @@ impl Node {
         let now = now_ms();
         let existing = self.my_scrum(&input.date)?;
         let body = ReportBody {
-            v: 1,
+            v: 2,
             date: input.date.clone(),
             done: input.done,
             today: input.today,
+            blocked: input.blocked,
+            note: input
+                .note
+                .map(|n| n.trim().to_owned())
+                .filter(|n| !n.is_empty()),
             blockers: input
                 .blockers
                 .iter()
@@ -513,6 +586,8 @@ mod tests {
                     team_id: "a".into(),
                     task_id: "t".into(),
                     title: "驗收".into(),
+                    log: None,
+                    percent: None,
                 }],
                 today: vec![ScrumRef::Text {
                     title: "寫週報".into(),
@@ -521,6 +596,8 @@ mod tests {
                     text: blocker.into(),
                     notified: vec![m(2).to_string()],
                 }],
+                blocked: vec![],
+                note: None,
                 submitted_at: 1,
                 updated_at: updated,
             })
@@ -553,6 +630,8 @@ mod tests {
             done: vec![],
             today: vec![ScrumRef::Text { title: "x".into() }],
             blockers: vec!["需要測試機".into()],
+            blocked: vec![],
+            note: None,
         };
         assert!(validate(&ok).is_ok());
         let mut bad = ok.clone();

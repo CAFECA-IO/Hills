@@ -13,11 +13,15 @@ fn input(blockers: &[&str], today: &str) -> ScrumInput {
             team_id: "x".into(),
             task_id: "t".into(),
             title: "Mac 驗收".into(),
+            log: None,
+            percent: None,
         }],
         today: vec![ScrumRef::Text {
             title: today.into(),
         }],
         blockers: blockers.iter().map(|s| (*s).to_owned()).collect(),
+        blocked: vec![],
+        note: None,
     }
 }
 

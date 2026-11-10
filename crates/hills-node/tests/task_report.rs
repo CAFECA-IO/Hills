@@ -133,4 +133,84 @@ async fn close_reopen_and_close_again() {
             .body
             .contains("月底簡報")
     );
+
+    // D60：卡住了 → 對方看到 → 指派者標為已解決；回報百分比計入進度
+    let id2 = admin
+        .create_task(
+            DEFAULT_TEAM,
+            TaskInput {
+                title: "整理監控告警".into(),
+                assignee: Some(a),
+                estimate: Some(240),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert!(
+        eventually(Duration::from_secs(2), || async {
+            alice.tasks().unwrap().iter().any(|t| t.id == id2)
+        })
+        .await
+    );
+    alice
+        .add_task_log(
+            DEFAULT_TEAM,
+            &id2,
+            LogKind::Progress,
+            "做了一半多",
+            Some(60),
+        )
+        .await
+        .unwrap();
+    alice
+        .add_task_log(DEFAULT_TEAM, &id2, LogKind::Question, "需要測試主機", None)
+        .await
+        .unwrap();
+    let blocked = alice
+        .tasks()
+        .unwrap()
+        .into_iter()
+        .find(|t| t.id == id2)
+        .and_then(|t| t.blocked)
+        .expect("卡住中");
+    assert_eq!(blocked.text, "需要測試主機");
+    assert!(
+        eventually(Duration::from_secs(2), || async {
+            admin
+                .tasks()
+                .unwrap()
+                .iter()
+                .any(|t| t.id == id2 && t.blocked.is_some() && (t.progress() - 60.0).abs() < 1e-9)
+        })
+        .await
+    );
+    let t2 = admin
+        .tasks()
+        .unwrap()
+        .into_iter()
+        .find(|t| t.id == id2)
+        .unwrap();
+    assert_eq!(t2.estimate, Some(240));
+    admin
+        .resolve_task_blocked(DEFAULT_TEAM, &id2, &blocked.log, "週三前開好")
+        .await
+        .unwrap();
+    assert!(
+        admin
+            .tasks()
+            .unwrap()
+            .iter()
+            .any(|t| t.id == id2 && t.blocked.is_none())
+    );
+    let kinds: Vec<LogKind> = admin
+        .task_logs(DEFAULT_TEAM, &id2)
+        .unwrap()
+        .into_iter()
+        .map(|l| l.kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![LogKind::Progress, LogKind::Blocked, LogKind::Resolved]
+    );
 }

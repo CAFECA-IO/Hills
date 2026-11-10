@@ -87,13 +87,24 @@ fn forward_events(app: &AppHandle, node: &Node) {
                         Event::JoinsChanged => "joins",
                         Event::DeviceAdded { .. } => "device-added",
                         Event::Rejected => "rejected",
-                        Event::ScrumBlocker { .. } | Event::TaskAssigned { .. } => "doc",
+                        Event::ScrumBlocker { .. }
+                        | Event::TaskAssigned { .. }
+                        | Event::TaskBlocked { .. } => "doc",
                     };
                     if let Event::TaskAssigned { title, by, .. } = &ev {
                         notify_task_assigned(&app, &node, by, title);
                     }
                     if let Event::ScrumBlocker { member, text, .. } = &ev {
                         notify_scrum_blocker(&app, &node, member, text);
+                    }
+                    if let Event::TaskBlocked {
+                        member,
+                        title,
+                        text,
+                        ..
+                    } = &ev
+                    {
+                        notify_task_blocked(&app, &node, member, title, text);
                     }
                     if let Event::DeviceAdded { name, .. } = &ev {
                         notify_device_added(&app, &node, name);
@@ -168,6 +179,27 @@ fn notify_scrum_blocker(app: &AppHandle, node: &Node, member: &MemberId, text: &
         format!("{name} 回報了阻礙")
     } else {
         format!("{name} reported a blocker")
+    };
+    let _ = app
+        .notification()
+        .builder()
+        .title(title)
+        .body(text.chars().take(120).collect::<String>())
+        .show();
+}
+
+/// 小組成員卡住了（technical-design §16.8 v0.34，D60）。
+fn notify_task_blocked(app: &AppHandle, node: &Node, member: &MemberId, task: &str, text: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    if !node.notify_prefs().blockers {
+        return;
+    }
+    let zh = !node.org().locale.starts_with("en");
+    let name = node.display_name(member);
+    let title = if zh {
+        format!("{name} 卡住了：{task}")
+    } else {
+        format!("{name} is blocked: {task}")
     };
     let _ = app
         .notification()
@@ -741,6 +773,17 @@ pub struct StepView {
     assignee: Option<String>,
     done: bool,
     done_at: Option<i64>,
+    estimate: Option<u32>,
+}
+
+/// 卡住中（D60）
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockedView {
+    log: String,
+    author: String,
+    text: String,
+    since: i64,
 }
 
 #[derive(Serialize)]
@@ -767,6 +810,11 @@ pub struct TaskView {
     /// 交付說明與完成條件（D53）
     brief: Option<String>,
     acceptance: Vec<hills_node::team::Criterion>,
+    /// 預估分鐘數、最新回報百分比、卡住中、進度（D60、D62）
+    estimate: Option<u32>,
+    reported: Option<u8>,
+    blocked: Option<BlockedView>,
+    progress: f64,
 }
 
 impl From<Task> for TaskView {
@@ -780,6 +828,15 @@ impl From<Task> for TaskView {
             pending_ack,
             brief: t.brief.clone(),
             acceptance: t.acceptance.clone(),
+            estimate: t.estimate,
+            reported: t.reported,
+            blocked: t.blocked.clone().map(|b| BlockedView {
+                log: b.log,
+                author: b.author.to_string(),
+                text: b.text,
+                since: b.since,
+            }),
+            progress: t.progress(),
             id: t.id,
             team: t.team,
             title: t.title,
@@ -796,6 +853,7 @@ impl From<Task> for TaskView {
                     assignee: s.assignee.map(|m| m.to_string()),
                     done: s.done,
                     done_at: s.done_at,
+                    estimate: s.estimate,
                 })
                 .collect(),
             plan_item_id: t.plan_item_id,
@@ -814,6 +872,8 @@ pub struct StepArgs {
     assignee: Option<String>,
     #[serde(default)]
     done: bool,
+    #[serde(default)]
+    estimate: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -834,6 +894,9 @@ pub struct TaskArgs {
     brief: Option<String>,
     #[serde(default)]
     acceptance: Option<Vec<hills_node::team::CriterionInput>>,
+    /// 預估分鐘數（D62）；不傳 = 不變更，0 = 清除
+    #[serde(default)]
+    estimate: Option<u32>,
 }
 
 impl TaskArgs {
@@ -852,6 +915,7 @@ impl TaskArgs {
                         title: s.title,
                         assignee: opt_member(&s.assignee)?,
                         done: s.done,
+                        estimate: s.estimate,
                     })
                 })
                 .collect::<CmdResult<_>>()?,
@@ -859,6 +923,7 @@ impl TaskArgs {
             team_goal_id: self.team_goal_id,
             brief: self.brief,
             acceptance: self.acceptance,
+            estimate: self.estimate,
         })
     }
 }
@@ -884,6 +949,27 @@ pub async fn add_task_log(
     percent: Option<u8>,
 ) -> CmdResult<()> {
     with_node!(state, n => n.add_task_log(&team, &task, kind, &text, percent).await.map_err(e))
+}
+
+/// 我在某時間之後寫的任務紀錄（每日任務草稿，D60）。
+#[tauri::command]
+pub async fn my_logs_since(
+    state: State<'_, AppState>,
+    since: i64,
+) -> CmdResult<Vec<hills_node::task_report::MyLog>> {
+    with_node!(state, n => n.my_logs_since(since).map_err(e))
+}
+
+/// 卡住了已解決（D60）。
+#[tauri::command]
+pub async fn resolve_task_blocked(
+    state: State<'_, AppState>,
+    team: String,
+    task: String,
+    blocked: String,
+    text: String,
+) -> CmdResult<()> {
+    with_node!(state, n => n.resolve_task_blocked(&team, &task, &blocked, &text).await.map_err(e))
 }
 
 /// 結案：寫報告、任務完成、寫結案紀錄（D53）。

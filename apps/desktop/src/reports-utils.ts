@@ -204,3 +204,36 @@ export function mergeTeam(
   }
   return out;
 }
+
+// ── 延到下期（D61，technical-design §16.13 v0.34）──
+
+/**
+ * 週報發佈時可延到下期的任務：我負責（私人任務是我）、還沒完成，且期限在這週或連到這週的週目標。
+ */
+export function carryCandidates(
+  tasks: Task[],
+  me: string,
+  week: string,
+  tz: string,
+  plans: PlanView[],
+): Task[] {
+  const days = new Set(daysOf('weekly', week));
+  const weekGoals = new Set(
+    plans.filter((p) => p.level === 'week' && p.period === week).map((p) => p.id),
+  );
+  return tasks.filter(
+    (x) =>
+      x.status !== 'done' &&
+      (x.assignee === me || x.team === 'private') &&
+      ((x.dueAt !== null && days.has(periodsAt(x.dueAt, tz).day)) ||
+        (x.planItemId !== null && weekGoals.has(x.planItemId))),
+  );
+}
+
+/** 期限移到下週一的同一時間（沒有期限時用 `fallback`，通常是現在）。 */
+export function nextMondaySameTime(due: number | null, fallback: number): number {
+  const d = new Date(due ?? fallback);
+  const dow = (d.getDay() + 6) % 7; // 週一 = 0
+  d.setDate(d.getDate() + (7 - dow));
+  return d.getTime();
+}

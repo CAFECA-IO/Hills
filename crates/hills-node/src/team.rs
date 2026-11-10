@@ -24,6 +24,8 @@ const FOCUS_FILE: &str = "focus";
 const MAX_STEPS: usize = 30;
 /// 交付說明上限（D53，technical-design §16.8 v0.29）
 const MAX_BRIEF: usize = 8 * 1024;
+/// 預估分鐘數上限（1000 小時，D62）
+const MAX_ESTIMATE: u32 = 60_000;
 /// 完成條件條數與每條字數上限（D53）
 const MAX_CRITERIA: usize = 20;
 const MAX_CRITERION: usize = 200;
@@ -70,6 +72,19 @@ pub struct TaskStep {
     pub assignee: Option<MemberId>,
     pub done: bool,
     pub done_at: Option<Timestamp>,
+    /// 預估分鐘數（v0.34，D62）
+    pub estimate: Option<u32>,
+}
+
+/// 卡住中的紀錄（technical-design §16.8 v0.34，D60）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Blocked {
+    /// 紀錄 id（ULID）
+    pub log: String,
+    pub author: MemberId,
+    pub text: String,
+    pub since: Timestamp,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -100,6 +115,12 @@ pub struct Task {
     pub brief: Option<String>,
     /// 完成條件（D53）
     pub acceptance: Vec<Criterion>,
+    /// 預估分鐘數（v0.34，D62）
+    pub estimate: Option<u32>,
+    /// 負責人最新回報的百分比（退回後重新計算，D60）
+    pub reported: Option<u8>,
+    /// 卡住中（最新一筆未解決的「卡住了」，D60）
+    pub blocked: Option<Blocked>,
 }
 
 /// 任務的一條完成條件（technical-design §16.8 v0.29，D53）。
@@ -157,17 +178,18 @@ impl Task {
         self.team == PRIVATE_TEAM
     }
 
-    /// 任務進度 0–100：完成步驟比例；沒有步驟時完成 = 100、未完成 = 0（§16.8 v0.19）。
+    /// 任務進度 0–100（§16.8 v0.34，D60）：完成 = 100；否則取完成步驟比例與最新回報百分比較大者。
     pub fn progress(&self) -> f64 {
-        if self.steps.is_empty() {
-            return if self.status == TaskStatus::Done {
-                100.0
-            } else {
-                0.0
-            };
+        if self.status == TaskStatus::Done {
+            return 100.0;
         }
-        let done = self.steps.iter().filter(|s| s.done).count();
-        done as f64 * 100.0 / self.steps.len() as f64
+        let steps = if self.steps.is_empty() {
+            0.0
+        } else {
+            let done = self.steps.iter().filter(|s| s.done).count();
+            done as f64 * 100.0 / self.steps.len() as f64
+        };
+        steps.max(f64::from(self.reported.unwrap_or(0)))
     }
 }
 
@@ -192,6 +214,9 @@ pub struct TaskInput {
     /// 完成條件（D53）；None = 不變更
     #[serde(default)]
     pub acceptance: Option<Vec<CriterionInput>>,
+    /// 預估分鐘數（D62）；None = 不變更，0 = 清除
+    #[serde(default)]
+    pub estimate: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -202,6 +227,9 @@ pub struct StepInput {
     pub assignee: Option<MemberId>,
     #[serde(default)]
     pub done: bool,
+    /// 預估分鐘數（D62）；None = 沿用既有步驟的值，0 = 清除
+    #[serde(default)]
+    pub estimate: Option<u32>,
 }
 
 /// 角色外觀：角色種類與三個部位的色號（technical-design §16.8 v0.31，D56）。
@@ -264,12 +292,14 @@ fn read_steps(doc: &AutoCommit, task: &ObjId) -> Vec<TaskStep> {
             assignee: member(doc, &s, "assignee"),
             done: get_bool(doc, &s, "done"),
             done_at: get_int(doc, &s, "doneAt"),
+            estimate: get_int(doc, &s, "estimate").and_then(|v| u32::try_from(v).ok()),
         })
         .collect()
 }
 
 pub fn read_tasks(doc: &AutoCommit, team: &str) -> Vec<Task> {
-    doc.keys(ROOT)
+    let tasks = doc
+        .keys(ROOT)
         .filter_map(|k| {
             let id = k.strip_prefix(TASK_PREFIX)?.to_owned();
             let t = get_obj(doc, &ROOT, &k)?;
@@ -294,10 +324,21 @@ pub fn read_tasks(doc: &AutoCommit, team: &str) -> Vec<Task> {
                 acceptance: get_str(doc, &t, "acceptance")
                     .and_then(|raw| serde_json::from_str(&raw).ok())
                     .unwrap_or_default(),
+                estimate: get_int(doc, &t, "estimate").and_then(|v| u32::try_from(v).ok()),
+                reported: None,
+                blocked: None,
             })
         })
+        .collect::<Vec<_>>();
+    let mut summary = crate::task_report::summarize_logs(doc);
+    tasks
+        .into_iter()
         .map(|mut t| {
             t.ack = read_ack(doc, &t);
+            if let Some(s) = summary.remove(&t.id) {
+                t.reported = s.reported_by(t.assignee.as_ref(), t.is_private());
+                t.blocked = s.blocked;
+            }
             t
         })
         .collect()
@@ -365,6 +406,14 @@ fn validate(input: &TaskInput) -> Result<()> {
         .any(|s| s.title.trim().is_empty() || s.title.chars().count() > MAX_TITLE)
     {
         bail!("步驟名稱需為 1–{MAX_TITLE} 字");
+    }
+    if input.estimate.is_some_and(|e| e > MAX_ESTIMATE)
+        || input
+            .steps
+            .iter()
+            .any(|s| s.estimate.is_some_and(|e| e > MAX_ESTIMATE))
+    {
+        bail!("預估時數最多 1000 小時");
     }
     if input.brief.as_ref().is_some_and(|b| b.len() > MAX_BRIEF) {
         bail!("交付說明最多 8 KB");
@@ -480,6 +529,23 @@ pub fn write_task(
             let at = prev.and_then(|p| p.done_at).unwrap_or(now);
             doc.put(&m, "doneAt", at)?;
         }
+        let estimate = match s.estimate {
+            Some(0) => None,
+            Some(e) => Some(e),
+            None => prev.and_then(|p| p.estimate),
+        };
+        if let Some(e) = estimate {
+            doc.put(&m, "estimate", i64::from(e))?;
+        }
+    }
+    match input.estimate {
+        Some(0) => {
+            if doc.get(&t, "estimate")?.is_some() {
+                doc.delete(&t, "estimate")?;
+            }
+        }
+        Some(e) => doc.put(&t, "estimate", i64::from(e))?,
+        None => {}
     }
     if let Some(b) = input.brief.as_deref().map(str::trim) {
         if b.is_empty() {
@@ -651,7 +717,7 @@ fn private_tasks_doc(owner: &MemberId) -> String {
 }
 
 impl Node {
-    fn my_teams(&self) -> Vec<String> {
+    pub(crate) fn my_teams(&self) -> Vec<String> {
         self.org().teams_of(&self.member_id())
     }
 
@@ -798,8 +864,32 @@ impl Node {
     ) -> Result<()> {
         self.ensure_my_team(team)?;
         let now = now_ms();
+        let me = self.member_id();
+        let log_id = crate::conv::ulid(now)?;
         self.change(&self.task_doc(team), |doc| {
-            set_step_done(doc, task, step, done, now)
+            set_step_done(doc, task, step, done, now)?;
+            if !done {
+                return Ok(());
+            }
+            // 步驟完成寫一筆紀錄（§16.8 v0.34，D60）
+            let title = get_obj(doc, &ROOT, &format!("{TASK_PREFIX}{task}"))
+                .map(|t| read_steps(doc, &t))
+                .and_then(|steps| steps.into_iter().find(|s| s.id == step))
+                .map(|s| s.title)
+                .unwrap_or_default();
+            crate::task_report::write_log(
+                doc,
+                task,
+                &log_id,
+                &me,
+                crate::task_report::LogEntry {
+                    kind: crate::task_report::LogKind::Step,
+                    text: &title,
+                    percent: None,
+                    refs: vec![step.to_owned()],
+                    at: now,
+                },
+            )
         })
         .await
     }
@@ -902,6 +992,7 @@ mod tests {
             title: title.into(),
             assignee: who,
             done: false,
+            estimate: None,
         }
     }
 
@@ -975,6 +1066,7 @@ mod tests {
             team_goal_id: None,
             brief: None,
             acceptance: None,
+            estimate: None,
             title: " Windows 驗收 ".into(),
             assignee: Some(B),
             status: None,
@@ -1006,6 +1098,7 @@ mod tests {
             team_goal_id: None,
             brief: None,
             acceptance: None,
+            estimate: None,
             title: "Windows 驗收".into(),
             assignee: Some(B),
             status: Some(TaskStatus::Doing),
@@ -1018,6 +1111,7 @@ mod tests {
                     title: s.title.clone(),
                     assignee: s.assignee,
                     done: s.done,
+                    estimate: None,
                 })
                 .collect(),
         };
@@ -1137,6 +1231,9 @@ mod tests {
             ack: None,
             brief: None,
             acceptance: vec![],
+            estimate: None,
+            reported: None,
+            blocked: None,
         }
     }
 
@@ -1206,6 +1303,7 @@ mod tests {
             assignee: who,
             done,
             done_at: None,
+            estimate: None,
         }
     }
 

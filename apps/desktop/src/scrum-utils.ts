@@ -1,6 +1,15 @@
 /** 每日 Scrum 的純函式（ui-spec「Scrum」、technical-design §16.12）。 */
-import { isPrivateTask, type MemberView, type ScrumRef, type ScrumReport, type Task } from './api';
+import {
+  isPrivateTask,
+  type MemberView,
+  type MyLog,
+  type ScrumBlocked,
+  type ScrumRef,
+  type ScrumReport,
+  type Task,
+} from './api';
 import { periodsAt } from './goals-utils';
+import { t } from './i18n';
 
 /** `yyyy-mm-dd` 的星期（0 = 週日 … 6 = 週六）。 */
 export function weekday(date: string): number {
@@ -35,7 +44,7 @@ export function prevWorkday(date: string): string {
 export function refKey(r: ScrumRef): string {
   switch (r.kind) {
     case 'task':
-      return `task:${r.teamId}/${r.taskId}`;
+      return r.log ? `task:${r.teamId}/${r.taskId}/${r.log}` : `task:${r.teamId}/${r.taskId}`;
     case 'plan':
       return `plan:${r.planId}`;
     case 'text':
@@ -91,6 +100,59 @@ export function doneSince(tasks: Task[], me: string, date: string, tz: string): 
     }
   }
   return out;
+}
+
+/** 某天 00:00 之前一點的時間（足以涵蓋任何時區；再以 `dayOf` 篩選）。 */
+export const dayStartMs = (date: string) => Date.parse(`${date}T00:00:00Z`) - 14 * 3_600_000;
+
+/**
+ * 「做完了」（每日任務 v2，technical-design §16.12 v0.34，D60）：上一個工作日起我寫的紀錄——
+ * 步驟完成、進度、結案。私人任務只帶標題。
+ */
+export function doneFromLogs(logs: MyLog[], date: string, tz: string): ScrumRef[] {
+  const since = prevWorkday(date);
+  const out: ScrumRef[] = [];
+  for (const { team, task, title, log } of logs) {
+    const d = dayOf(log.at, tz);
+    if (d < since || d > date) continue;
+    let label: string;
+    if (log.kind === 'step') label = t('scrum.log.step', { task: title, step: log.text });
+    else if (log.kind === 'close') label = t('scrum.log.close', { task: title });
+    else if (log.kind === 'progress')
+      label =
+        log.percent !== null
+          ? t('scrum.log.percent', { task: title, p: log.percent })
+          : t('scrum.log.progress', { task: title, text: log.text.split('\n')[0] ?? '' });
+    else continue;
+    label = label.slice(0, 200);
+    out.push(
+      team === 'private'
+        ? { kind: 'text', title: label }
+        : {
+            kind: 'task',
+            teamId: team,
+            taskId: task,
+            title: label,
+            log: log.id,
+            percent: log.percent,
+          },
+    );
+  }
+  return out;
+}
+
+/** 「卡住了」：我負責、還沒解決的卡住了（D60）。 */
+export function blockedOf(tasks: Task[], me: string): ScrumBlocked[] {
+  return tasks
+    .filter((x) => x.blocked && x.status !== 'done' && (x.assignee === me || isPrivateTask(x)))
+    .map((x) => ({
+      log: x.blocked!.log,
+      teamId: isPrivateTask(x) ? null : x.team,
+      taskId: isPrivateTask(x) ? null : x.id,
+      title: x.title,
+      text: x.blocked!.text,
+      since: x.blocked!.since,
+    }));
 }
 
 /** 「今天計劃」：焦點任務，以及今天到期或進行中的我的任務（D46）。 */

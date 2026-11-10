@@ -14,7 +14,8 @@ use serde::{Deserialize, Serialize};
 use crate::doc_spec::{self, DocFormat, DocKind as SpecKind};
 use crate::node::{Node, now_ms};
 use crate::org::{get_obj, get_str};
-use crate::team::{PRIVATE_TEAM, TASK_PREFIX, Task, TaskStatus, put_done_at, read_tasks};
+use crate::team::{Blocked, PRIVATE_TEAM, TASK_PREFIX, Task, TaskStatus, put_done_at, read_tasks};
+use std::collections::HashMap;
 
 const LOG_PREFIX: &str = "log:";
 const REPORT_PREFIX: &str = "report:";
@@ -29,10 +30,17 @@ const MAX_REFS: usize = 20;
 pub enum LogKind {
     Start,
     Progress,
+    /// 舊資料；寫入時改為 `Blocked`（v0.34，D60）
     Question,
     Answer,
     Close,
     Reopen,
+    /// 步驟完成（由 node 在勾選時寫入）
+    Step,
+    /// 卡住了
+    Blocked,
+    /// 已解決（refs = [被解決的卡住了紀錄 id]）
+    Resolved,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -183,6 +191,100 @@ pub fn read_logs(doc: &AutoCommit, task: &str) -> Vec<TaskLog> {
         })
         .collect();
     out.sort_by(|a, b| a.at.cmp(&b.at).then(a.id.cmp(&b.id)));
+    out
+}
+
+/// 我寫的一筆紀錄與所屬任務（§16.12 v0.34）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MyLog {
+    pub team: String,
+    pub task: String,
+    pub title: String,
+    pub log: TaskLog,
+}
+
+/// 一個任務的紀錄摘要：回報的百分比與卡住中（§16.8 v0.34，D60）。
+#[derive(Debug, Default)]
+pub struct LogSummary {
+    /// 最後一次退回之後，各作者最新的百分比
+    percents: HashMap<MemberId, u8>,
+    pub blocked: Option<Blocked>,
+}
+
+impl LogSummary {
+    /// 負責人最新回報的百分比；私人任務取任一作者（只有本人）。
+    pub fn reported_by(&self, assignee: Option<&MemberId>, private: bool) -> Option<u8> {
+        if private {
+            return self.percents.values().copied().max();
+        }
+        assignee.and_then(|a| self.percents.get(a).copied())
+    }
+}
+
+/// 依任務彙整全部紀錄（read_tasks 用，只掃一次文件）。
+pub fn summarize_logs(doc: &AutoCommit) -> HashMap<String, LogSummary> {
+    let mut by_task: HashMap<String, Vec<TaskLog>> = HashMap::new();
+    for k in doc.keys(ROOT) {
+        let Some(rest) = k.strip_prefix(LOG_PREFIX) else {
+            continue;
+        };
+        let mut parts = rest.splitn(3, ':');
+        let (Some(task), Some(id), Some(author)) = (parts.next(), parts.next(), parts.next())
+        else {
+            continue;
+        };
+        let Ok(author) = MemberId::parse(author) else {
+            continue;
+        };
+        let Some(b) =
+            get_str(doc, &ROOT, &k).and_then(|raw| serde_json::from_str::<LogBody>(&raw).ok())
+        else {
+            continue;
+        };
+        by_task.entry(task.to_owned()).or_default().push(TaskLog {
+            id: id.to_owned(),
+            author,
+            kind: b.kind,
+            text: b.text,
+            percent: b.percent.filter(|p| *p <= 100),
+            refs: b.refs,
+            at: b.at,
+        });
+    }
+    by_task
+        .into_iter()
+        .map(|(task, mut logs)| {
+            logs.sort_by(|a, b| a.at.cmp(&b.at).then(a.id.cmp(&b.id)));
+            (task, summarize(&logs))
+        })
+        .collect()
+}
+
+/// 依時間順序的紀錄 → 摘要。結案視為解決所有卡住了；退回後百分比重算。
+pub fn summarize(logs: &[TaskLog]) -> LogSummary {
+    let mut out = LogSummary::default();
+    let mut open: Vec<&TaskLog> = vec![];
+    for l in logs {
+        match l.kind {
+            LogKind::Progress => {
+                if let Some(p) = l.percent {
+                    out.percents.insert(l.author, p);
+                }
+            }
+            LogKind::Reopen => out.percents.clear(),
+            LogKind::Blocked | LogKind::Question => open.push(l),
+            LogKind::Resolved => open.retain(|b| !l.refs.contains(&b.id)),
+            LogKind::Close => open.clear(),
+            LogKind::Start | LogKind::Answer | LogKind::Step => {}
+        }
+    }
+    out.blocked = open.last().map(|b| Blocked {
+        log: b.id.clone(),
+        author: b.author,
+        text: b.text.clone(),
+        since: b.at,
+    });
     out
 }
 
@@ -350,13 +452,16 @@ impl Node {
         percent: Option<u8>,
     ) -> Result<()> {
         let t = self.find_task(team, task)?;
+        // 「提出問題」併入「卡住了」（D60）
+        let kind = if kind == LogKind::Question {
+            LogKind::Blocked
+        } else {
+            kind
+        };
         match kind {
-            LogKind::Start | LogKind::Progress | LogKind::Question => {
+            LogKind::Start | LogKind::Progress | LogKind::Blocked => {
                 if !self.is_assignee(&t) {
                     bail!("只有負責人可以回報");
-                }
-                if kind == LogKind::Question && t.team == PRIVATE_TEAM {
-                    bail!("私人任務不能提出問題");
                 }
             }
             LogKind::Answer => {
@@ -365,6 +470,8 @@ impl Node {
                 }
             }
             LogKind::Close | LogKind::Reopen => bail!("請使用結案或退回"),
+            LogKind::Resolved => bail!("請使用「已解決」"),
+            LogKind::Step | LogKind::Question => bail!("步驟完成由系統記錄"),
         }
         if percent.is_some_and(|p| p > 100) {
             bail!("百分比需為 0–100");
@@ -384,6 +491,84 @@ impl Node {
                     text: &text,
                     percent,
                     refs: vec![],
+                    at: now,
+                },
+            )
+        })
+        .await
+    }
+
+    /// 我在 `since` 之後寫的紀錄（每日任務草稿、週報；§16.12 v0.34）。
+    pub fn my_logs_since(&self, since: Timestamp) -> Result<Vec<MyLog>> {
+        let me = self.member_id();
+        let mut teams = self.my_teams();
+        teams.push(PRIVATE_TEAM.to_owned());
+        let mut out = Vec::new();
+        for team in teams {
+            let rows = self.read_doc(&self.task_doc(&team), |d| {
+                let titles: HashMap<String, String> = read_tasks(d, &team)
+                    .into_iter()
+                    .map(|t| (t.id, t.title))
+                    .collect();
+                titles
+                    .iter()
+                    .flat_map(|(id, title)| {
+                        read_logs(d, id)
+                            .into_iter()
+                            .filter(|l| l.author == me && l.at >= since)
+                            .map(|l| MyLog {
+                                team: team.clone(),
+                                task: id.clone(),
+                                title: title.clone(),
+                                log: l,
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>()
+            })?;
+            out.extend(rows);
+        }
+        out.sort_by(|a, b| a.log.at.cmp(&b.log.at).then(a.log.id.cmp(&b.log.id)));
+        Ok(out)
+    }
+
+    /// 已解決（D60）：負責人、指派者或小組負責人，標記一筆卡住了。
+    pub async fn resolve_task_blocked(
+        &self,
+        team: &str,
+        task: &str,
+        blocked: &str,
+        text: &str,
+    ) -> Result<()> {
+        let t = self.find_task(team, task)?;
+        let me = self.member_id();
+        let allowed = self.is_assignee(&t)
+            || t.assigned_by == Some(me)
+            || (t.team != PRIVATE_TEAM && self.org().is_team_lead(team, &me));
+        if !allowed {
+            bail!("只有負責人、指派者或小組負責人可以標為已解決");
+        }
+        let logs = self.task_logs(team, task)?;
+        if !logs
+            .iter()
+            .any(|l| l.id == blocked && matches!(l.kind, LogKind::Blocked | LogKind::Question))
+        {
+            bail!("找不到這筆卡住了");
+        }
+        let text = clean_text(text, false)?;
+        let now = now_ms();
+        let id = crate::conv::ulid(now)?;
+        self.change(&self.task_doc(team), |doc| {
+            write_log(
+                doc,
+                task,
+                &id,
+                &me,
+                LogEntry {
+                    kind: LogKind::Resolved,
+                    text: &text,
+                    percent: None,
+                    refs: vec![blocked.to_owned()],
                     at: now,
                 },
             )
@@ -522,6 +707,49 @@ mod tests {
         assert_eq!(logs[1].author, B);
         // 報告保留
         assert!(read_report(&doc, "t1", Some(&A)).is_some());
+    }
+
+    fn log(
+        id: &str,
+        author: MemberId,
+        kind: LogKind,
+        percent: Option<u8>,
+        refs: &[&str],
+        at: i64,
+    ) -> TaskLog {
+        TaskLog {
+            id: id.into(),
+            author,
+            kind,
+            text: "x".into(),
+            percent,
+            refs: refs.iter().map(|r| (*r).to_owned()).collect(),
+            at,
+        }
+    }
+
+    #[test]
+    fn summary_percent_and_blocked() {
+        let s = summarize(&[
+            log("1", A, LogKind::Progress, Some(40), &[], 1),
+            log("2", B, LogKind::Progress, Some(90), &[], 2),
+            log("3", A, LogKind::Blocked, None, &[], 3),
+            log("4", A, LogKind::Question, None, &[], 4),
+            log("5", B, LogKind::Resolved, None, &["4"], 5),
+        ]);
+        assert_eq!(s.reported_by(Some(&A), false), Some(40));
+        assert_eq!(s.reported_by(Some(&B), false), Some(90));
+        assert_eq!(s.reported_by(None, false), None);
+        assert_eq!(s.blocked.as_ref().map(|b| b.log.as_str()), Some("3"));
+        // 退回後百分比重算；結案解決全部卡住了
+        let s = summarize(&[
+            log("1", A, LogKind::Progress, Some(70), &[], 1),
+            log("2", A, LogKind::Blocked, None, &[], 2),
+            log("3", A, LogKind::Close, None, &[], 3),
+            log("4", B, LogKind::Reopen, None, &[], 4),
+        ]);
+        assert_eq!(s.reported_by(Some(&A), false), None);
+        assert!(s.blocked.is_none());
     }
 
     #[test]

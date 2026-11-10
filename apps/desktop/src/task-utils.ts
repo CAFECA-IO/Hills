@@ -14,8 +14,19 @@ export const closeIsPrimary = (t: Task, me: string) =>
 /** 回報進度：負責人（私人任務是我）。 */
 export const canReport = (t: Task, me: string) => isPrivateTask(t) || t.assignee === me;
 
-/** 提出問題：負責人，私人任務不提供。 */
-export const canAsk = (t: Task, me: string) => !isPrivateTask(t) && t.assignee === me;
+/** 卡住了：負責人（私人任務是我，D60）。 */
+export const canBlock = (t: Task, me: string) => canReport(t, me);
+
+/** 已解決：負責人、指派者或小組負責人（D60）。 */
+export function canResolve(t: Task, me: string, teams: TeamView[]): boolean {
+  if (canReport(t, me) || t.assignedBy === me) return true;
+  if (isPrivateTask(t)) return false;
+  return (teams.find((x) => x.id === t.team)?.leads ?? []).includes(me);
+}
+
+/** 卡住幾天（至少 1）。 */
+export const blockedDays = (since: number, now: number) =>
+  Math.max(1, Math.ceil((now - since) / 86_400_000));
 
 /** 回覆問題：小組成員（看得到小組任務的人），私人任務不提供。 */
 export const canAnswer = (t: Task) => !isPrivateTask(t);

@@ -124,7 +124,7 @@ export function Scrum({ members, teams, tasks, focusId, timezone }: Props) {
   );
 }
 
-function MyScrum({
+export function MyScrum({
   date,
   editable,
   members,
@@ -468,7 +468,7 @@ const STATUS_ICON: Record<MemberScrumStatus, string> = {
   offday: '–',
 };
 
-function TeamOverview({
+export function TeamOverview({
   teams,
   teamId,
   onTeam,

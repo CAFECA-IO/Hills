@@ -622,7 +622,8 @@ impl Mailbox {
                 // D49（technical-design §16.15）：mailbox 看不到小組名單，小組金鑰由任何有效成員
                 // 交接；成員資格由收件端檢查
                 KeyFamily::Team(_) => true,
-                KeyFamily::MemberPrivate(m) => *m == signer.member_id,
+                // 工作紀錄金鑰只由本人封裝（technical-design §16.18，D62）
+                KeyFamily::MemberPrivate(m) | KeyFamily::MemberWorklog(m) => *m == signer.member_id,
                 KeyFamily::Conv(_) | KeyFamily::ConvMeta(_) => true,
             };
             if !allowed {

@@ -52,6 +52,10 @@ pub enum MemberSection {
     Tasks,
     /// 方向摘要與對齊建議：`direction`（technical-design §16.14 v0.21，D47），全員可讀
     Direction,
+    /// 計時原始紀錄：`timer`（technical-design §16.18 v0.34，D62），只有本人
+    Timer,
+    /// 工作紀錄：`worklog/<yyyy-mm>`（§16.18，D62），本人與所屬小組負責人
+    Worklog(String),
     /// 個人資料：`profile`（顯示名稱、時區、工作時段；technical-design §16.17 v0.31，D57），全員可讀
     Profile,
 }
@@ -144,6 +148,8 @@ impl DocKind {
                     ["tasks"] => MemberSection::Tasks,
                     ["direction"] => MemberSection::Direction,
                     ["profile"] => MemberSection::Profile,
+                    ["timer"] => MemberSection::Timer,
+                    ["worklog", ym] if is_month(ym) => MemberSection::Worklog((*ym).into()),
                     _ => return None,
                 };
                 DocKind::Member { owner, section }
@@ -183,6 +189,21 @@ mod tests {
             })
         ));
         assert!(DocKind::parse(&format!("member/{m}/profile/x")).is_none());
+        assert_eq!(
+            DocKind::parse(&format!("member/{m}/worklog/2026-11")),
+            Some(DocKind::Member {
+                owner: m,
+                section: MemberSection::Worklog("2026-11".into())
+            })
+        );
+        assert!(DocKind::parse(&format!("member/{m}/worklog/11")).is_none());
+        assert!(matches!(
+            DocKind::parse(&format!("member/{m}/timer")),
+            Some(DocKind::Member {
+                section: MemberSection::Timer,
+                ..
+            })
+        ));
         assert!(matches!(
             DocKind::parse(&format!("member/{m}/direction")),
             Some(DocKind::Member {

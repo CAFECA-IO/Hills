@@ -15,11 +15,11 @@ import { McpConfirmStack } from './mcp-confirm';
 import { readGroup, Settings, writeGroup, type Group } from './settings';
 import { locationLabel, StatusMenu } from './status';
 import { useDirectionPublisher } from './drift-publisher';
-import { Goals } from './goals';
 import { Home } from './home';
 import { Knowledge } from './kb';
-import { Reports, useWeeklyReportReminder } from './reports';
-import { Scrum, useScrumReminder } from './scrum';
+import { readWorkTab, Work, type WorkSub, type WorkTab } from './work';
+import { useWeeklyReportReminder } from './reports';
+import { useScrumReminder } from './scrum';
 import { useIdleAway, useLoad, useSyncStatus } from './hooks';
 import { formatClock, formatDate, t, type MessageKey } from './i18n';
 import {
@@ -32,10 +32,9 @@ import {
   type HeadSlots,
 } from './layout';
 import { isOffHours } from './profile-utils';
-import { Tasks } from './tasks';
 import { Badge, Card, EmptyState, ErrorText, Pressable, SegmentedControl } from './ui';
 
-type Page = 'home' | 'goals' | 'team' | 'tasks' | 'scrum' | 'reports' | 'chat' | 'kb' | 'settings';
+type Page = 'home' | 'work' | 'team' | 'chat' | 'kb' | 'settings';
 
 const SYNC_ICON: Record<SyncStatus, string> = {
   Synced: '●',
@@ -63,11 +62,8 @@ export function SyncIndicator() {
 
 const NAV_ICON: Record<Page, string> = {
   home: 'M3 9.5L10 3.5l7 6V17H3zM8 17v-5h4v5',
-  goals: 'M3 17h4v-4h4V9h4V5h2M3 17v-1',
+  work: 'M3 17h4v-4h4V9h4V5h2M3 17v-1',
   team: 'M7 7m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M2 16c.8-3 3-4.5 5-4.5s4.2 1.5 5 4.5M14 8m-2.4 0a2.4 2.4 0 1 0 4.8 0a2.4 2.4 0 1 0 -4.8 0M12 15.5c.5-2 1.7-3 3-3s2.6 1 3 3',
-  tasks: 'M4 5h2M4 10h2M4 15h2M9 5h7M9 10h7M9 15h7',
-  scrum: 'M4 3.5h12v13H4zM7 7.5l1.5 1.5L11 6.5M7 12.5h6',
-  reports: 'M5 2.5h7l3 3v12H5zM12 2.5v3h3M7.5 10h5M7.5 13h5M7.5 7h2',
   chat: 'M3 4.5h14v9H8l-4 3v-3H3z',
   kb: 'M10 2.5l2 4.6 5 .5-3.8 3.3 1.1 4.9L10 13.3l-4.3 2.5 1.1-4.9L3 7.6l5-.5z',
   settings:
@@ -76,28 +72,15 @@ const NAV_ICON: Record<Page, string> = {
 
 const PAGE_TITLE: Record<Page, MessageKey> = {
   home: 'nav.home',
-  goals: 'nav.goals',
+  work: 'nav.work',
   team: 'team.title',
-  tasks: 'nav.tasks',
-  scrum: 'nav.scrum',
-  reports: 'nav.reports',
   chat: 'chat.title',
   kb: 'nav.kb',
   settings: 'settings.title',
 };
 
-/** 導覽列順序（D43）。 */
-const NAV: Page[] = [
-  'home',
-  'goals',
-  'tasks',
-  'scrum',
-  'reports',
-  'chat',
-  'kb',
-  'team',
-  'settings',
-];
+/** 導覽列順序（D43；D59 目標、任務、Scrum、報表合成「工作」）。 */
+const NAV: Page[] = ['home', 'work', 'chat', 'kb', 'team', 'settings'];
 
 const noJoins = () => Promise.resolve<JoinRequestView[]>([]);
 
@@ -121,6 +104,15 @@ function withOffHours(
 
 export function Shell({ info }: { info: AppInfo }) {
   const [page, setPage] = useState<Page>('home');
+  const [work, setWork] = useState<{ tab: WorkTab; sub: WorkSub }>(() => ({
+    tab: readWorkTab(),
+    sub: null,
+  }));
+  const goWork = (tab: WorkTab, sub: WorkSub = null) => {
+    setWork({ tab, sub });
+    setPage('work');
+    setOpenConv(null);
+  };
   const [settingsGroup, setSettingsGroup] = useState<Group>(readGroup);
   const openSettings = (g: Group) => {
     setSettingsGroup(g);
@@ -161,6 +153,7 @@ export function Shell({ info }: { info: AppInfo }) {
   useDirectionPublisher(me?.id ?? null, tasks.data, overview.data?.timezone ?? '');
   const go = (p: Page) => {
     setPage(p);
+    if (p === 'work') setWork((w) => ({ ...w, sub: null }));
     if (p !== 'chat') setOpenConv(null);
   };
   const openChat = (conv: string) => {
@@ -174,6 +167,12 @@ export function Shell({ info }: { info: AppInfo }) {
       label: t(PAGE_TITLE[p]),
       group: 'cmd.group.pages' as const,
       run: () => go(p),
+    })),
+    ...(['today', 'week', 'goals', 'team'] as const).map((tab) => ({
+      id: `work:${tab}`,
+      label: `${t('nav.work')} › ${t(`work.tab.${tab}`)}`,
+      group: 'cmd.group.pages' as const,
+      run: () => goWork(tab),
     })),
     ...(overview.data?.members ?? [])
       .filter((m) => !m.isMe)
@@ -249,16 +248,9 @@ export function Shell({ info }: { info: AppInfo }) {
             <SyncIndicator />
           </header>
           <main className="min-h-0 flex-1 px-4 pb-4 wide:px-6 wide:pb-6">
-            {page !== 'home' &&
-              page !== 'goals' &&
-              page !== 'kb' &&
-              page !== 'scrum' &&
-              page !== 'reports' && (
-                <PageHead
-                  title={t(PAGE_TITLE[page])}
-                  subtitle={page === 'tasks' ? undefined : orgName}
-                />
-              )}
+            {page !== 'home' && page !== 'work' && page !== 'kb' && (
+              <PageHead title={t(PAGE_TITLE[page])} subtitle={orgName} />
+            )}
             {overview.error && <ErrorText message={overview.error} />}
             {page === 'home' && overview.data && (
               <Home
@@ -267,34 +259,23 @@ export function Shell({ info }: { info: AppInfo }) {
                 focus={focus.data}
                 convs={convs.data ?? []}
                 onOpenConv={openChat}
-                onOpenTasks={() => go('tasks')}
+                onOpenTasks={() => goWork('today', 'tasks')}
                 now={now}
               />
             )}
-            {page === 'goals' && overview.data && (
-              <Goals
+            {page === 'work' && overview.data && (
+              <Work
+                tab={work.tab}
+                sub={work.sub}
+                onNavigate={(tab, sub) => goWork(tab, sub)}
+                tasks={tasks.data ?? []}
+                tasksError={tasks.error}
+                tasksLoading={tasks.data === null && !tasks.error}
                 members={overview.data.members}
                 teams={overview.data.teams}
-                tasks={tasks.data ?? []}
-                focusId={focus.data?.task?.id ?? null}
+                focus={focus.data}
                 timezone={overview.data.timezone}
-              />
-            )}
-            {page === 'scrum' && overview.data && (
-              <Scrum
-                members={overview.data.members}
-                teams={overview.data.teams}
-                tasks={tasks.data ?? []}
-                focusId={focus.data?.task?.id ?? null}
-                timezone={overview.data.timezone}
-              />
-            )}
-            {page === 'reports' && overview.data && (
-              <Reports
-                members={overview.data.members}
-                teams={overview.data.teams}
-                tasks={tasks.data ?? []}
-                timezone={overview.data.timezone}
+                isAdmin={info.isAdmin}
               />
             )}
             {page === 'kb' && overview.data && (
@@ -308,20 +289,6 @@ export function Shell({ info }: { info: AppInfo }) {
             {page === 'team' && overview.data && (
               <div className="scroll-panel h-full">
                 <TeamList overview={overview.data} />
-              </div>
-            )}
-            {page === 'tasks' && (
-              <div className="scroll-panel h-full">
-                <Tasks
-                  tasks={tasks.data ?? []}
-                  teams={overview.data?.teams ?? []}
-                  members={overview.data?.members ?? []}
-                  focus={focus.data}
-                  timezone={overview.data?.timezone ?? ''}
-                  error={tasks.error}
-                  isAdmin={info.isAdmin}
-                  loading={tasks.data === null && !tasks.error}
-                />
               </div>
             )}
             {page === 'chat' && (

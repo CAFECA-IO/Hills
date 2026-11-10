@@ -128,14 +128,22 @@ export function GuidedGoals({
   timezone,
   toggle,
   onAdvanced,
-}: GoalsProps & { toggle: ReactNode; onAdvanced: () => void }) {
+  noAutoWeekly = false,
+  scope,
+}: GoalsProps & {
+  toggle: ReactNode;
+  onAdvanced: () => void;
+  noAutoWeekly?: boolean;
+  scope?: 'mine' | 'team';
+}) {
   const plans = useLoad(() => api.plans(true), ['doc', 'org', 'roster']);
   const dirs = useLoad(api.directions, ['doc', 'org', 'roster']);
   const summaries = useLoad(api.directionSummaries, ['doc', 'org', 'roster']);
   const rules = useLoad(api.directionRules, ['org']);
   const suggestions = useLoad(api.mySuggestions, ['doc', 'org', 'roster']);
   const weekNotes = useLoad(api.weekNotes, ['doc', 'org', 'roster']);
-  const [tab, setTab] = useState<'mine' | 'team'>('mine');
+  const [tabState, setTab] = useState<'mine' | 'team'>(scope ?? 'mine');
+  const tab = scope ?? tabState;
   const [view, setView] = useState<GuidedView>({ kind: 'home' });
   const [weeklyDismissed, setWeeklyDismissed] = useState(false);
   const [editing, setEditing] = useState<PlanView | null>(null);
@@ -161,7 +169,11 @@ export function GuidedGoals({
   const ready = Boolean(me && plans.data && summaries.data && weekNotes.data);
   const showWeekly =
     view.kind === 'weekly' ||
-    (view.kind === 'home' && ready && !weeklyDismissed && !weeklySeen(periods.week));
+    (!noAutoWeekly &&
+      view.kind === 'home' &&
+      ready &&
+      !weeklyDismissed &&
+      !weeklySeen(periods.week));
   const notify = (s: ToastState) => setToast({ ...s, key: Date.now() });
   const home = () => {
     setView({ kind: 'home' });
@@ -222,18 +234,20 @@ export function GuidedGoals({
         title={t('goals.title')}
         actions={
           <>
-            <SegmentedControl
-              label={t('guide.scope')}
-              options={[
-                { value: 'mine', label: t('guide.tab.mine') },
-                { value: 'team', label: t('guide.tab.team') },
-              ]}
-              value={tab}
-              onChange={(v) => {
-                setTab(v);
-                setView({ kind: 'home' });
-              }}
-            />
+            {!scope && (
+              <SegmentedControl
+                label={t('guide.scope')}
+                options={[
+                  { value: 'mine', label: t('guide.tab.mine') },
+                  { value: 'team', label: t('guide.tab.team') },
+                ]}
+                value={tab}
+                onChange={(v) => {
+                  setTab(v);
+                  setView({ kind: 'home' });
+                }}
+              />
+            )}
             {toggle}
           </>
         }

@@ -29,6 +29,7 @@ mod syncproto;
 pub mod task_report;
 pub mod team;
 pub mod teams;
+pub mod worklog;
 
 pub use approval::JoinView;
 pub use chat::ConvView;

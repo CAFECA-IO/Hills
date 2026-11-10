@@ -39,6 +39,7 @@ const ACTION: Record<McpPreview['action'], MessageKey> = {
   createKbTopic: 'mcp.action.createKbTopic',
   renameKb: 'mcp.action.renameKb',
   taskLog: 'mcp.action.taskLog',
+  timeFix: 'mcp.action.timeFix',
   closeTask: 'mcp.action.closeTask',
   reopenTask: 'mcp.action.reopenTask',
 };

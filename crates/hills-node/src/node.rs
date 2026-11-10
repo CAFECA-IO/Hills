@@ -724,6 +724,8 @@ impl Node {
         };
         lock(&self.inner.presence).insert(p.member, (p.clone(), Instant::now()));
         self.inner.emit(Event::PresenceChanged);
+        // 計時跟著狀態暫停 / 改記會議 / 恢復（§16.18，D62）
+        self.timer_on_presence(state).await;
         crate::gossip::broadcast(&self.inner, hills_proto::gossip::GossipMsg::Presence(p)).await;
     }
 

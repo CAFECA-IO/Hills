@@ -413,6 +413,58 @@ export interface KbInput {
   source?: KbSource | null;
 }
 
+// ── 計時與工作紀錄（technical-design §16.18，D62）──
+
+export type WorkRef =
+  | { kind: 'task'; team: string; task: string; step?: string | null; title: string }
+  | { kind: 'meeting' }
+  | { kind: 'other'; title: string };
+
+export interface TimerRunning {
+  /** 正在計時的項目；暫停時為 null */
+  current: WorkRef | null;
+  since: number;
+  source: string;
+  resume: WorkRef | null;
+}
+
+export interface TimerSegment {
+  id: string;
+  ref: WorkRef;
+  start: number;
+  end: number;
+  source: string;
+}
+
+export interface WorkEntry {
+  ref: WorkRef;
+  /** 小組目標 id */
+  project?: string | null;
+  minutes: number;
+  /** auto / edited / manual */
+  source: string;
+}
+
+export interface DayLog {
+  date: string;
+  entries: WorkEntry[];
+  attendance?: number | null;
+  updatedAt: number;
+}
+
+export interface WeekPlanTask {
+  ref: WorkRef;
+  estimate?: number | null;
+  project?: string | null;
+}
+
+export interface WeekPlan {
+  week: string;
+  tasks: WeekPlanTask[];
+  capacity: number;
+  createdAt: number;
+}
+
 // ── 每日 Scrum（technical-design §16.12）──
 
 export type ScrumRef =
@@ -781,7 +833,8 @@ export interface McpPreview {
     | 'renameKb'
     | 'taskLog'
     | 'closeTask'
-    | 'reopenTask';
+    | 'reopenTask'
+    | 'timeFix';
   title?: string | null;
   level?: PlanLevel | null;
   period?: string | null;
@@ -933,6 +986,18 @@ export const api = {
   resolveTaskBlocked: (team: string, task: string, blocked: string, text: string) =>
     call<void>('resolve_task_blocked', { team, task, blocked, text }),
   myLogsSince: (since: number) => call<MyLog[]>('my_logs_since', { since }),
+  timerState: () => call<TimerRunning | null>('timer_state'),
+  timerSegments: (from: number, to: number) => call<TimerSegment[]>('timer_segments', { from, to }),
+  timerStart: (work: WorkRef, source: string, since?: number | null) =>
+    call<void>('timer_start', { work, source, since: since ?? null }),
+  timerStop: (at: number | null, keepResume: boolean) =>
+    call<void>('timer_stop', { at, keepResume }),
+  worklogDays: (member: string, months: string[]) =>
+    call<DayLog[]>('worklog_days', { member, months }),
+  setWorklogDay: (date: string, day: DayLog) => call<void>('set_worklog_day', { date, day }),
+  weekPlans: (member: string, months: string[]) =>
+    call<WeekPlan[]>('week_plans', { member, months }),
+  setWeekPlan: (week: string, plan: WeekPlan) => call<void>('set_week_plan', { week, plan }),
   closeTask: (team: string, task: string, input: CloseInput) =>
     call<void>('close_task', { team, task, input }),
   reopenTask: (team: string, task: string, text: string) =>

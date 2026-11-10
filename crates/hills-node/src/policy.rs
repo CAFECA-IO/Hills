@@ -17,8 +17,13 @@ pub fn key_family(doc_id: &str) -> Option<KeyFamily> {
         DocKind::Team(t) => Some(KeyFamily::Team(t)),
         DocKind::Member {
             owner,
-            section: MemberSection::Secrets | MemberSection::Tasks,
+            section: MemberSection::Secrets | MemberSection::Tasks | MemberSection::Timer,
         } => Some(KeyFamily::MemberPrivate(owner)),
+        // 工作紀錄（§16.18 v0.34，D62）：本人與所屬小組負責人
+        DocKind::Member {
+            owner,
+            section: MemberSection::Worklog(_),
+        } => Some(KeyFamily::MemberWorklog(owner)),
         // 方向摘要（§16.14 v0.21）、個人資料（§16.17 v0.31）：全員可讀
         DocKind::Member {
             section: MemberSection::Direction | MemberSection::Profile,
@@ -55,8 +60,12 @@ pub fn can_read(doc_id: &str, who: &Verified, dir: &crate::org::OrgSnapshot) -> 
         Some(DocKind::Team(t)) => dir.is_team_member(&t, &who.member_id),
         Some(DocKind::Member {
             owner,
-            section: MemberSection::Secrets | MemberSection::Tasks,
+            section: MemberSection::Secrets | MemberSection::Tasks | MemberSection::Timer,
         }) => owner == who.member_id,
+        Some(DocKind::Member {
+            owner,
+            section: MemberSection::Worklog(_),
+        }) => owner == who.member_id || leads_of(dir, &owner).contains(&who.member_id),
         Some(DocKind::Member {
             section: MemberSection::Direction | MemberSection::Profile,
             ..
@@ -88,12 +97,28 @@ pub fn can_read(doc_id: &str, who: &Verified, dir: &crate::org::OrgSnapshot) -> 
     }
 }
 
+/// 某成員所屬各小組的負責人（不含本人；工作紀錄的讀者，§16.18）。
+pub fn leads_of(dir: &crate::org::OrgSnapshot, owner: &MemberId) -> Vec<MemberId> {
+    let mut out: Vec<MemberId> = dir
+        .teams_of(owner)
+        .iter()
+        .filter_map(|t| dir.teams.get(t))
+        .flat_map(|t| t.leads.iter().copied())
+        .filter(|m| m != owner)
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// 本人是否應該持有此金鑰家族（決定無法解密的 bundle 是否值得保留重試）。
 pub fn expects_key(family: &KeyFamily, me: &MemberId, dir: &dyn Directory) -> bool {
     match family {
         KeyFamily::Org => true,
         KeyFamily::Team(t) => dir.is_team_member(t, me),
         KeyFamily::MemberPrivate(m) => m == me,
+        // 負責人名單可能比金鑰晚到；保留重試（限制 pending 數量）
+        KeyFamily::MemberWorklog(_) => true,
         // 無法在取得金鑰前得知是否為成員；保留重試（node 端限制 pending 數量）
         KeyFamily::Conv(_) | KeyFamily::ConvMeta(_) => true,
         _ => false,

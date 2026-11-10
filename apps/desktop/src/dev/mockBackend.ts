@@ -41,6 +41,11 @@ import type {
   ScrumInput,
   ScrumReport,
   PresenceState,
+  TimerRunning,
+  TimerSegment,
+  WorkRef,
+  DayLog,
+  WeekPlan,
 } from '../api';
 import { periodsAt } from '../goals-utils';
 
@@ -328,6 +333,33 @@ const taskLogs: (TaskLog & { task: string })[] = [
     at: now0 - 20 * 3600_000,
   },
 ];
+// 計時與工作紀錄（D62）
+let timer: TimerRunning | null = null;
+const segments: TimerSegment[] = [
+  {
+    id: 'sg1',
+    ref: { kind: 'task', team: 'default', task: 't1', title: 'Windows 驗收' },
+    start: now0 - 26 * 3600_000,
+    end: now0 - 23 * 3600_000,
+    source: 'start',
+  },
+  {
+    id: 'sg2',
+    ref: { kind: 'meeting' },
+    start: now0 - 22 * 3600_000,
+    end: now0 - 21 * 3600_000,
+    source: 'status',
+  },
+  {
+    id: 'sg3',
+    ref: { kind: 'task', team: 'default', task: 't2', title: '撰寫檔案分享部署說明' },
+    start: now0 - 21 * 3600_000,
+    end: now0 - 19 * 3600_000,
+    source: 'start',
+  },
+];
+let worklog: DayLog[] = [];
+let weekPlans: WeekPlan[] = [];
 /** 紀錄摘要：負責人最新百分比、未解決的卡住了（technical-design §16.8 v0.34）。 */
 const logSummary = (t: MockTask) => {
   let reported: number | null = null;
@@ -1547,6 +1579,58 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
       refs: [String(a.blocked)],
       at: Date.now(),
     });
+    touch();
+  },
+  timer_state: () => timer,
+  timer_segments: (a) => segments.filter((x) => x.end > Number(a.from) && x.start < Number(a.to)),
+  timer_start: (a) => {
+    const now = Date.now();
+    if (timer?.current)
+      segments.push({
+        id: String(now),
+        ref: timer.current,
+        start: timer.since,
+        end: now,
+        source: timer.source,
+      });
+    timer = {
+      current: a.work as WorkRef,
+      since: Number(a.since ?? now),
+      source: String(a.source),
+      resume: null,
+    };
+    touch();
+  },
+  timer_stop: (a) => {
+    const now = Number(a.at ?? Date.now());
+    if (timer?.current)
+      segments.push({
+        id: String(now),
+        ref: timer.current,
+        start: timer.since,
+        end: now,
+        source: timer.source,
+      });
+    timer =
+      a.keepResume && timer?.current
+        ? { current: null, since: now, source: timer.source, resume: timer.current }
+        : null;
+    touch();
+  },
+  worklog_days: (a) => worklog.filter((d) => (a.months as string[]).includes(d.date.slice(0, 7))),
+  set_worklog_day: (a) => {
+    worklog = [
+      ...worklog.filter((d) => d.date !== a.date),
+      { ...(a.day as DayLog), date: String(a.date), updatedAt: Date.now() },
+    ];
+    touch();
+  },
+  week_plans: () => weekPlans,
+  set_week_plan: (a) => {
+    weekPlans = [
+      ...weekPlans.filter((p) => p.week !== a.week),
+      { ...(a.plan as WeekPlan), week: String(a.week), createdAt: Date.now() },
+    ];
     touch();
   },
   my_logs_since: (a) =>

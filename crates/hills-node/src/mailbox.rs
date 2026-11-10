@@ -57,7 +57,7 @@ fn accept_keys(inner: &Inner, items: &[hills_proto::mailbox::KeyItem]) -> Result
                 }
                 ok
             }
-            KeyFamily::MemberPrivate(m) => *m == signer.member_id,
+            KeyFamily::MemberPrivate(m) | KeyFamily::MemberWorklog(m) => *m == signer.member_id,
             // §14.1 v0.9：只接受對話建立者裝置封裝的對話金鑰
             KeyFamily::Conv(c) | KeyFamily::ConvMeta(c) => {
                 crate::conv::creator_of(c) == Some(signer.member_id)
@@ -89,7 +89,10 @@ fn reconcile_teams(inner: &Inner) -> Result<bool> {
     if !retry.is_empty() && accept_keys(inner, &retry)? {
         inner.retry_pending()?;
     }
-    crate::teams::reconcile(inner)
+    let teams = crate::teams::reconcile(inner)?;
+    // 工作紀錄金鑰交接給負責人（§16.18，D62）
+    let worklog = crate::worklog::reconcile(inner)?;
+    Ok(teams || worklog)
 }
 
 /// 確保自己有私密金鑰（PK），沒有就建立並封裝給自己。

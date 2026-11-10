@@ -45,6 +45,12 @@ export function previewLines(p: McpPreview, members: MemberView[]): string[] {
       ];
     case 'scrumDraft':
       return [p.date ?? '', p.text ?? ''];
+    case 'timeFix':
+      return [
+        [p.date ?? '', t('mcp.preview.timeFix', { count: p.count ?? 0, total: p.text ?? '' })]
+          .filter(Boolean)
+          .join(' · '),
+      ];
     case 'message': {
       const peer = name(p.to);
       const head = peer

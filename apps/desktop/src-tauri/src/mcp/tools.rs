@@ -109,6 +109,18 @@ pub fn all() -> Vec<ToolDef> {
             ),
         },
         ToolDef {
+            name: "get_my_time",
+            kind: Kind::Read,
+            description: "The user's own work log (time per task, meetings and other work, corrected daily) for the months covering `from`–`to` (YYYY-MM-DD), plus the running timer. Only the user's own data.",
+            schema: obj(
+                json!({
+                    "from": { "type": "string", "description": "YYYY-MM-DD" },
+                    "to": { "type": "string", "description": "YYYY-MM-DD" }
+                }),
+                &["from", "to"],
+            ),
+        },
+        ToolDef {
             name: "list_conversations",
             kind: Kind::Read,
             description: "The user's conversations (direct and group) with the last message and unread count.",
@@ -257,6 +269,18 @@ pub fn all() -> Vec<ToolDef> {
                     "done": { "type": "boolean" }
                 }),
                 &["team", "task", "step", "done"],
+            ),
+        },
+        ToolDef {
+            name: "propose_time_fix",
+            kind: Kind::Write,
+            description: "Propose replacing the user's work log for a day (YYYY-MM-DD). `entries`: [{ ref: {kind: task, team, task, title} | {kind: meeting} | {kind: other, title}, minutes, project? }]. Needs approval in Hills.",
+            schema: obj(
+                json!({
+                    "date": { "type": "string", "description": "YYYY-MM-DD" },
+                    "entries": { "type": "array", "items": { "type": "object" } }
+                }),
+                &["date", "entries"],
             ),
         },
         ToolDef {

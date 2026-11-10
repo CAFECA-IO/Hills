@@ -55,6 +55,8 @@ interface Props {
   isAdmin?: boolean;
   /** 任務還沒載入（顯示骨架） */
   loading?: boolean;
+  /** 固定檢視（「工作 › 小組 › 分派板」用 board），不顯示切換 */
+  forceView?: 'list' | 'board';
 }
 
 type View = 'list' | 'board';
@@ -84,6 +86,7 @@ export function Tasks({
   error,
   isAdmin = false,
   loading = false,
+  forceView,
 }: Props) {
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const plans = useLoad(() => api.plans(false), ['doc', 'org', 'roster']);
@@ -92,7 +95,8 @@ export function Tasks({
   const myTeams = teams.filter(
     (tm) => me && (tm.members.includes(me.id) || tm.leads.includes(me.id)),
   );
-  const [view, setViewState] = useState<View>(readView);
+  const [viewState, setViewState] = useState<View>(readView);
+  const view = forceView ?? viewState;
   const setView = (v: View) => {
     setViewState(v);
     try {
@@ -122,15 +126,17 @@ export function Tasks({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <SegmentedControl
-          label={t('assign.view.label')}
-          options={[
-            { value: 'list', label: t('assign.view.list') },
-            { value: 'board', label: t('assign.view.board') },
-          ]}
-          value={view}
-          onChange={setView}
-        />
+        {!forceView && (
+          <SegmentedControl
+            label={t('assign.view.label')}
+            options={[
+              { value: 'list', label: t('assign.view.list') },
+              { value: 'board', label: t('assign.view.board') },
+            ]}
+            value={view}
+            onChange={setView}
+          />
+        )}
         {view === 'board' && myTeams.length > 0 && (
           <Select
             size="sm"

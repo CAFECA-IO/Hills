@@ -960,6 +960,81 @@ pub async fn my_logs_since(
     with_node!(state, n => n.my_logs_since(since).map_err(e))
 }
 
+// ── 計時與工作紀錄（technical-design §16.18，D62）──
+
+#[tauri::command]
+pub async fn timer_state(
+    state: State<'_, AppState>,
+) -> CmdResult<Option<hills_node::worklog::Running>> {
+    with_node!(state, n => n.timer_state().map_err(e))
+}
+
+#[tauri::command]
+pub async fn timer_segments(
+    state: State<'_, AppState>,
+    from: i64,
+    to: i64,
+) -> CmdResult<Vec<hills_node::worklog::Segment>> {
+    with_node!(state, n => n.timer_segments(from, to).map_err(e))
+}
+
+#[tauri::command]
+pub async fn timer_start(
+    state: State<'_, AppState>,
+    work: hills_node::worklog::WorkRef,
+    source: String,
+    since: Option<i64>,
+) -> CmdResult<()> {
+    with_node!(state, n => n.timer_start(work, &source, since).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn timer_stop(
+    state: State<'_, AppState>,
+    at: Option<i64>,
+    keep_resume: bool,
+) -> CmdResult<()> {
+    with_node!(state, n => n.timer_stop(at, keep_resume).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn worklog_days(
+    state: State<'_, AppState>,
+    member: String,
+    months: Vec<String>,
+) -> CmdResult<Vec<hills_node::worklog::DayLog>> {
+    let m = parse_member(&member)?;
+    with_node!(state, n => n.worklog_days(&m, &months).map_err(e))
+}
+
+#[tauri::command]
+pub async fn set_worklog_day(
+    state: State<'_, AppState>,
+    date: String,
+    day: hills_node::worklog::DayLog,
+) -> CmdResult<()> {
+    with_node!(state, n => n.set_worklog_day(&date, day).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn week_plans(
+    state: State<'_, AppState>,
+    member: String,
+    months: Vec<String>,
+) -> CmdResult<Vec<hills_node::worklog::WeekPlan>> {
+    let m = parse_member(&member)?;
+    with_node!(state, n => n.week_plans(&m, &months).map_err(e))
+}
+
+#[tauri::command]
+pub async fn set_week_plan(
+    state: State<'_, AppState>,
+    week: String,
+    plan: hills_node::worklog::WeekPlan,
+) -> CmdResult<()> {
+    with_node!(state, n => n.set_week_plan(&week, plan).await.map_err(e))
+}
+
 /// 卡住了已解決（D60）。
 #[tauri::command]
 pub async fn resolve_task_blocked(

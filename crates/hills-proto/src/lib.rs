@@ -287,6 +287,8 @@ pub enum KeyFamily {
     Team(String),
     MemberAttendance(MemberId),
     MemberPrivate(MemberId),
+    /// 工作紀錄金鑰 WK（technical-design §16.18 v0.34，D62）：本人與本人所屬小組的負責人
+    MemberWorklog(MemberId),
     Conv(String),
     /// 對話 meta 專用金鑰（technical-design §14.1 v0.9）；新成員取得全部 epoch
     ConvMeta(String),
@@ -310,6 +312,7 @@ impl fmt::Display for KeyId {
             KeyFamily::Team(t) => write!(f, "team:{t}"),
             KeyFamily::MemberAttendance(m) => write!(f, "member:{m}:attendance"),
             KeyFamily::MemberPrivate(m) => write!(f, "member:{m}:private"),
+            KeyFamily::MemberWorklog(m) => write!(f, "member:{m}:worklog"),
             KeyFamily::Conv(c) => write!(f, "conv:{c}"),
             KeyFamily::ConvMeta(c) => write!(f, "conv:{c}:meta"),
         }?;
@@ -334,6 +337,7 @@ impl FromStr for KeyId {
             ["conv", c, "meta"] if valid_segment(c) => KeyFamily::ConvMeta((*c).to_owned()),
             ["member", m, "attendance"] => KeyFamily::MemberAttendance(MemberId::parse(m)?),
             ["member", m, "private"] => KeyFamily::MemberPrivate(MemberId::parse(m)?),
+            ["member", m, "worklog"] => KeyFamily::MemberWorklog(MemberId::parse(m)?),
             _ => return Err(bad),
         };
         Ok(Self { family, epoch })
@@ -469,6 +473,10 @@ mod tests {
             (
                 KeyFamily::MemberPrivate(m),
                 format!("member:{m}:private:epoch:1"),
+            ),
+            (
+                KeyFamily::MemberWorklog(m),
+                format!("member:{m}:worklog:epoch:1"),
             ),
         ];
         for (family, s) in cases {

@@ -1,12 +1,12 @@
 /**
- * 目標頁（ui-spec「目標」v0.21，D47）：預設為引導式，右上角「進階檢視」切換到路線圖。
- * 切換記在本機，同介面語言的做法。
+ * 目標頁（ui-spec「工作 › 目標」v0.42，D59）：「一條線 / 時間軸」切換（取代「進階檢視」開關），
+ * 一條線為引導式、時間軸為路線圖；切換記在本機。
  */
 import { useState } from 'react';
 import { GuidedGoals } from './goals-guided';
 import { GoalsRoadmap, type GoalsProps } from './goals-roadmap';
 import { t } from './i18n';
-import { Switch } from './ui';
+import { SegmentedControl } from './ui';
 
 const ADVANCED_KEY = 'hills.goals.advanced';
 
@@ -26,29 +26,39 @@ function writeAdvanced(on: boolean) {
   }
 }
 
-export function Goals(props: GoalsProps) {
+export interface GoalsPageProps extends GoalsProps {
+  /** 在「工作」裡：週一方向時刻不再自動開啟（改由「這週」提示列，D59） */
+  noAutoWeekly?: boolean;
+  /** 固定範圍（「工作 › 小組 › 方向」用 team），不顯示範圍切換 */
+  scope?: 'mine' | 'team';
+}
+
+export function Goals({ noAutoWeekly, scope, ...props }: GoalsPageProps) {
   const [advanced, setAdvanced] = useState(readAdvanced);
+  const set = (on: boolean) => {
+    setAdvanced(on);
+    writeAdvanced(on);
+  };
   const toggle = (
-    <Switch
-      className="h-9 rounded-full bg-surface px-3 shadow-sm"
-      label={t('guide.advanced')}
-      checked={advanced}
-      onChange={(on) => {
-        setAdvanced(on);
-        writeAdvanced(on);
-      }}
+    <SegmentedControl
+      label={t('goals.view.label')}
+      options={[
+        { value: 'line', label: t('goals.view.line') },
+        { value: 'timeline', label: t('goals.view.timeline') },
+      ]}
+      value={advanced ? 'timeline' : 'line'}
+      onChange={(v) => set(v === 'timeline')}
     />
   );
-  return advanced ? (
+  return advanced && scope !== 'team' ? (
     <GoalsRoadmap {...props} headExtra={toggle} />
   ) : (
     <GuidedGoals
       {...props}
-      toggle={toggle}
-      onAdvanced={() => {
-        setAdvanced(true);
-        writeAdvanced(true);
-      }}
+      toggle={scope === 'team' ? null : toggle}
+      noAutoWeekly={noAutoWeekly}
+      scope={scope}
+      onAdvanced={() => set(true)}
     />
   );
 }

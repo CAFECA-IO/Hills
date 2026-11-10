@@ -326,6 +326,28 @@ impl McpBackend for RealBackend {
                 }
                 Ok(json!({ "mine": mine, "teams": team }))
             }
+            "get_my_time" => {
+                let from = need(&args, "from")?;
+                let to = need(&args, "to")?;
+                if !is_date(from) || !is_date(to) || from > to {
+                    return Err("`from` / `to` must be YYYY-MM-DD and from ≤ to".into());
+                }
+                let (me, _, _) = self.me_and_teams().await?;
+                let mut months = vec![from[..7].to_owned()];
+                if to[..7] != from[..7] {
+                    months.push(to[..7].to_owned());
+                }
+                let days = to_v(commands::worklog_days(self.state(), me, months).await)?;
+                let days: Vec<Value> = days
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|d| d["date"].as_str().is_some_and(|x| x >= from && x <= to))
+                    .collect();
+                let running = to_v(commands::timer_state(self.state()).await)?;
+                Ok(json!({ "days": days, "running": running }))
+            }
             "get_report" => {
                 let kind = need(&args, "kind")?.to_owned();
                 let period = need(&args, "period")?.to_owned();
@@ -542,6 +564,20 @@ impl McpBackend for RealBackend {
                     json!({ "team": team, "task": task, "step": step, "done": done }),
                     preview,
                 ))
+            }
+            "propose_time_fix" => {
+                let date = need(&args, "date")?;
+                if !is_date(date) {
+                    return Err("`date` must be YYYY-MM-DD".into());
+                }
+                let entries: Vec<hills_node::worklog::Entry> =
+                    serde_json::from_value(args["entries"].clone()).map_err(|e| e.to_string())?;
+                let total: u32 = entries.iter().map(|x| x.minutes).sum();
+                let preview = json!({
+                    "action": "timeFix", "date": date, "count": entries.len(),
+                    "text": format!("{}:{:02}", total / 60, total % 60)
+                });
+                Ok((json!({ "date": date, "entries": entries }), preview))
             }
             "propose_scrum_draft" | "propose_daily_tasks" => {
                 let date = need(&args, "date")?;
@@ -1024,6 +1060,29 @@ impl McpBackend for RealBackend {
                 )
                 .await,
             ),
+            "propose_time_fix" => {
+                let entries: Vec<hills_node::worklog::Entry> =
+                    serde_json::from_value(args["entries"].clone()).map_err(|e| e.to_string())?;
+                to_v(
+                    commands::set_worklog_day(
+                        st,
+                        need(&args, "date")?.to_owned(),
+                        hills_node::worklog::DayLog {
+                            date: String::new(),
+                            entries: entries
+                                .into_iter()
+                                .map(|mut x| {
+                                    x.source = "edited".into();
+                                    x
+                                })
+                                .collect(),
+                            attendance: None,
+                            updated_at: 0,
+                        },
+                    )
+                    .await,
+                )
+            }
             "propose_scrum_draft" | "propose_daily_tasks" => to_v(
                 commands::scrum_draft_set(
                     st,

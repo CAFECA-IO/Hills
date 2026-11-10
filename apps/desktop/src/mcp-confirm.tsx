@@ -7,7 +7,7 @@ import { isDangerous, previewLines } from './mcp-utils';
 import { useLoad } from './hooks';
 import { t, type MessageKey } from './i18n';
 import { useMcpEvents } from './mcp-settings';
-import { Button, ErrorText, LinkButton, useAction } from './ui';
+import { Button, DialogFooter, ErrorText, LinkButton, useAction } from './ui';
 
 const ACTION: Record<McpPreview['action'], MessageKey> = {
   createGoal: 'mcp.action.createGoal',
@@ -64,7 +64,7 @@ function ChangeCard({ c, members }: { c: McpChange; members: MemberView[] }) {
         <p className="text-xs font-bold text-warning">{t('mcp.preview.sendWarn')}</p>
       )}
       <ErrorText message={error} />
-      <div className="flex justify-end gap-2">
+      <DialogFooter bare className="border-t border-line pt-3">
         <Button
           variant="secondary"
           size="sm"
@@ -75,13 +75,13 @@ function ChangeCard({ c, members }: { c: McpChange; members: MemberView[] }) {
         </Button>
         <Button
           size="sm"
-          variant={isDangerous(c.preview) ? 'danger' : 'primary'}
+          variant={isDangerous(c.preview) ? 'destructive' : 'primary'}
           busy={busy}
           onClick={() => void attempt(() => api.mcpApprove(c.id))}
         >
           {t('mcp.approve')}
         </Button>
-      </div>
+      </DialogFooter>
     </section>
   );
 }

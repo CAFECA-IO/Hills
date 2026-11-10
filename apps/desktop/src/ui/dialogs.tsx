@@ -1,5 +1,5 @@
 /**
- * 統一的確認對話框與分級通知對話框（components.md「ConfirmDialog」「NoticeDialog」v0.6）。
+ * 統一的確認對話框與分級通知對話框（components.md「ConfirmDialog」「NoticeDialog」v0.6；動作列 D63）。
  * 需要使用者確認的動作、需要同意的條文、一定要讀到的通知都用這裡的元件，不在各頁手寫。
  */
 import { useId, useState } from 'react';
@@ -8,7 +8,7 @@ import { Button } from './button';
 import { ErrorText } from './feedback';
 import { Checkbox } from './form';
 import { Markdown } from './markdown';
-import { Dialog } from './overlay';
+import { Dialog, DialogFooter } from './overlay';
 
 export function ConfirmDialog({
   title,
@@ -56,9 +56,30 @@ export function ConfirmDialog({
       onClose={() => {
         if (!busy) onCancel();
       }}
+      footer={
+        <DialogFooter>
+          <Button
+            variant="secondary"
+            disabled={busy}
+            autoFocus={tone === 'danger' && !acknowledge}
+            onClick={onCancel}
+          >
+            {cancelLabel ?? t('common.cancel')}
+          </Button>
+          <Button
+            variant={tone === 'danger' ? 'destructive' : 'primary'}
+            busy={busy}
+            disabled={Boolean(acknowledge) && !agreed}
+            autoFocus={tone === 'primary' && !acknowledge}
+            onClick={() => void confirm()}
+          >
+            {confirmLabel ?? t('common.confirm')}
+          </Button>
+        </DialogFooter>
+      }
     >
       {body && (
-        <Markdown id={bodyId} className="scroll-panel max-h-[50vh] text-sm">
+        <Markdown id={bodyId} className="text-sm">
           {body}
         </Markdown>
       )}
@@ -71,25 +92,6 @@ export function ConfirmDialog({
         />
       )}
       <ErrorText message={error} />
-      <div className="flex justify-end gap-2 pt-2">
-        <Button
-          variant="secondary"
-          disabled={busy}
-          autoFocus={tone === 'danger' && !acknowledge}
-          onClick={onCancel}
-        >
-          {cancelLabel ?? t('common.cancel')}
-        </Button>
-        <Button
-          variant={tone === 'danger' ? 'danger' : 'primary'}
-          busy={busy}
-          disabled={Boolean(acknowledge) && !agreed}
-          autoFocus={tone === 'primary' && !acknowledge}
-          onClick={() => void confirm()}
-        >
-          {confirmLabel ?? t('common.confirm')}
-        </Button>
-      </div>
     </Dialog>
   );
 }
@@ -127,6 +129,18 @@ export function NoticeDialog({
       width="sm"
       describedBy={body ? bodyId : undefined}
       onClose={onClose}
+      footer={
+        <DialogFooter>
+          {secondary && (
+            <Button variant="secondary" onClick={secondary.onClick}>
+              {secondary.label}
+            </Button>
+          )}
+          <Button autoFocus onClick={onClose}>
+            {actionLabel ?? t('notice.ok')}
+          </Button>
+        </DialogFooter>
+      }
     >
       <div className="flex items-start gap-3">
         <span
@@ -141,20 +155,10 @@ export function NoticeDialog({
         </div>
       </div>
       {body && (
-        <Markdown id={bodyId} className="scroll-panel max-h-[50vh] text-sm">
+        <Markdown id={bodyId} className="text-sm">
           {body}
         </Markdown>
       )}
-      <div className="flex justify-end gap-2 pt-2">
-        {secondary && (
-          <Button variant="secondary" onClick={secondary.onClick}>
-            {secondary.label}
-          </Button>
-        )}
-        <Button autoFocus onClick={onClose}>
-          {actionLabel ?? t('notice.ok')}
-        </Button>
-      </div>
     </Dialog>
   );
 }

@@ -23,6 +23,7 @@ import {
   Badge,
   Button,
   Dialog,
+  DialogFooter,
   DocView,
   ErrorText,
   Field,
@@ -397,6 +398,16 @@ function ReopenDialog({
         if (await attempt(() => api.reopenTask(task.team, task.id, text))) onDone();
       }}
       dirty={Boolean(text)}
+      footer={
+        <DialogFooter>
+          <Button variant="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" busy={busy}>
+            {t('tdetail.reopen')}
+          </Button>
+        </DialogFooter>
+      }
     >
       <Field
         label={t('tdetail.reopen.reason')}
@@ -407,14 +418,6 @@ function ReopenDialog({
       </Field>
       <p className="text-xs text-muted">{t('tdetail.reopen.hint')}</p>
       <ErrorText message={error} />
-      <div className="flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose}>
-          {t('common.cancel')}
-        </Button>
-        <Button type="submit" busy={busy}>
-          {t('tdetail.reopen')}
-        </Button>
-      </div>
     </Dialog>
   );
 }

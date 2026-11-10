@@ -4,7 +4,7 @@ import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 export const FOCUS_RING =
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'soft' | 'danger' | 'ghost';
+export type ButtonVariant = 'primary' | 'secondary' | 'soft' | 'danger' | 'destructive' | 'ghost';
 export type ButtonSize = 'sm' | 'md';
 
 const VARIANT: Record<ButtonVariant, string> = {
@@ -13,6 +13,9 @@ const VARIANT: Record<ButtonVariant, string> = {
   secondary: 'border border-line bg-surface font-semibold hover:bg-bg',
   soft: 'bg-primary-soft font-semibold text-primary hover:opacity-90',
   danger: 'border border-danger font-semibold text-danger hover:bg-danger hover:text-on-primary',
+  // 確認不可逆動作的動作列主按鈕（D63）：紅底白字實心
+  destructive:
+    'bg-danger font-bold text-on-primary hover:opacity-90 disabled:bg-line disabled:text-muted disabled:opacity-100',
   ghost: 'font-semibold text-muted hover:bg-bg hover:text-fg',
 };
 

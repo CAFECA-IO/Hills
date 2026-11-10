@@ -43,6 +43,7 @@ import {
   Chip,
   ConfirmButton,
   Dialog,
+  DialogFooter,
   DocView,
   EmptyState,
   ErrorText,
@@ -954,6 +955,16 @@ function KbEditor({
         });
         if (ok) onSaved(key);
       }}
+      footer={
+        <DialogFooter>
+          <Button type="button" variant="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" busy={busy}>
+            {t('kb.save')}
+          </Button>
+        </DialogFooter>
+      }
     >
       <Field
         label={t('kb.field.title')}
@@ -1067,14 +1078,6 @@ function KbEditor({
         </ul>
       </fieldset>
       <ErrorText message={error} />
-      <div className="flex justify-end gap-2">
-        <Button type="button" variant="secondary" onClick={onClose}>
-          {t('common.cancel')}
-        </Button>
-        <Button type="submit" busy={busy}>
-          {t('kb.save')}
-        </Button>
-      </div>
     </Dialog>
   );
 }
@@ -1112,7 +1115,33 @@ function KbReader({
   const convId = src.kind === 'message' || src.kind === 'file' ? src.convId : null;
   const inConv = convId ? convs.some((c) => c.id === convId) : false;
   return (
-    <Dialog label={item.title} onClose={onClose} width="lg">
+    <Dialog
+      label={item.title}
+      onClose={onClose}
+      width="lg"
+      footer={
+        <DialogFooter
+          start={
+            canEdit(item) && (
+              <ConfirmButton
+                label={t('kb.delete')}
+                message={t('kb.delete.confirm', { title: item.title })}
+                onConfirm={async () => {
+                  if (await attempt(() => api.kbDelete(item.key))) onDeleted();
+                }}
+              />
+            )
+          }
+        >
+          {canEdit(item) && (
+            <Button variant="secondary" onClick={() => onEdit(item)}>
+              {t('kb.edit')}
+            </Button>
+          )}
+          <Button onClick={onClose}>{t('common.close')}</Button>
+        </DialogFooter>
+      }
+    >
       <div className="flex flex-col gap-3">
         <span className="text-xs text-muted">{pathOf(item, data)}</span>
         <h2 className="text-xl font-bold">{item.title}</h2>
@@ -1173,23 +1202,6 @@ function KbReader({
           </div>
         )}
         <ErrorText message={error} />
-        <div className="flex items-center justify-end gap-2">
-          {canEdit(item) && (
-            <>
-              <ConfirmButton
-                label={t('kb.delete')}
-                message={t('kb.delete.confirm', { title: item.title })}
-                onConfirm={async () => {
-                  if (await attempt(() => api.kbDelete(item.key))) onDeleted();
-                }}
-              />
-              <Button variant="secondary" onClick={() => onEdit(item)}>
-                {t('kb.edit')}
-              </Button>
-            </>
-          )}
-          <Button onClick={onClose}>{t('common.close')}</Button>
-        </div>
       </div>
     </Dialog>
   );
@@ -1247,14 +1259,14 @@ export function SaveToKb({
         {attachment !== null ? t('kb.save.fileWarning') : t('kb.save.messageWarning')}
       </p>
       <ErrorText message={error} />
-      <div className="flex justify-end gap-2">
-        <Button type="button" variant="secondary" className="h-8 px-3 py-0" onClick={onDone}>
+      <DialogFooter bare className="border-t border-line pt-2">
+        <Button type="button" variant="secondary" size="sm" onClick={onDone}>
           {t('common.cancel')}
         </Button>
-        <Button type="submit" className="h-8 px-3 py-0" disabled={busy || !topic || !title.trim()}>
+        <Button type="submit" size="sm" disabled={busy || !topic || !title.trim()}>
           {t('kb.save.submit')}
         </Button>
-      </div>
+      </DialogFooter>
     </form>
   );
 }

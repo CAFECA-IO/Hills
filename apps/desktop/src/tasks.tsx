@@ -31,6 +31,7 @@ import {
   Checkbox,
   ConfirmButton,
   Dialog,
+  DialogFooter,
   EmptyState,
   ErrorText,
   Field,
@@ -485,6 +486,30 @@ export function TaskDialog({
       onSubmit={() => void save()}
       dirty={dirty}
       width="lg"
+      footer={
+        <DialogFooter
+          start={
+            <>
+              {task && (
+                <ConfirmButton
+                  label={t('tasks.delete')}
+                  message={t('tasks.delete.confirm', { title: task.title })}
+                  onConfirm={async () => {
+                    if (await attempt(() => api.deleteTask(task.team, task.id))) onClose();
+                  }}
+                />
+              )}
+            </>
+          }
+        >
+          <Button variant="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" busy={busy}>
+            {t('common.save')}
+          </Button>
+        </DialogFooter>
+      }
     >
       <Field
         label={t('tasks.field.visibility')}
@@ -672,25 +697,6 @@ export function TaskDialog({
         </div>
       </fieldset>
       <ErrorText message={error} />
-      <div className="flex items-center gap-2">
-        {task && (
-          <ConfirmButton
-            label={t('tasks.delete')}
-            message={t('tasks.delete.confirm', { title: task.title })}
-            onConfirm={async () => {
-              if (await attempt(() => api.deleteTask(task.team, task.id))) onClose();
-            }}
-          />
-        )}
-        <span className="ml-auto flex gap-2">
-          <Button variant="secondary" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button type="submit" busy={busy}>
-            {t('common.save')}
-          </Button>
-        </span>
-      </div>
     </Dialog>
   );
 }

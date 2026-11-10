@@ -9,6 +9,7 @@ import {
   Card,
   ConfirmButton,
   Dialog,
+  DialogFooter,
   EmptyState,
   ErrorText,
   Field,
@@ -123,6 +124,16 @@ function DirectionDialog({
       onClose={onClose}
       onSubmit={save}
       dirty={JSON.stringify(v) !== JSON.stringify(initial)}
+      footer={
+        <DialogFooter>
+          <Button variant="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" busy={busy}>
+            {t('common.save')}
+          </Button>
+        </DialogFooter>
+      }
     >
       <Field label={t('settings.directions.year')}>
         <Select value={v.year} onChange={(e) => setV({ ...v, year: e.target.value })}>
@@ -144,14 +155,6 @@ function DirectionDialog({
         />
       </Field>
       <ErrorText message={error} />
-      <div className="flex justify-end gap-2 pt-2">
-        <Button variant="secondary" onClick={onClose}>
-          {t('common.cancel')}
-        </Button>
-        <Button type="submit" busy={busy}>
-          {t('common.save')}
-        </Button>
-      </div>
     </Dialog>
   );
 }

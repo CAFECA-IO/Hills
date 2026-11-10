@@ -23,6 +23,7 @@ import {
 import {
   Button,
   Checkbox,
+  DialogFooter,
   ErrorText,
   IconButton,
   Menu,
@@ -190,14 +191,14 @@ function FolderSummary({
           </ul>
         </div>
       )}
-      <div className="flex gap-2">
-        <Button disabled={pick.fileCount === 0} onClick={onConfirm}>
-          {t('files.folder.upload')}
-        </Button>
+      <DialogFooter bare className="border-t border-line pt-3">
         <Button variant="secondary" onClick={onCancel}>
           {t('common.cancel')}
         </Button>
-      </div>
+        <Button disabled={pick.fileCount === 0} onClick={onConfirm}>
+          {t('files.folder.upload')}
+        </Button>
+      </DialogFooter>
     </Popover>
   );
 }

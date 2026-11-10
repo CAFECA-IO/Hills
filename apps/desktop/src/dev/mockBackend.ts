@@ -958,6 +958,87 @@ const convs = [
 ];
 const msgs: MockMsg[] = [
   {
+    id: 'f1',
+    conv: 'g1',
+    author: 'mem-a',
+    createdAt: Date.now() - 3 * 3600_000,
+    kind: 'files',
+    body: '季報初稿，週五前看完',
+    mentions: [],
+    attachments: [
+      {
+        type: 'file',
+        manifest: {
+          v: 1,
+          fileId: 'F-q4',
+          name: '2026Q4 季度報告初稿.pdf',
+          size: 12400000,
+          mime: 'application/pdf',
+          cipher: 'AES-256-GCM/stripe',
+          fileNonce: 'AAAAAAAAAAA=',
+          stripeSize: 20971520,
+          rs: { data: 5, parity: 3 },
+          stripes: [],
+        },
+        fileKey: 'AAAA',
+      },
+    ],
+  },
+  {
+    id: 'f2',
+    conv: 'd1',
+    author: 'mem-me',
+    createdAt: Date.now() - 26 * 3600_000,
+    kind: 'files',
+    body: '監控面板截圖',
+    mentions: [],
+    attachments: [
+      {
+        type: 'file',
+        manifest: {
+          v: 1,
+          fileId: 'F-png',
+          name: 'relay-監控面板.png',
+          size: 2100000,
+          mime: 'image/png',
+          cipher: 'AES-256-GCM/stripe',
+          fileNonce: 'AAAAAAAAAAA=',
+          stripeSize: 20971520,
+          rs: { data: 5, parity: 3 },
+          stripes: [],
+        },
+        fileKey: 'AAAA',
+      },
+    ],
+  },
+  {
+    id: 'f3',
+    conv: 'g1',
+    author: 'mem-b',
+    createdAt: Date.now() - 340 * 86400_000,
+    kind: 'files',
+    body: '測試版，請裝裝看',
+    mentions: [],
+    attachments: [
+      {
+        type: 'file',
+        manifest: {
+          v: 1,
+          fileId: 'F-zip',
+          name: 'windows-build-1108.zip',
+          size: 412000000,
+          mime: 'application/zip',
+          cipher: 'AES-256-GCM/stripe',
+          fileNonce: 'AAAAAAAAAAA=',
+          stripeSize: 20971520,
+          rs: { data: 5, parity: 3 },
+          stripes: [],
+        },
+        fileKey: 'AAAA',
+      },
+    ],
+  },
+  {
     id: '0',
     conv: 'g1',
     author: 'mem-me',
@@ -1969,6 +2050,68 @@ const fileHandlers: Record<string, (args: Record<string, unknown>) => unknown> =
   },
   abort_download: () => undefined,
   show_download: () => undefined,
+  record_folder_download: () => undefined,
+  open_downloaded: () => undefined,
+  // 檔案頁（technical-design §16.19，D64）：從訊息推導，另加結案報告與知識的出處
+  list_files: () => {
+    const map = new Map<string, Record<string, unknown>>();
+    const add = (att: Record<string, unknown>, src: Record<string, unknown>) => {
+      const m = att.manifest as { fileId: string; name: string; size: number; mime?: string };
+      const cur = map.get(m.fileId);
+      if (cur) {
+        (cur.sources as unknown[]).push(src);
+        return;
+      }
+      map.set(m.fileId, {
+        key: m.fileId,
+        kind: 'file',
+        name: m.name,
+        size: m.size,
+        mime: m.mime ?? null,
+        fileCount: null,
+        sharedBy: src.author,
+        sharedAt: src.at,
+        sources: [src],
+        downloaded:
+          m.fileId === 'F-q4' ? { path: '/Users/me/Downloads/季度報告.pdf', at: Date.now() } : null,
+        expiresAt: (src.at as number) + 365 * 86400_000,
+        attachment: att,
+      });
+    };
+    for (const m of [...msgs].sort((a, b) => a.createdAt - b.createdAt)) {
+      if (m.kind !== 'files' || !Array.isArray(m.attachments)) continue;
+      for (const a of m.attachments as Record<string, unknown>[]) {
+        add(a, {
+          kind: 'message',
+          convId: m.conv,
+          messageId: m.id,
+          author: m.author,
+          at: m.createdAt,
+          excerpt: m.body,
+        });
+      }
+    }
+    const q4 = msgs.find((m) => m.id === 'f1');
+    if (q4 && Array.isArray(q4.attachments)) {
+      const a = q4.attachments[0] as Record<string, unknown>;
+      add(a, {
+        kind: 'taskReport',
+        team: 'default',
+        task: 't1',
+        title: 'Windows 驗收',
+        author: 'mem-me',
+        at: Date.now() - 2 * 3600_000,
+      });
+      add(a, {
+        kind: 'kb',
+        kbKey: 'mem-a:kb1',
+        title: '季報範本',
+        author: 'mem-a',
+        at: Date.now() - 3600_000,
+      });
+    }
+    return [...map.values()].sort((x, y) => (y.sharedAt as number) - (x.sharedAt as number));
+  },
   save_upload_jobs: () => undefined,
   upload_jobs: () => [],
 };

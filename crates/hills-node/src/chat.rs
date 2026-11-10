@@ -106,7 +106,7 @@ impl Inner {
         self.persist(st)
     }
 
-    fn messages_locked(&self, st: &mut State, conv_id: &str) -> Vec<Message> {
+    pub(crate) fn messages_locked(&self, st: &mut State, conv_id: &str) -> Vec<Message> {
         let months: Vec<String> = st
             .conv_months
             .get(conv_id)

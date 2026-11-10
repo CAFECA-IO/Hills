@@ -110,6 +110,7 @@ pub fn run() {
             commands::add_task_log,
             commands::resolve_task_blocked,
             commands::my_logs_since,
+            commands::list_files,
             commands::timer_state,
             commands::timer_segments,
             commands::timer_start,
@@ -157,6 +158,8 @@ pub fn run() {
             share::finish_download,
             share::abort_download,
             share::show_download,
+            share::record_folder_download,
+            share::open_downloaded,
             share::save_upload_jobs,
             share::upload_jobs,
         ])

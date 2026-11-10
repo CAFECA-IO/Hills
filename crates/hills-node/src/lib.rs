@@ -10,6 +10,7 @@ pub mod conv;
 pub mod direction;
 pub mod doc_spec;
 pub mod drift;
+pub mod files;
 mod gossip;
 pub mod kb;
 mod lifecycle;
@@ -40,7 +41,7 @@ pub use hills_identity::secret_store::{MemoryStore, SecretStore, SecretStoreErro
 pub use hills_proto::gossip::{Location, Presence, PresenceState};
 pub use hills_proto::{MemberId, Pub32, Role};
 pub use lifecycle::{DEFAULT_TEAM, DeviceView};
-pub use node::{Event, Node, NodeOptions, SyncStatus};
+pub use node::{Event, Node, NodeOptions, SyncStatus, now_ms};
 pub use onboarding::{CreateOrg, OnboardKind, OnboardStep, Onboarding, SignInView};
 pub use org::{LunchBreak, OfficeRec, OrgSnapshot};
 pub use team::{Ack, AckState, Focus, Look, StepInput, Task, TaskInput, TaskStatus, TaskStep};

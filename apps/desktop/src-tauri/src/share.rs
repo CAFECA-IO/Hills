@@ -236,8 +236,49 @@ pub async fn finish_download(
     token: String,
     path: String,
     size: u64,
+    key: Option<String>,
 ) -> CmdResult<String> {
-    registry(&state)?.finish(&token, &path, size)
+    let done = registry(&state)?.finish(&token, &path, size)?;
+    // 單檔下載：記下完成的位置（「檔案」頁的「已下載」，§16.19 v0.35）
+    if let Some(key) = key.filter(|_| path.is_empty()) {
+        let at = hills_node::now_ms();
+        with_node!(state, n => n.record_download(&key, std::path::PathBuf::from(&done), at).map_err(e))?;
+    }
+    Ok(done)
+}
+
+/// 資料夾下載完成：記下目標資料夾（路徑取自本次選擇的下載目標，不由前端指定）。
+#[tauri::command]
+pub async fn record_folder_download(
+    state: State<'_, AppState>,
+    token: String,
+    key: String,
+) -> CmdResult<()> {
+    let root = registry(&state)?
+        .target_root(&token)
+        .ok_or("找不到下載目標")?;
+    let at = hills_node::now_ms();
+    with_node!(state, n => n.record_download(&key, root, at).map_err(e))
+}
+
+/// 打開或在 Finder / 檔案總管中顯示下載過的檔案（「檔案」頁，D64）。只接受本機下載紀錄中的路徑。
+#[tauri::command]
+pub async fn open_downloaded(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+    reveal: bool,
+) -> CmdResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let p = with_node!(state, n => n.downloaded_path(&key).map_err(e))?
+        .ok_or("檔案已移動或刪除，請重新下載")?;
+    if reveal {
+        app.opener().reveal_item_in_dir(p).map_err(e)
+    } else {
+        app.opener()
+            .open_path(p.to_string_lossy(), None::<&str>)
+            .map_err(e)
+    }
 }
 
 #[tauri::command]

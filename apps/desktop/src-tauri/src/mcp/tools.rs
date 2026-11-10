@@ -121,6 +121,19 @@ pub fn all() -> Vec<ToolDef> {
             ),
         },
         ToolDef {
+            name: "list_files",
+            kind: Kind::Read,
+            description: "Files the user can see (attachments in conversations, task close reports and the knowledge base) with where each was shared (source). Names, sizes and sources only — no keys or contents.",
+            schema: obj(
+                json!({
+                    "query": { "type": "string", "description": "Match file name or message excerpt (optional)" },
+                    "source": { "type": "string", "enum": ["message", "taskReport", "kb"], "description": "Only files with this kind of source (optional)" },
+                    "limit": { "type": "integer", "minimum": 1, "maximum": 100 }
+                }),
+                &[],
+            ),
+        },
+        ToolDef {
             name: "list_conversations",
             kind: Kind::Read,
             description: "The user's conversations (direct and group) with the last message and unread count.",

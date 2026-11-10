@@ -428,6 +428,43 @@ export interface TimerRunning {
   resume: WorkRef | null;
 }
 
+// ── 檔案（technical-design §16.19 v0.35，D64）──
+
+export type FileSource =
+  | {
+      kind: 'message';
+      convId: string;
+      messageId: string;
+      author: string;
+      at: number;
+      excerpt: string;
+    }
+  | {
+      kind: 'taskReport';
+      team: string;
+      task: string;
+      title: string;
+      author: string | null;
+      at: number;
+    }
+  | { kind: 'kb'; kbKey: string; title: string; author: string; at: number };
+
+export interface FileEntry {
+  key: string;
+  kind: 'file' | 'folder';
+  name: string;
+  size: number;
+  mime: string | null;
+  fileCount: number | null;
+  sharedBy: string | null;
+  sharedAt: number;
+  sources: FileSource[];
+  downloaded: { path: string; at: number } | null;
+  expiresAt: number;
+  /** 第一筆出處的 §14.2 Attachment（下載用） */
+  attachment: unknown;
+}
+
 export interface TimerSegment {
   id: string;
   ref: WorkRef;
@@ -1102,8 +1139,13 @@ export const api = {
       'x-path': encodeURIComponent(path),
       'x-offset': String(offset),
     }),
-  finishDownload: (token: string, path: string, size: number) =>
-    call<string>('finish_download', { token, path, size }),
+  finishDownload: (token: string, path: string, size: number, key?: string | null) =>
+    call<string>('finish_download', { token, path, size, key: key ?? null }),
+  recordFolderDownload: (token: string, key: string) =>
+    call<void>('record_folder_download', { token, key }),
+  // 檔案頁（technical-design §16.19，D64）
+  listFiles: () => call<FileEntry[]>('list_files'),
+  openDownloaded: (key: string, reveal: boolean) => call<void>('open_downloaded', { key, reveal }),
   abortDownload: (token: string, path: string) => call<void>('abort_download', { token, path }),
   showDownload: (token: string, path: string, name: string, open: boolean) =>
     call<void>('show_download', { token, path, name, open }),

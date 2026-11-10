@@ -54,6 +54,8 @@ interface Props {
   focus: FocusView | null;
   timezone: string;
   isAdmin: boolean;
+  /** 前往出處（D64）：在「所有任務」展開這個任務 */
+  openTask?: string | null;
 }
 
 /** 子頁面的標題換成「工作」；子頁面的動作接在分頁之後。 */
@@ -78,6 +80,7 @@ export function Work({
   focus,
   timezone,
   isAdmin,
+  openTask = null,
 }: Props) {
   const focusId = focus?.task?.id ?? null;
   const go = (next: WorkTab) => {
@@ -114,6 +117,7 @@ export function Work({
           isAdmin={isAdmin}
           loading={tasksLoading}
           forceView="list"
+          openTaskId={openTask}
         />
       </div>
     );

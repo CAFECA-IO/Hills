@@ -326,6 +326,42 @@ impl McpBackend for RealBackend {
                 }
                 Ok(json!({ "mine": mine, "teams": team }))
             }
+            "list_files" => {
+                let query = args["query"].as_str().unwrap_or("").to_lowercase();
+                let source = args["source"].as_str();
+                let limit = args["limit"].as_u64().unwrap_or(50).clamp(1, 100) as usize;
+                let files = to_v(commands::list_files(self.state()).await)?;
+                let out: Vec<Value> = files
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|f| {
+                        let srcs = f["sources"].as_array().cloned().unwrap_or_default();
+                        let hit = query.is_empty()
+                            || f["name"]
+                                .as_str()
+                                .is_some_and(|n| n.to_lowercase().contains(&query))
+                            || srcs.iter().any(|s| {
+                                s["excerpt"]
+                                    .as_str()
+                                    .is_some_and(|x| x.to_lowercase().contains(&query))
+                            });
+                        let kind = source.is_none_or(|k| srcs.iter().any(|s| s["kind"] == k));
+                        hit && kind
+                    })
+                    .take(limit)
+                    .map(|mut f| {
+                        // 不回傳 Attachment 與金鑰（§18.3 v0.35）
+                        if let Some(o) = f.as_object_mut() {
+                            o.remove("attachment");
+                            o.remove("downloaded");
+                        }
+                        f
+                    })
+                    .collect();
+                Ok(json!(out))
+            }
             "get_my_time" => {
                 let from = need(&args, "from")?;
                 let to = need(&args, "to")?;

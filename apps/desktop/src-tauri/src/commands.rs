@@ -960,6 +960,14 @@ pub async fn my_logs_since(
     with_node!(state, n => n.my_logs_since(since).map_err(e))
 }
 
+/// 「檔案」頁（technical-design §16.19，D64）。
+#[tauri::command]
+pub async fn list_files(
+    state: State<'_, AppState>,
+) -> CmdResult<Vec<hills_node::files::FileEntry>> {
+    with_node!(state, n => n.list_files().map_err(e))
+}
+
 // ── 計時與工作紀錄（technical-design §16.18，D62）──
 
 #[tauri::command]

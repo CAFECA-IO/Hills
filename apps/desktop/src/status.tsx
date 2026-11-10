@@ -195,6 +195,13 @@ export function StatusMenu({
 
 const RELATIVE = new Set<Situation['key']>(['focus25', 'away5', 'away15']);
 
+/** 相對時間的情境（專注 25 分、暫離 5 / 15 分）以按下的當下重新起算；整點、午休結束不變。 */
+function restart(sit: Situation, openedAt: number): Situation {
+  return RELATIVE.has(sit.key) && sit.until !== null
+    ? { ...sit, until: Date.now() + (sit.until - openedAt) }
+    : sit;
+}
+
 const SITUATION_LABEL: Record<Situation['key'], MessageKey> = {
   back: 'status.sit.back',
   focus25: 'status.sit.focus25',
@@ -225,11 +232,7 @@ function StatusPanel({
   const sits = situations(now, me.presence, overview.lunchBreak);
   const moreId = useId();
   const pick = async (sit: Situation) => {
-    // 相對時間的情境（專注 25 分、暫離 5 / 15 分）以按下的當下重新起算
-    const s =
-      RELATIVE.has(sit.key) && sit.until !== null
-        ? { ...sit, until: Date.now() + (sit.until - now) }
-        : sit;
+    const s = restart(sit, now);
     const before = snapshot(me);
     if (await attempt(() => apply({ ...before, state: s.state, until: s.until }))) {
       const label = t(SITUATION_LABEL[s.key], { time: s.until ? formatClock(s.until) : '' });

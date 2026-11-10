@@ -4,6 +4,7 @@ import {
   backSoon,
   climberPosition,
   defaultLook,
+  idHash,
   defersNotifications,
   groupByHill,
   halfWidthAt,
@@ -105,6 +106,10 @@ describe('groupByHill', () => {
 });
 
 describe('helpers', () => {
+  it('idHash is stable and spreads ids', () => {
+    expect(idHash('abc')).toBe(idHash('abc'));
+    expect(idHash('abc')).not.toBe(idHash('abd'));
+  });
   it('defaultLook is stable and in range', () => {
     expect(defaultLook('abc')).toEqual(defaultLook('abc'));
     const l = defaultLook('xyz');

@@ -9,13 +9,22 @@ export const LOOK_PALETTE = 6;
 /** 角色種類數（team.rs LOOK_KINDS；characters.tsx CHARACTER_KINDS）。 */
 export const LOOK_KINDS = 7;
 
-/** 尚未設定外觀的成員：由 ID 決定（每個人看到的都一樣）。 */
-export function defaultLook(id: string): Look {
+/** 由成員 ID 算出的穩定雜湊（FNV-1a），用於預設外觀與頭像底色。 */
+export function idHash(id: string): number {
   let h = 2166136261;
   for (let i = 0; i < id.length; i++) {
     h ^= id.charCodeAt(i);
     h = Math.imul(h, 16777619) >>> 0;
   }
+  return h;
+}
+
+/** 頭像底色數（tokens.css --hills-avatar-0…6，design-system §9 v0.8）。 */
+export const AVATAR_TONES = 7;
+
+/** 尚未設定外觀的成員：由 ID 決定（每個人看到的都一樣）。 */
+export function defaultLook(id: string): Look {
+  const h = idHash(id);
   return {
     kind: 0,
     hair: h % LOOK_PALETTE,

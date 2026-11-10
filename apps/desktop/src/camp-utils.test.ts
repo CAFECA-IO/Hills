@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { ConvRow, MemberView, MessageView, Task } from './api';
-import { firstLine, knockTargets, reportableStep, resolveLinked, timeline } from './camp-utils';
+import {
+  firstLine,
+  knockTargets,
+  lastPreview,
+  pairOf,
+  reportableStep,
+  resolveLinked,
+  RUN_GAP_MS,
+  runHeads,
+  timeline,
+} from './camp-utils';
 
 const msg = (
   id: string,
@@ -131,5 +141,57 @@ describe('firstLine', () => {
     expect(firstLine('\n\n## **修正** 通知\n第二行')).toBe('修正 通知');
     expect(firstLine('- `relay` 更新')).toBe('relay 更新');
     expect(firstLine('長'.repeat(120))).toHaveLength(100);
+  });
+});
+
+describe('avatars and runs (D58)', () => {
+  const mk = (author: string, at: number, kind = 'text', body = 'hi'): MessageView => ({
+    id: `${author}${at}`,
+    conv: 'c',
+    author,
+    createdAt: at,
+    kind,
+    body,
+    mentions: [],
+    attachments: null,
+  });
+  const it_ = (m: MessageView) => ({ type: 'msg' as const, at: m.createdAt, m });
+
+  it('shows the head on the first message of a run', () => {
+    const items = [
+      it_(mk('a', 0)),
+      it_(mk('a', 60_000)),
+      it_(mk('b', 120_000)),
+      it_(mk('b', 120_000 + RUN_GAP_MS + 1)),
+      {
+        type: 'step' as const,
+        at: 900_000,
+        step: { id: 's', title: 'x', assignee: null, done: true, doneAt: 900_000 },
+      },
+      it_(mk('b', 910_000)),
+    ];
+    expect(runHeads(items)).toEqual([true, false, true, true, false, true]);
+  });
+
+  it('previews the last message', () => {
+    expect(lastPreview(null)).toBe('');
+    expect(lastPreview(mk('a', 0, 'text', '**粗體**\n第二行'))).toBe('粗體');
+    expect(lastPreview(mk('a', 0, 'files'))).toBeNull();
+  });
+
+  it('pairs the last speaker first in a group', () => {
+    const conv = {
+      id: 'c',
+      kind: 'group',
+      name: 'g',
+      creator: 'me',
+      createdAt: 0,
+      members: ['me', 'a', 'b', 'c'],
+      last: mk('b', 1),
+      unread: 0,
+      task: null,
+    } as ConvRow;
+    expect(pairOf(conv, 'me')).toEqual(['b', 'a']);
+    expect(pairOf({ ...conv, last: mk('me', 1) }, 'me')).toEqual(['a', 'b']);
   });
 });

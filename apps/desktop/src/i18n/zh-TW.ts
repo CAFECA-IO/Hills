@@ -1301,6 +1301,13 @@ export const zhTW = {
   'search.settings.empty': '找不到相關設定',
   'home.offHours': '下班時間',
   'status.myLook': '更換角色與配色',
+  'chat.preview.files': '傳送了檔案',
+  'team.view.label': '檢視方式',
+  'team.view.cards': '卡片',
+  'team.view.list': '清單',
+  'team.online': '{online} 位在線',
+  'team.leads': '負責人',
+  'team.you': '（你）',
 } as const;
 
 export type MessageKey = keyof typeof zhTW;

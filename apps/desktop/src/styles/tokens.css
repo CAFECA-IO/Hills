@@ -161,6 +161,14 @@
   --hills-look-tiger-c-3: #4a5568;
   --hills-look-tiger-c-4: #9a3e26;
   --hills-look-tiger-c-5: #34486e;
+  /* 頭像底色（D58，design-system §9） */
+  --hills-avatar-0: #e6f0fe;
+  --hills-avatar-1: #fde8ea;
+  --hills-avatar-2: #e3f4ea;
+  --hills-avatar-3: #fdf0dc;
+  --hills-avatar-4: #ece8fb;
+  --hills-avatar-5: #e8edf2;
+  --hills-avatar-6: #fff3d6;
   /* 角色固定色（D56） */
   --hills-char-pants: #4a5466;
   --hills-char-shoe: #2f3542;
@@ -206,6 +214,13 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --hills-avatar-0: #1b2b45;
+    --hills-avatar-1: #3a2027;
+    --hills-avatar-2: #183327;
+    --hills-avatar-3: #3a2c16;
+    --hills-avatar-4: #2a2445;
+    --hills-avatar-5: #232c38;
+    --hills-avatar-6: #3a3216;
     --hills-dawn-top: #0d1626;
     --hills-dawn-upper: #16253a;
     --hills-dawn-lower: #1c2f4a;

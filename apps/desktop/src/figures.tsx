@@ -3,10 +3,17 @@
  * 只用 tokens.css 的變數上色；狀態同時以顏色、徽章形狀、姿勢與文字表達。
  */
 import { useId } from 'react';
-import type { Look, PresenceState } from './api';
+import type { Look, MemberView, PresenceState } from './api';
 import { t, type MessageKey } from './i18n';
-import { Character, CharacterHead, type Pose, SCENE_HEAD_Y, SCENE_SCALE } from './characters';
-import { moonLitPath, moonPhase } from './summit';
+import {
+  Character,
+  CharacterArt,
+  CharacterHead,
+  type Pose,
+  SCENE_HEAD_Y,
+  SCENE_SCALE,
+} from './characters';
+import { AVATAR_TONES, idHash, lookOf, moonLitPath, moonPhase } from './summit';
 
 const v = (name: string) => `var(--hills-${name})`;
 
@@ -497,5 +504,87 @@ export function Bust({
         </>
       )}
     </svg>
+  );
+}
+
+// ── 圓形頭像（design-system §9 v0.8、components「Avatar」，D58） ─────────────
+
+type AvatarMember = Pick<MemberView, 'id' | 'look' | 'presence'>;
+
+/**
+ * 角色的圓形頭肩像。取景與 `characters.tsx` 的繪製座標一致（頭部中心約在 (50, 33)）。
+ * 名字與狀態由畫面以文字提供，這裡 `aria-hidden`。
+ */
+export function Avatar({
+  member,
+  size,
+  me = false,
+  badge = true,
+}: {
+  member: AvatarMember;
+  size: number;
+  me?: boolean;
+  badge?: boolean;
+}) {
+  const clip = useId();
+  const st: St = member.presence ?? 'Offline';
+  const r = me ? 27.4 : 30;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="20 11 60 60"
+      aria-hidden="true"
+      className="shrink-0 overflow-visible"
+    >
+      <defs>
+        <clipPath id={clip}>
+          <circle cx={50} cy={41} r={r} />
+        </clipPath>
+      </defs>
+      <g opacity={st === 'Offline' ? 0.55 : 1}>
+        <circle cx={50} cy={41} r={r} fill={v(`avatar-${idHash(member.id) % AVATAR_TONES}`)} />
+        <g clipPath={`url(#${clip})`}>
+          <CharacterArt look={lookOf(member)} pose="rest" />
+        </g>
+      </g>
+      {me && <circle cx={50} cy={41} r={29} fill="none" stroke={v('primary')} strokeWidth={2.6} />}
+      {badge && size > 24 && (
+        <g transform="translate(70 61) scale(1.15)">
+          <circle r={8.4} fill={v('surface')} />
+          <circle r={7} fill={v(BADGE_TOKEN[st])} />
+          <BadgeShape state={st} />
+        </g>
+      )}
+    </svg>
+  );
+}
+
+/** 群組的交疊頭像：第一位在左上、第二位在右下。 */
+export function AvatarPair({
+  members,
+  size,
+  ringClass = 'ring-surface',
+}: {
+  members: AvatarMember[];
+  size: number;
+  /** 交疊處的白邊顏色（選取列用 `ring-primary-soft`） */
+  ringClass?: string;
+}) {
+  const [a, b] = members;
+  const small = Math.round(size * 0.68);
+  return (
+    <span aria-hidden="true" className="relative shrink-0" style={{ width: size, height: size }}>
+      {a && (
+        <span className={`absolute top-0 left-0 flex rounded-full ring-2 ${ringClass}`}>
+          <Avatar member={a} size={small} badge={false} />
+        </span>
+      )}
+      {b && (
+        <span className={`absolute right-0 bottom-0 flex rounded-full ring-2 ${ringClass}`}>
+          <Avatar member={b} size={small} badge={false} />
+        </span>
+      )}
+    </span>
   );
 }

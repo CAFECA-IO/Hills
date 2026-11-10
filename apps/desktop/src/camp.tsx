@@ -244,10 +244,20 @@ function TaskPicker({
 }
 
 /** 訊息流中的系統列：連結任務、步驟完成。 */
-export function SystemRow({ children, at }: { children: ReactNode; at: number }) {
+export function SystemRow({
+  children,
+  at,
+  lead,
+}: {
+  children: ReactNode;
+  at: number;
+  /** 文字前的小頭像（步驟完成列，D58） */
+  lead?: ReactNode;
+}) {
   return (
     <li className="flex items-center gap-2 px-2 text-xs text-muted">
       <span aria-hidden className="h-px flex-1 bg-line" />
+      {lead}
       <span className="max-w-[70%] truncate">{children}</span>
       <span>{formatTime(at)}</span>
       <span aria-hidden className="h-px flex-1 bg-line" />

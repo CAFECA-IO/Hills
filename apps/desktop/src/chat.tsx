@@ -7,10 +7,13 @@ import {
   type ConvRow,
   type MemberView,
   type MessageView,
+  type OfficeView,
   type Task,
   type TeamView,
 } from './api';
-import { knockTargets, resolveLinked, timeline } from './camp-utils';
+import { knockTargets, lastPreview, pairOf, resolveLinked, runHeads, timeline } from './camp-utils';
+import { Avatar, AvatarPair, stateLabel, statusTextClass } from './figures';
+import { locationLabel } from './status';
 import {
   ConvDrawer,
   ConvMountain,
@@ -29,7 +32,7 @@ import {
 } from './chat-utils';
 import { useLoad, useMediaQuery } from './hooks';
 import { SaveToKb } from './kb';
-import { formatTime, t } from './i18n';
+import { formatClock, formatDate, formatTime, t } from './i18n';
 import {
   Badge,
   Button,
@@ -51,11 +54,13 @@ interface Props {
   /** 我所屬小組的任務（焦點營地連結任務用） */
   tasks: Task[];
   teams: TeamView[];
+  /** 辦公室（對話頂列顯示地點，D58） */
+  offices?: OfficeView[];
   /** 從首頁開啟時直接進入的對話 */
   initial?: string | null;
 }
 
-export function Chat({ members, tasks, teams, initial = null }: Props) {
+export function Chat({ members, tasks, teams, offices = [], initial = null }: Props) {
   const convs = useLoad(api.conversations, ['convs', 'message', 'doc', 'roster']);
   const [pending, setPending] = useState<string[]>([]);
   useEffect(() => {
@@ -92,24 +97,41 @@ export function Chat({ members, tasks, teams, initial = null }: Props) {
           selected={c.id === current}
           className="justify-between"
         >
-          <span className="flex min-w-0 items-center gap-2">
-            {other && (
-              <span
-                aria-hidden
-                className={
-                  other.presence && other.presence !== 'Offline' ? 'text-primary' : 'text-muted'
-                }
-              >
-                {other.presence && other.presence !== 'Offline' ? '●' : '○'}
-              </span>
+          <span className="flex min-w-0 flex-1 items-center gap-2.5">
+            {other ? (
+              <Avatar member={other} size={40} />
+            ) : (
+              <AvatarPair
+                size={40}
+                ringClass={c.id === current ? 'ring-primary-soft' : 'ring-surface'}
+                members={pairOf(c, me)
+                  .map((id) => members.find((m) => m.id === id))
+                  .filter((m): m is MemberView => Boolean(m))}
+              />
             )}
-            <span className="truncate">{convTitle(c, me, nameOf)}</span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="flex items-baseline justify-between gap-2">
+                <span className={`truncate ${c.unread > 0 ? 'font-bold' : 'font-semibold'}`}>
+                  {convTitle(c, me, nameOf)}
+                </span>
+                {c.last && (
+                  <span className="shrink-0 text-2xs text-muted">
+                    {shortWhen(c.last.createdAt)}
+                  </span>
+                )}
+              </span>
+              <span className="flex items-center justify-between gap-2">
+                <span className="truncate text-xs text-muted">
+                  {lastPreview(c.last) ?? t('chat.preview.files')}
+                </span>
+                {c.unread > 0 && (
+                  <Badge tone="solid" label={t('chat.unread', { count: c.unread })}>
+                    {c.unread}
+                  </Badge>
+                )}
+              </span>
+            </span>
           </span>
-          {c.unread > 0 && (
-            <Badge tone="solid" label={t('chat.unread', { count: c.unread })}>
-              {c.unread}
-            </Badge>
-          )}
         </ListButton>
       </li>
     );
@@ -170,6 +192,7 @@ export function Chat({ members, tasks, teams, initial = null }: Props) {
               nameOf={nameOf}
               tasks={tasks}
               teams={teams}
+              offices={offices}
             />
           ) : (
             <p className="m-auto text-sm text-muted">{t('chat.pick')}</p>
@@ -274,6 +297,7 @@ function Conversation({
   nameOf,
   tasks,
   teams,
+  offices,
 }: {
   conv: ConvRow;
   me: string;
@@ -281,6 +305,7 @@ function Conversation({
   nameOf: (id: string) => string;
   tasks: Task[];
   teams: TeamView[];
+  offices: OfficeView[];
 }) {
   const msgs = useLoad(() => api.messages(conv.id), ['message', 'doc', 'convs']);
   const wide = useMediaQuery('(min-width: 1600px)');
@@ -301,6 +326,8 @@ function Conversation({
   const last = list[list.length - 1];
   const { task, missing } = resolveLinked(conv.task, tasks);
   const items = timeline(list, task);
+  const heads = runHeads(items);
+  const byId = new Map(members.map((m) => [m.id, m]));
   const myTeams = teams.filter((x) => x.members.includes(me)).map((x) => x.id);
 
   // 開著的對話：標記已讀、告知 Rust 端（不通知）
@@ -319,7 +346,7 @@ function Conversation({
     <div className="flex h-full min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-2">
-          <h2 className="truncate font-medium">{convTitle(conv, me, nameOf)}</h2>
+          <ConvHead conv={conv} me={me} members={members} nameOf={nameOf} offices={offices} />
           <Button
             variant="secondary"
             className="h-8 px-3 py-0 text-xs"
@@ -342,10 +369,18 @@ function Conversation({
         <div className="scroll-panel min-h-0 flex-1 px-4 py-3" aria-live="polite">
           <ErrorText message={msgs.error} />
           {list.length === 0 && <p className="text-sm text-muted">{t('chat.noMessages')}</p>}
-          <ul className="flex flex-col gap-3">
-            {items.map((it) =>
+          <ul className="flex flex-col gap-1.5">
+            {items.map((it, i) =>
               it.type === 'step' ? (
-                <SystemRow key={`step:${it.step.id}`} at={it.at}>
+                <SystemRow
+                  key={`step:${it.step.id}`}
+                  at={it.at}
+                  lead={
+                    it.step.assignee && byId.get(it.step.assignee) ? (
+                      <Avatar member={byId.get(it.step.assignee)!} size={22} />
+                    ) : undefined
+                  }
+                >
                   {t('camp.row.step', {
                     title: it.step.title,
                     name: it.step.assignee ? nameOf(it.step.assignee) : t('home.unassigned'),
@@ -360,6 +395,7 @@ function Conversation({
                   key={`${it.m.author}:${it.m.id}`}
                   m={it.m}
                   mine={it.m.author === me}
+                  head={heads[i] ?? true}
                   nameOf={nameOf}
                   me={me}
                   author={members.find((x) => x.id === it.m.author)}
@@ -407,6 +443,7 @@ function Conversation({
 function MessageItem({
   m,
   mine,
+  head,
   me,
   nameOf,
   author,
@@ -414,6 +451,8 @@ function MessageItem({
 }: {
   m: MessageView;
   mine: boolean;
+  /** 連續訊息的第一則：顯示頭像、名字與時間（D58） */
+  head: boolean;
   me: string;
   nameOf: (id: string) => string;
   author: MemberView | undefined;
@@ -425,46 +464,112 @@ function MessageItem({
   const attachments = m.kind === 'files' ? parseAttachments(m.attachments) : [];
   return (
     <li
-      className={`group relative rounded-control px-2 py-1 ${mentioned ? 'border-l-2 border-primary bg-bg' : ''}`}
+      className={`group relative flex gap-2.5 px-2 py-0.5 ${head ? 'mt-2' : ''} ${mine ? 'flex-row-reverse' : ''} ${mentioned ? 'border-l-2 border-primary' : ''}`}
     >
       {actions && (
-        <div className="absolute top-0 right-1 z-10 hidden group-focus-within:block group-hover:block">
+        <div
+          className={`absolute top-0 z-10 hidden group-focus-within:block group-hover:block ${mine ? 'left-1' : 'right-1'}`}
+        >
           {actions}
         </div>
       )}
-      <p className="text-xs text-muted">
-        <span className={`font-medium ${mine ? 'text-primary' : 'text-fg'}`}>
-          {nameOf(m.author)}
-        </span>{' '}
-        {formatTime(m.createdAt)}
-      </p>
-      <Markdown variant="chat" className="text-sm">
-        {m.body}
-      </Markdown>
-      {attachments.map((a, i) => (
-        <div key={i} className="flex flex-col items-start gap-1">
-          <AttachmentCard a={a} author={author} createdAt={m.createdAt} />
-          <LinkButton
-            tone="muted"
-            className="text-xs"
-            aria-expanded={savingFile === i}
-            onClick={() => setSavingFile(savingFile === i ? null : i)}
+      {!mine && (
+        <span className="w-9 shrink-0">
+          {head && author && <Avatar member={author} size={36} badge={false} />}
+        </span>
+      )}
+      <div
+        className={`flex max-w-[72%] min-w-0 flex-col gap-1 ${mine ? 'items-end' : 'items-start'}`}
+      >
+        {head && (
+          <p className="text-xs text-muted">
+            {!mine && <span className="mr-1.5 font-bold text-fg">{nameOf(m.author)}</span>}
+            {formatTime(m.createdAt)}
+          </p>
+        )}
+        {m.body && (
+          <div
+            className={`px-3 py-2 shadow-sm ${mine ? 'rounded-2xl rounded-tr-sm bg-primary text-on-primary' : 'rounded-2xl rounded-tl-sm bg-bg'}`}
           >
-            {t('camp.action.toKb')}
-          </LinkButton>
-          {savingFile === i && (
-            <SaveToKb
-              conv={m.conv}
-              messageKey={`${m.author}:${m.id}`}
-              defaultTitle={a.type === 'folder' ? a.name : a.manifest.name}
-              attachment={i}
-              onDone={() => setSavingFile(null)}
-            />
-          )}
-        </div>
-      ))}
+            <Markdown variant="chat" className="text-sm">
+              {m.body}
+            </Markdown>
+          </div>
+        )}
+        {attachments.map((a, i) => (
+          <div key={i} className={`flex flex-col gap-1 ${mine ? 'items-end' : 'items-start'}`}>
+            <AttachmentCard a={a} author={author} createdAt={m.createdAt} />
+            <LinkButton
+              tone="muted"
+              className="text-xs"
+              aria-expanded={savingFile === i}
+              onClick={() => setSavingFile(savingFile === i ? null : i)}
+            >
+              {t('camp.action.toKb')}
+            </LinkButton>
+            {savingFile === i && (
+              <SaveToKb
+                conv={m.conv}
+                messageKey={`${m.author}:${m.id}`}
+                defaultTitle={a.type === 'folder' ? a.name : a.manifest.name}
+                attachment={i}
+                onDone={() => setSavingFile(null)}
+              />
+            )}
+          </div>
+        ))}
+      </div>
     </li>
   );
+}
+
+/** 對話頂列（D58）：私訊顯示對方頭像、狀態、地點與狀態文字；群組顯示交疊頭像。 */
+function ConvHead({
+  conv,
+  me,
+  members,
+  nameOf,
+  offices,
+}: {
+  conv: ConvRow;
+  me: string;
+  members: MemberView[];
+  nameOf: (id: string) => string;
+  offices: OfficeView[];
+}) {
+  const other =
+    conv.kind === 'dm'
+      ? members.find((m) => m.id !== me && conv.members.includes(m.id))
+      : undefined;
+  const pair = pairOf(conv, me)
+    .map((id) => members.find((m) => m.id === id))
+    .filter((m): m is MemberView => Boolean(m));
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      {other ? <Avatar member={other} size={44} /> : <AvatarPair members={pair} size={40} />}
+      <div className="flex min-w-0 flex-col">
+        <h2 className="truncate font-bold">{convTitle(conv, me, nameOf)}</h2>
+        {other && (
+          <p className="truncate text-xs">
+            <span className={`font-semibold ${statusTextClass[other.presence ?? 'Offline']}`}>
+              {stateLabel(other.presence)}
+            </span>
+            <span className="text-muted">
+              {` · ${locationLabel(other.location, offices)}`}
+              {other.note && ` · ${other.note}`}
+            </span>
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** 對話列表的時間：今天顯示時刻，其他顯示日期。 */
+function shortWhen(ms: number): string {
+  const d = new Date(ms);
+  const now = new Date();
+  return d.toDateString() === now.toDateString() ? formatClock(ms) : formatDate(ms);
 }
 
 function Composer({

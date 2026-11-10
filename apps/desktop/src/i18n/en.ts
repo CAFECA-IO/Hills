@@ -1341,4 +1341,11 @@ export const en: Record<MessageKey, string> = {
   'search.settings.empty': 'No matching settings',
   'home.offHours': 'Off work',
   'status.myLook': 'Change character & colours',
+  'chat.preview.files': 'Sent files',
+  'team.view.label': 'View',
+  'team.view.cards': 'Cards',
+  'team.view.list': 'List',
+  'team.online': '{online} online',
+  'team.leads': 'Leads',
+  'team.you': ' (you)',
 };

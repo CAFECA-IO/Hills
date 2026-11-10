@@ -10,7 +10,7 @@ import {
   type SyncStatus,
 } from './api';
 import { Chat } from './chat';
-import { Portrait, StatusBadge } from './figures';
+import { Avatar, StatusBadge, stateLabel, statusTextClass } from './figures';
 import { McpConfirmStack } from './mcp-confirm';
 import { readGroup, Settings, writeGroup, type Group } from './settings';
 import { locationLabel, StatusMenu } from './status';
@@ -32,9 +32,8 @@ import {
   type HeadSlots,
 } from './layout';
 import { isOffHours } from './profile-utils';
-import { lookOf } from './summit';
 import { Tasks } from './tasks';
-import { Badge, Card, EmptyState, ErrorText, Pressable } from './ui';
+import { Badge, Card, EmptyState, ErrorText, Pressable, SegmentedControl } from './ui';
 
 type Page = 'home' | 'goals' | 'team' | 'tasks' | 'scrum' | 'reports' | 'chat' | 'kb' | 'settings';
 
@@ -331,6 +330,7 @@ export function Shell({ info }: { info: AppInfo }) {
                 members={overview.data?.members ?? []}
                 tasks={tasks.data ?? []}
                 teams={overview.data?.teams ?? []}
+                offices={overview.data?.offices ?? []}
                 initial={openConv}
               />
             )}
@@ -356,8 +356,21 @@ export function Shell({ info }: { info: AppInfo }) {
 
 // ── 團隊（首頁山景的清單檢視） ─────────────────────────────
 
+const TEAM_VIEW_KEY = 'hills.team.view';
+type TeamViewMode = 'cards' | 'list';
+
+function readTeamView(): TeamViewMode {
+  try {
+    return localStorage.getItem(TEAM_VIEW_KEY) === 'list' ? 'list' : 'cards';
+  } catch {
+    return 'cards';
+  }
+}
+
+/** 團隊頁（ui-spec「團隊」v0.38，D58）：依小組分組，卡片或清單檢視，圓形頭像。 */
 function TeamList({ overview }: { overview: Overview }) {
   const { members, teams, offices } = overview;
+  const [view, setView] = useState<TeamViewMode>(readTeamView);
   const online = members.filter((m) => m.presence && m.presence !== 'Offline').length;
   const byId = new Map(members.map((m) => [m.id, m]));
   const grouped = teams.map((tm) => ({
@@ -368,37 +381,107 @@ function TeamList({ overview }: { overview: Overview }) {
   const loose = members.filter((m) => !inTeam.has(m.id));
   if (loose.length)
     grouped.push({ id: '', name: t('team.noTeam'), members: [], leads: [], list: loose });
+  const back = (m: MemberView) =>
+    m.until
+      ? t('home.until', {
+          time: m.presence === 'Leave' ? formatDate(m.until) : formatClock(m.until),
+        })
+      : null;
   return (
-    <div className="flex flex-col gap-4">
-      <p className="text-sm text-muted">{t('team.summary', { online, total: members.length })}</p>
+    <div className="flex flex-col gap-5">
+      <div className="flex items-center gap-3">
+        <p className="flex-1 text-sm text-muted">
+          {t('team.summary', { online, total: members.length })}
+        </p>
+        <SegmentedControl
+          label={t('team.view.label')}
+          value={view}
+          onChange={(v) => {
+            setView(v);
+            try {
+              localStorage.setItem(TEAM_VIEW_KEY, v);
+            } catch {
+              // 只是記住檢視方式
+            }
+          }}
+          options={[
+            { value: 'cards', label: t('team.view.cards') },
+            { value: 'list', label: t('team.view.list') },
+          ]}
+        />
+      </div>
       {members.length <= 1 && <EmptyState art="team">{t('team.empty')}</EmptyState>}
-      {grouped.map((g) => (
-        <Card key={g.id || 'none'}>
-          <h2 className="mb-3 font-bold">{g.name}</h2>
-          <ul className="flex flex-col divide-y divide-line">
-            {g.list.map((m) => (
-              <li
-                key={m.id}
-                className="grid grid-cols-[3rem_10rem_7rem_14rem_1fr] items-center gap-3 py-2"
-              >
-                <Portrait look={lookOf(m)} state={m.presence} size={40} label={m.name} />
-                <span className="truncate font-semibold">
-                  {m.name}
-                  {m.isMe && <span className="text-muted">{t('team.me')}</span>}
-                  {m.isAdmin && <Badge className="ml-2 font-normal">{t('team.admin')}</Badge>}
-                </span>
-                <StatusBadge state={m.presence} />
-                <span className="truncate text-sm text-muted">
-                  {locationLabel(m.location, offices)}
-                  {m.until &&
-                    ` · ${m.presence === 'Leave' ? t('home.leaveUntil', { date: formatDate(m.until) }) : t('home.until', { time: formatClock(m.until) })}`}
-                </span>
-                <span className="truncate text-sm text-muted">{m.note}</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      ))}
+      {grouped.map((g) => {
+        const on = g.list.filter((m) => m.presence && m.presence !== 'Offline').length;
+        const leads = g.leads.map((id) => byId.get(id)).filter((m): m is MemberView => Boolean(m));
+        return (
+          <section key={g.id || 'none'} className="flex flex-col gap-3">
+            <div className="flex items-center gap-2.5">
+              <h2 className="font-bold">{g.name}</h2>
+              <span className="text-xs text-muted">
+                {t('chat.membersCount', { count: g.list.length })} ·{' '}
+                {t('team.online', { online: on })}
+                {leads.length > 0 && ` · ${t('team.leads')}`}
+              </span>
+              {leads.map((m) => (
+                <Avatar key={m.id} member={m} size={22} />
+              ))}
+            </div>
+            {view === 'cards' ? (
+              <ul className="grid grid-cols-5 gap-3 wide:grid-cols-6">
+                {g.list.map((m) => (
+                  <li key={m.id}>
+                    <Card
+                      padding="sm"
+                      className={`flex h-full flex-col items-center gap-2 text-center ${m.isMe ? 'ring-2 ring-primary' : ''}`}
+                    >
+                      <Avatar member={m} size={64} me={m.isMe} />
+                      <span className="font-bold">
+                        {m.name}
+                        {m.isMe && <span className="font-normal text-muted">{t('team.you')}</span>}
+                      </span>
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full bg-bg px-2.5 py-0.5 text-xs font-semibold ${statusTextClass[m.presence ?? 'Offline']}`}
+                      >
+                        {stateLabel(m.presence)}
+                        {back(m) && ` · ${back(m)}`}
+                      </span>
+                      <span className="text-xs text-muted">
+                        {locationLabel(m.location, offices)}
+                      </span>
+                      <span className="w-full truncate text-xs text-muted">{m.note}</span>
+                    </Card>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <Card padding="sm">
+                <ul className="flex flex-col divide-y divide-line">
+                  {g.list.map((m) => (
+                    <li
+                      key={m.id}
+                      className="grid grid-cols-[2.5rem_10rem_7rem_14rem_1fr] items-center gap-3 py-2"
+                    >
+                      <Avatar member={m} size={40} me={m.isMe} />
+                      <span className="truncate font-semibold">
+                        {m.name}
+                        {m.isMe && <span className="font-normal text-muted">{t('team.you')}</span>}
+                        {m.isAdmin && <Badge className="ml-2 font-normal">{t('team.admin')}</Badge>}
+                      </span>
+                      <StatusBadge state={m.presence} />
+                      <span className="truncate text-sm text-muted">
+                        {locationLabel(m.location, offices)}
+                        {back(m) && ` · ${back(m)}`}
+                      </span>
+                      <span className="truncate text-sm text-muted">{m.note}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }

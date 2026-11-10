@@ -102,7 +102,7 @@ export function StatusMenu({
   const [now, setNow] = useState(() => Date.now());
   const btn = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 20_000);
+    const id = setInterval(() => setNow(Date.now()), 15_000);
     return () => clearInterval(id);
   }, []);
   // E：到期自動回上線（technical-design §5.1 v0.32；只由本人的 app 執行）
@@ -165,7 +165,10 @@ export function StatusMenu({
           overview={overview}
           anchorRef={btn}
           onClose={() => setOpen(false)}
-          onApplied={(message, undo) => setToast({ message, undo, key: Date.now() })}
+          onApplied={(message, undo) => {
+            setNow(Date.now());
+            setToast({ message, undo, key: Date.now() });
+          }}
           onOpenLook={() => {
             setOpen(false);
             onOpenLook();
@@ -188,6 +191,15 @@ export function StatusMenu({
       )}
     </div>
   );
+}
+
+const RELATIVE = new Set<Situation['key']>(['focus25', 'away5', 'away15']);
+
+/** 相對時間的情境（專注 25 分、暫離 5 / 15 分）以按下的當下重新起算；整點、午休結束不變。 */
+function restart(sit: Situation, openedAt: number): Situation {
+  return RELATIVE.has(sit.key) && sit.until !== null
+    ? { ...sit, until: Date.now() + (sit.until - openedAt) }
+    : sit;
 }
 
 const SITUATION_LABEL: Record<Situation['key'], MessageKey> = {
@@ -219,7 +231,8 @@ function StatusPanel({
   const [now] = useState(() => Date.now());
   const sits = situations(now, me.presence, overview.lunchBreak);
   const moreId = useId();
-  const pick = async (s: Situation) => {
+  const pick = async (sit: Situation) => {
+    const s = restart(sit, now);
     const before = snapshot(me);
     if (await attempt(() => apply({ ...before, state: s.state, until: s.until }))) {
       const label = t(SITUATION_LABEL[s.key], { time: s.until ? formatClock(s.until) : '' });

@@ -1,6 +1,6 @@
 # 山丘上的卡菲卡（Hills）功能規劃
 
-> 版本：v1.40 · 2026-11-10 · 狀態：M0 完成，進入 M1
+> 版本：v1.41 · 2026-11-10 · 狀態：M0 完成，進入 M1
 > 本文件是專案的最高層事實來源；修改專案前先修改本文件（見 [AGENTS.md](../AGENTS.md)、[docs/README.md](./README.md)）。
 
 ## 1. 產品定位
@@ -447,6 +447,7 @@ Hills 是 CAFECA 團隊的工作通訊與協作工具，安裝於桌機、筆電
 | v1.31 | 2026-11-09 | components v0.6：統一確認對話框 ConfirmDialog（Markdown、簽署條文勾選）、分級通知對話框 NoticeDialog、Markdown 元件；ui-spec v0.32 共通規則 |
 | v1.32 | 2026-11-09 | design-system v0.6（空狀態插畫、載入骨架動畫）、components v0.7（EmptyState 插畫與 loading、Skeleton）、ui-spec v0.33 共通規則 |
 | v1.33 | 2026-11-09 | 新增 D51：MCP 擴充到小組目標、公司方向、任務狀態與接下、小組管理、知識庫分類與主題；§5.14 範圍修改；訊息確認卡顯示對象與送出提示；technical-design v0.28 §18.3、ui-spec v0.34 |
+| v1.41 | 2026-11-10 | D53 第 2 批實作補充：任務詳情改為展開任務列、沒有步驟的任務可直接結案、私人任務也可結案與寫紀錄、MCP 結案 / 紀錄 / 退回工具；ui-spec v0.41、technical-design v0.33 |
 | v1.40 | 2026-11-10 | 狀態選單改版（設定畫布對照看板 A–E）：情境按鈕一鍵套用 + 撤銷、其餘收進「更多」、回來時間跟著狀態、效果說明、倒數環與到期自動回上線；ui-spec v0.40、technical-design v0.32 |
 | v1.39 | 2026-11-10 | ui-spec v0.39：左下角狀態選單改為圓形頭像按鈕、狀態圖示按鈕、「暫離 5 / 15 分鐘」一鍵按鈕 |
 | v1.38 | 2026-11-10 | 新增 D58 圓形頭像（訊息、團隊卡片 / 清單、AI Agent 機器人規則）；ui-spec v0.38、design-system v0.8、components v0.11 |

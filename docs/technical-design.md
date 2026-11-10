@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.32 草案 · 2026-11-10 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.33 草案 · 2026-11-10 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -842,6 +842,7 @@ team/<teamId> = {                                         // v0.11（D40）
   - `report:` = `{v: 1, format: "markdown" | "html", spec: "hills-doc/1", body, criteria: [{id, met: bool, note?}], attachments: [§14.2 Attachment], at}`；body ≤ 64 KB 且符合 §16.16 的結案報告規格，附件 JSON ≤ 512 KB；只有負責人可寫，覆寫同一 key（每人一份，最新為準）。
   - **結案**：寫 `report:` → 任務狀態改為完成 → 寫 `close` 紀錄（refs 可帶產出的知識）。**退回**：任務改回進行中、寫 `reopen` 紀錄（text 為意見，必填）；報告保留，負責人可再結案覆寫。
   - 附件的 `fileKey` 只存在 `TK` 加密的小組文件中，小組成員都能下載；介面上傳前提示。
+  - v0.33 實作：結案與退回由 node 在**同一筆 change** 內依序寫入（報告 → 狀態 / `doneAt` → 紀錄），不會只寫一半。紀錄 key 為 `log:<taskId>:<ULID>:<memberId>`，驗證層與 `ack:` 相同（key 以 `:<作者>` 結尾、長度 ≤ 128、只能放入字串）；`report:` 同。私人任務的紀錄與報告存在 `member/<id>/tasks`（只有本人）。讀取報告時取目前負責人的那份，沒有則取最新一份。
 - **私人任務**（v0.19，D46）：存在 `member/<id>/tasks`（`PK_member`，只有本人讀寫），結構與 `team/<id>` 的 `task:` 相同（不含 `profile:`）。介面與命令以 `teamId = "private"` 表示；負責人固定為本人、步驟沒有負責人；不出現在小組頁，不能連結到對話（§14.2）。
 - **焦點**（feature-plan §5.4）：候選（含私人任務）為指派給我、或下一個未完成步驟指派給我的未完成任務；依「期限最近 → 卡住別人（下一步負責人不是我但我負責的步驟未完成）→ 指派給我 → 建立時間」排序。手動選擇的焦點只存在本機（secret 檔 `focus`），任務完成或刪除時回到自動。
 
@@ -1285,7 +1286,7 @@ kind = `recover`，流程與加入相同（產生**新的** IK / EK / DK、`Appl
 
 `propose_delete_*` 與 `propose_archive_team` 標 `destructiveHint`。
 
-v0.29（D52）：`propose_kb_item` 新增 `format`（markdown | html，預設 markdown），一律以 hills-doc/1 驗證（必填段落在準備階段檢查，HTML 先清理）；新增讀取工具 `get_knowledge(key, sections?)`，回傳標題、格式、來源與 `sections`（只含要求的 key；未指定時全部）。D53 的 `propose_task_log`、`propose_task_close` 與 `propose_task` 的 `brief` / `acceptance` 隨第 2 批加入。確認卡摘要（preview）：`updateTeam` 附 `removed`（被移出的成員；有值時核准會輪替小組金鑰）；`message` 附 `to`（私訊對象 memberId）或 `conv` 與 `count`（群組人數）。
+v0.29（D52）：`propose_kb_item` 新增 `format`（markdown | html，預設 markdown），一律以 hills-doc/1 驗證（必填段落在準備階段檢查，HTML 先清理）；新增讀取工具 `get_knowledge(key, sections?)`，回傳標題、格式、來源與 `sections`（只含要求的 key；未指定時全部）。D53 的 `propose_task_log`、`propose_task_close` 與 `propose_task` 的 `brief` / `acceptance` 隨第 2 批加入。 v0.33：新增 `propose_task_log`（kind = start / progress / question / answer，text、percent?）、`propose_task_close`（format、body、criteria；報告在準備階段以 hills-doc/1 驗證；**附件不經 MCP**）、`propose_task_reopen`（text 必填）；`propose_task` 加 `brief` / `acceptance`。權限與 app 內相同，一律待本人確認。確認卡摘要（preview）：`updateTeam` 附 `removed`（被移出的成員；有值時核准會輪替小組金鑰）；`message` 附 `to`（私訊對象 memberId）或 `conv` 與 `count`（群組人數）。
 
 ### 18.4 待確認變更
 

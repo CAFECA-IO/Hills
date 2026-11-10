@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.31 草案 · 2026-11-09 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.32 草案 · 2026-11-10 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -245,6 +245,7 @@ AAD = utf8(docId) ‖ 0x00 ‖ utf8(keyId)
 - 本機閒置 10 分鐘（可設定）→ 自動「暫離」。
 - `state`（D40）：`Online` 上線、`Busy` 忙碌、`Meeting` 會議、`Focus` 專注、`Away` 暫離、`Leave` 休假、`Offline` 離線、`Lunch` 午休。`Lunch` 加在列舉最後，既有值的序列化編號不變；舊版收到 `Lunch` 會解碼失敗並略過該則 presence（M1 前尚無正式使用者，可接受）。
 - v0.11 Presence 欄位：`{ member, state, note, current_task, at, until?, location }`；`until` 即 `expiresAt`，`location` = `Hidden`（不顯示）| `Remote` | `Office(officeId)`（D40，M1 由成員手動選擇，Wi-Fi 自動判斷隨打卡加入）。新增欄位改變 postcard 格式，舊版無法解碼新版 presence，Mac 與 Windows 需同時更新（M1 前可接受）。
+- v0.32：`until` 到期時由**本人的 app** 把狀態改回 `Online` 並清除 `until`（`Leave` 除外；其他成員的 app 不代改，只在顯示上視為已到期）。app 未開啟時不會自動改，下次開啟時立即檢查。
 - **延後通知**（D40 敲門 / 專注）：本人狀態為會議、午休或專注且 `until` 未到時，新訊息的系統通知先暫存在本機；狀態結束（到期或手動切換）時以一則摘要通知「專注期間收到 N 則訊息」。訊息本身照常同步，未讀數照常更新；伺服器不參與延後。傳送者在對方會議 / 午休 / 專注時看到「敲門」字樣，語意相同。
 - `expiresAt` 是「幾點回來」：到期後回到上線（會議、午休、暫離、專注）或離線（休假以請假期間為準）。
 

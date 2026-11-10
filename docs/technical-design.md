@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.34 草案 · 2026-11-10 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.35 草案 · 2026-11-10 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -157,7 +157,7 @@ CAFECA 帳戶（chainId + 身分合約地址 account，由使用者的 Passkey /
 
 | 文件 | 寫入者 | 讀取者 | 金鑰 | 內容 |
 |------|--------|--------|------|------|
-| `org` | 管理者 | 全員 | `GK` | 設定、品牌、成員憑證與 CAFECA 帳戶、小組、假日曆、假別、工作規則、核准規則、公司方向（v0.20，D47）、`mcp.allowed`（v0.23，D48，§18） |
+| `org` | 管理者 | 全員 | `GK` | 設定、品牌、成員憑證與 CAFECA 帳戶、小組、假日曆、假別、工作規則、核准規則、公司目標（v0.20，D47）、公司目的 `purpose`（v0.35，D65）、`mcp.allowed`（v0.23，D48，§18） |
 | `team/<teamId>` | 小組成員 | 小組成員 | `TK_team` | 任務、角色外觀 |
 | `team-goals/<teamId>` | 該小組負責人、管理者 | 全員 | `GK` | 小組目標（v0.20，D47，§16.14） |
 | `team-roster/<teamId>` | 該小組負責人、管理者 | 全員 | `GK` | 小組成員與負責人、移出次數（v0.25，D49，§16.15） |
@@ -867,7 +867,7 @@ member/<id>/plans/{private | team/<teamId> | org} = {
     level: year|quarter|month|week,
     period: "2026" | "2026-Q4" | "2026-11" | "2026-W45",
     title, parentId?, krRef?: "<上層 planItemId>/<krId>",
-    alignedGoalId?,                // v0.20（D47）：年 / 季，指向公司方向或小組目標（§16.14）
+    alignedGoalId?,                // v0.20（D47）：年 / 季，指向公司目標或小組目標（§16.14）
     criteria: [ { id, text } ],    // v0.20（D47）：年 / 季「做到的標準」，純文字，0–5 個，不影響進度
     helps: [ criterionId ],        // v0.20（D47）：季，幫助達成上層年目標的哪些標準（只供顯示）
     done: boolean,                 // 月 / 週
@@ -882,7 +882,7 @@ member/<id>/plans/{private | team/<teamId> | org} = {
 - **v0.19（D46）**：寫入時拒絕 `level = day`；既有的日目標（M1 試用前的測試資料）讀取時略過、不顯示。週目標之下為任務（§16.8）。
 - `period` 依**組織時區**（org `timezone`）計算，週為 ISO 週（週一開始，跨年週屬於含週四的那一年）；寫入時檢查格式與 `level` 相符。
 - 改變可見度：在新文件寫入同一 id，再從舊文件刪除；同一 id 同時出現在兩份文件時取 `updatedAt` 較新者。
-- **v0.20（D47）**：`alignedGoalId` 只用於年 / 季，指向公司方向（org 文件 `direction:<id>`）或小組目標（`team-goals/<teamId>` 的 `goal:<id>`）；寫入時檢查目標存在。所指的方向或小組目標被刪除時，讀取端視為未對齊。取代原預留的 `alignedTeamGoalId`。`criteria`（每則 1–80 字）與 `helps` 只供引導式介面顯示，不參與進度彙總；`helps` 指向的標準不存在時略過。
+- **v0.20（D47）**：`alignedGoalId` 只用於年 / 季，指向公司目標（org 文件 `direction:<id>`）或小組目標（`team-goals/<teamId>` 的 `goal:<id>`）；寫入時檢查目標存在。所指的方向或小組目標被刪除時，讀取端視為未對齊。取代原預留的 `alignedTeamGoalId`。`criteria`（每則 1–80 字）與 `helps` 只供引導式介面顯示，不參與進度彙總；`helps` 指向的標準不存在時略過。
 
 **進度彙總**（0–100，由投影層計算，不存入文件）：
 
@@ -1018,15 +1018,38 @@ team-goals/<teamId> = {
 }
 ```
 
-- **公司方向**存在 org 文件，只有管理者可寫（org 文件規則），每年建議 1–3 個（介面限制 5 個）。
-- **小組目標**存在 `team-goals/<teamId>`，以 `GK` 加密，全員可讀（D47 全員透明）。寫入者是該小組的負責人（org `teams.<id>.leadIds`）或管理者，由驗證層檢查（`DocKind::TeamGoals`，`Directory::is_team_lead`）。`directionId` 指向同一年的公司方向（選填）。
+- **公司目標**存在 org 文件，只有管理者可寫（org 文件規則），每年建議 1–3 個（介面限制 5 個）。
+- **小組目標**存在 `team-goals/<teamId>`，以 `GK` 加密，全員可讀（D47 全員透明）。寫入者是該小組的負責人（org `teams.<id>.leadIds`）或管理者，由驗證層檢查（`DocKind::TeamGoals`，`Directory::is_team_lead`）。`directionId` 指向同一年的公司目標（選填）。
 - 標題 1–80 字；`keyResults` 結構與計劃相同（§16.10），最多 5 個；小組目標的 `criteria`（做到的標準）同計劃，純文字、不影響進度。
-- **對齊**：個人的年 / 季目標以 `alignedGoalId` 指向公司方向或小組目標（§16.10）。一個目標只對齊一個。
+- **對齊**：個人的年 / 季目標以 `alignedGoalId` 指向公司目標或小組目標（§16.10）。一個目標只對齊一個。
 - **進度**（投影層計算，0–100）：
   - 有關鍵結果 → 關鍵結果平均（規則同 §16.10）；
-  - 否則小組目標 = 對齊它的個人年 / 季目標進度平均；公司方向 = 對齊它的小組目標與直接對齊它的個人目標平均；
+  - 否則小組目標 = 對齊它的個人年 / 季目標進度平均；公司目標 = 對齊它的小組目標與直接對齊它的個人目標平均；
   - 都沒有 → 0。只計算讀者看得到的個人目標（§4.3），所以不同讀者可能看到不同數字；第 2 批的方向摘要（本節後續）讓全員看到一致的比例。
-- 刪除公司方向或小組目標時不連帶修改他人的文件；對齊它的目標讀取時視為未對齊（介面提示重新選擇）。
+- 刪除公司目標或小組目標時不連帶修改他人的文件；對齊它的目標讀取時視為未對齊（介面提示重新選擇）。
+**OGSM**（v0.35，D65）：公司與每個小組各一份；沿用上面的文件，只新增 key。
+
+```
+org = { …,
+  "purpose": "<JSON 字串>"            // 公司目的 { title（1–120 字）, why（≤ 1000 字）, period（≤ 20 字，例如 "2026–2027"）, updatedAt, updatedBy }
+}
+team-goals/<teamId> = { …,
+  "purpose": "<JSON 字串>",           // 小組目的：同上，另加 goalIds（它服務的公司目標 id，0–5 個）
+  "strategy:<ULID>": "<JSON 字串>"     // 策略，見下
+}
+Strategy = { title（1–80 字）, how?（≤ 300 字）, goalIds: [小組目標 id]（1–5 個）, owners: MemberId[]（≤ 10）,
+             measures: [Measure]（≤ 5）, order: number, createdAt, updatedAt }
+Measure  = { id, title（1–80 字）,
+             source: { kind: "goal", goalId, krId? }                        // 小組目標或其關鍵結果的進度
+                   | { kind: "manual", current, target（> 0）, unit?（≤ 10 字）, updatedAt } }
+```
+
+- **對應**：公司 OGSM = 目的（org `purpose`）→ 公司目標（`direction:*`，介面名稱由「公司方向」改為「公司目標」）→ 策略（`directionId` 指向它的小組目標）→ 衡量（小組目標進度）。小組 OGSM = 目的（`team-goals` `purpose`）→ 小組目標（`goal:*`）→ 策略（`strategy:*`）→ 衡量（`measures`）。行動計劃 = 對齊這些目標的個人目標與其任務（§16.10、§16.8），不另存。
+- **寫入**：org `purpose` 只有管理者（org 文件規則）；`team-goals` 的 `purpose`、`strategy:*` 與小組目標相同，該小組負責人或管理者（驗證層 `DocKind::TeamGoals` 不變）。寫入時檢查 `goalIds` 指向同一小組現存的小組目標、`krId` 存在、`owners` 是該小組成員；讀取時參照已不存在的項目略過。
+- **進度**（投影層，0–100）：衡量 `goal` = 該小組目標（或關鍵結果，規則同 §16.10）的進度；`manual` = min(100, current ÷ target × 100)。策略 = 衡量平均；沒有衡量時 = `goalIds` 所指小組目標的進度平均。**不設紅黃綠門檻**，狀態以進度與「應到」（依期間經過比例）呈現，個人層級沿用往山丘走。
+- **我的角色**（投影層，只在本人的裝置計算）：所屬小組的目的與策略；`owners` 含我的策略；對齊這些小組目標的我的年 / 季目標；這週連到這些目標的任務；本週計時花在這些專案（小組目標）的比例（§16.18，只有本人）。
+- 限制：每個小組策略 ≤ 10 個；刪除小組目標時不連帶修改策略，讀取時從 `goalIds` 略過，全部略過時介面提示重新選擇。
+
 **方向摘要**（v0.21，第 2 批）：
 
 ```
@@ -1179,6 +1202,32 @@ WorkRef = { kind: "task", team, task, step?, title } | { kind: "meeting" } | { k
   - **接受規則**（收件端 `accept_keys`）：`member:<id>:worklog` 的封裝，簽署者必須是該成員本人的裝置；mailbox `PutKeys` 同樣只接受本人封裝（比照 `PK_member`）。
 - **權限**：`member/<id>/timer` 只有本人讀寫（`PK_member`）；`member/<id>/worklog/*` 只有本人寫，`can_read` = 本人或「本人所屬任一小組的負責人」（直連同步回應前檢查）。驗證層：兩者都是本人文件（`DocKind::Member`，section `timer` / `worklog/<yyyy-mm>`）。
 - **介面資料**：本人看自己的 worklog 與計時狀態；負責人在「工作 › 小組」點成員時讀該成員 worklog（讀不到 = 金鑰交接中）。發佈的週報只含專案層級（§16.13 v0.34）。
+
+### 16.19 檔案索引（v0.35，D64）
+
+「檔案」頁列出本人看得到的所有附件。**不新增同步文件**：每台裝置從自己已解密的文件即時建立索引，伺服器看不到檔名與出處。
+
+```
+FileEntry = {
+  key,                                   // 檔案：FileManifest.fileId；資料夾：manifestRef 的物件 id
+  kind: "file" | "folder", name, size /* 資料夾為 totalSize */, mime?, fileCount?,
+  sources: [ FileSource ],               // 依時間排序，第一筆 = 第一次分享
+  downloaded?: { path, at },             // 本機下載紀錄（只在這台裝置）
+  expiresAt,                             // 第一筆出處時間 + 儲存節點保留期（D16，預設 365 天）
+  attachment                             // 第一筆出處的 §14.2 Attachment（只給介面，MCP 不回傳）
+}
+FileSource =
+  | { kind: "message",    convId, messageId, author, at, excerpt }   // 對話訊息的 attachments（§14.2）
+  | { kind: "taskReport", team, task, title, author, at }            // 結案報告的 attachments（§16.8）
+  | { kind: "kb",         kbKey, title, author, at }                 // 知識的 source.kind = file（§16.11）
+```
+
+- **來源**：本人是現任成員、可讀的對話紀錄（只看得到加入後的 epoch，§14.2）；所屬小組與本人私人任務的結案報告；知識庫全部。看不到的出處不列，所以同一個檔案不同人看到的出處數可能不同。
+- **合併**：同一個 `key` 在多處出現（轉傳、存成知識、附到結案報告會沿用同一份 manifest）只列一筆；重新上傳的同名檔案是不同的 `key`。
+- `excerpt` = 訊息內文去除 Markdown 後的前 80 字。分享者 = 第一筆出處的作者；「我上傳的」= 第一筆出處的作者是本人。
+- **下載紀錄**：`finish_download` 成功時把 `{ key → path, at }` 寫入本機資料夾的 `downloads.json`（不同步、不加密以外的保護同其他本機設定）；檔案被移動或刪除時，打開失敗即移除該筆。
+- **前往出處**：介面依 `FileSource` 開啟對話並捲到 `messageId`、開啟任務詳情、或開啟知識；原訊息所在 epoch 已讀不到時顯示「已無法前往」。
+- 介面的 `list_files` 一併回傳第一筆出處的原 `Attachment`（含金鑰，供下載，同對話中的附件卡）；MCP 的 `list_files`（§18.3）不回傳 `Attachment` 與任何金鑰。
 
 ### 16.9 部署（M0）
 
@@ -1346,7 +1395,8 @@ kind = `recover`，流程與加入相同（產生**新的** IK / EK / DK、`Appl
 | `whoami` | — | 我（id、名稱、是否管理者）、組織名稱、所屬小組、組織時區與目前時間（ms），以及期間代碼格式（年 `2026`、季 `2026-Q4`、月 `2026-11`、ISO 週 `2026-W46`、日 `2026-11-09`，依組織時區） |
 | `list_members` | — | 成員、所屬小組、狀態、回來 / 休假至 |
 | `list_goals` | `level?`、`period?`、`mine_only?` | 目標（含進度、對齊、上層） |
-| `get_directions` | — | 公司方向、小組目標（含進度）、這週重點 |
+| `get_directions` | — | 公司目標、小組目標（含進度）、這週重點；v0.35（D65）：公司與小組的目的、策略與衡量（含進度） |
+| `list_files` | `query?`、`source?`（message / taskReport / kb）、`limit?`（≤ 100） | v0.35（D64）：本人看得到的檔案（名稱、大小、出處），不含金鑰 |
 | `get_direction_summaries` | — | 每人的方向週摘要與偏離門檻（四項檢查由呼叫端依 §16.14 判定） |
 | `list_tasks` | `assignee?`、`status?`、`team?`、`due_before?` | 任務與步驟 |
 | `get_scrum` | `date` | 我的 Scrum 與小組的 Scrum |

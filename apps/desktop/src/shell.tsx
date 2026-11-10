@@ -17,6 +17,7 @@ import { locationLabel, StatusMenu } from './status';
 import { useDirectionPublisher } from './drift-publisher';
 import { Home } from './home';
 import { Files } from './files';
+import { writeView as writeGoalsView } from './goals';
 import { Knowledge } from './kb';
 import { useNavigation } from './nav';
 import { readWorkTab, Work, type WorkSub, type WorkTab } from './work';
@@ -303,6 +304,10 @@ export function Shell({ info }: { info: AppInfo }) {
                   convs={convs.data ?? []}
                   onOpenConv={openChat}
                   onOpenTasks={() => goWork('today', 'tasks')}
+                  onOpenPosition={() => {
+                    writeGoalsView('position');
+                    goWork('goals');
+                  }}
                   now={now}
                 />
               )}

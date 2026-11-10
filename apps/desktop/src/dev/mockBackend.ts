@@ -3,6 +3,10 @@
  * 資料皆為虛構示範內容。CAFECA 登入以計時模擬（`?signin=device` 模擬新增裝置、`?signin=denied` 模擬拒絕）。
  */
 import type {
+  Purpose,
+  PurposeInput,
+  Strategy,
+  StrategyInput,
   AppInfo,
   Code,
   DeviceInfo,
@@ -534,8 +538,60 @@ function directionsView() {
         ]) ?? 0,
     })),
     teamGoals: goals,
+    purpose: orgPurpose,
+    teamPurposes,
+    strategies: strategies.map((st) => {
+      const mp = st.measures.map((m) =>
+        m.source.kind === 'manual'
+          ? Math.min(100, (m.source.current / m.source.target) * 100)
+          : (goals.find((g) => g.id === (m.source as { goalId: string }).goalId)?.progress ?? 0),
+      );
+      const fallback = avgOf(st.goalIds.map((id) => goals.find((g) => g.id === id)?.progress ?? 0));
+      return { ...st, measureProgress: mp, progress: avgOf(mp) ?? fallback ?? 0 };
+    }),
   };
 }
+// 示範 OGSM（虛構，D65）
+let orgPurpose: Purpose | null = {
+  title: '讓每個人用同一套工具，清楚知道團隊往哪走、自己在做什麼',
+  why: '工作散在 5 個工具，組長每週花 4 小時整理進度；新人要 3 週才知道誰在做什麼。',
+  period: `${THIS_YEAR}–${NEXT_YEAR}`,
+  goalIds: [],
+  updatedAt: now0,
+  updatedBy: 'mem-me',
+};
+let teamPurposes: Purpose[] = [
+  {
+    title: '桌機版每天穩定可用，讓全公司能放心導入',
+    why: '先讓 Mac 和 Windows 穩定，行動版可以等。',
+    period: THIS_YEAR,
+    goalIds: ['dir-1'],
+    updatedAt: now0,
+    updatedBy: 'mem-me',
+    team: 'default',
+  },
+];
+let strategies: Strategy[] = [
+  {
+    id: 'st-1',
+    team: 'default',
+    title: '先穩定 Mac / Windows，再做行動版',
+    how: '每週驗收一個平台，嚴重問題當天處理',
+    goalIds: ['tg-1'],
+    owners: ['mem-me', 'mem-a'],
+    measures: [
+      { id: 'ms-1', title: 'M1、M2 進度', source: { kind: 'goal', goalId: 'tg-1' } },
+      {
+        id: 'ms-2',
+        title: '安裝成功率',
+        source: { kind: 'manual', current: 96, target: 98, unit: '%', updatedAt: now0 },
+      },
+    ],
+    order: 0,
+    createdAt: now0,
+    updatedAt: now0,
+  },
+];
 // 示範方向摘要（虛構，與設計稿 D 方案相同的分布，D47 第 2 批）
 const DAY = 86_400_000;
 const brief = (id: string, title: string, progress: number, aligned: boolean): GoalBrief => ({
@@ -1370,6 +1426,44 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     return id;
   },
   directions: () => directionsView(),
+  save_org_purpose: (a) => {
+    const i = a.input as PurposeInput;
+    orgPurpose = { ...i, goalIds: [], updatedAt: Date.now(), updatedBy: state.me };
+    touch('doc');
+  },
+  save_team_purpose: (a) => {
+    const i = a.input as PurposeInput;
+    const team = String(a.team);
+    teamPurposes = [
+      ...teamPurposes.filter((p) => p.team !== team),
+      { ...i, team, updatedAt: Date.now(), updatedBy: state.me },
+    ];
+    touch('doc');
+  },
+  save_strategy: (a) => {
+    const i = a.input as StrategyInput;
+    const id = i.id || `st-${Date.now()}`;
+    const prev = strategies.find((x) => x.id === id);
+    const rec: Strategy = {
+      id,
+      team: i.team,
+      title: i.title.trim(),
+      how: i.how?.trim() || null,
+      goalIds: i.goalIds,
+      owners: i.owners,
+      measures: i.measures.map((m, k) => ({ ...m, id: m.id || `ms-${Date.now()}-${k}` })),
+      order: prev?.order ?? strategies.length,
+      createdAt: prev?.createdAt ?? Date.now(),
+      updatedAt: Date.now(),
+    };
+    strategies = [...strategies.filter((x) => x.id !== id), rec];
+    touch('doc');
+    return id;
+  },
+  delete_strategy: (a) => {
+    strategies = strategies.filter((x) => x.id !== String(a.id));
+    touch('doc');
+  },
   direction_summaries: () => summaries,
   my_suggestions: () => suggestionsToMe,
   publish_direction: (a) => {

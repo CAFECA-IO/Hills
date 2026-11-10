@@ -1,26 +1,33 @@
 /**
- * 目標頁（ui-spec「工作 › 目標」v0.42，D59）：「一條線 / 時間軸」切換（取代「進階檢視」開關），
- * 一條線為引導式、時間軸為路線圖；切換記在本機。
+ * 目標頁（ui-spec「工作 › 目標」v0.44，D59、D65）：「我的位置 · OGSM · 時間軸」切換，記在本機。
+ * 我的位置 = 四個問題卡 ＋ 引導式的一條線；OGSM = 公司 / 小組的一頁 OGSM；時間軸 = 路線圖。
  */
 import { useState } from 'react';
 import { GuidedGoals } from './goals-guided';
 import { GoalsRoadmap, type GoalsProps } from './goals-roadmap';
 import { t } from './i18n';
+import { OgsmPage, OgsmPosition } from './ogsm';
 import { SegmentedControl } from './ui';
 
+const VIEW_KEY = 'hills.goals.view';
+/** v0.42 的「時間軸」開關 */
 const ADVANCED_KEY = 'hills.goals.advanced';
 
-function readAdvanced(): boolean {
+export type View = 'position' | 'ogsm' | 'timeline';
+
+function readView(): View {
   try {
-    return localStorage.getItem(ADVANCED_KEY) === '1';
+    const v = localStorage.getItem(VIEW_KEY);
+    if (v === 'position' || v === 'ogsm' || v === 'timeline') return v;
+    return localStorage.getItem(ADVANCED_KEY) === '1' ? 'timeline' : 'position';
   } catch {
-    return false;
+    return 'position';
   }
 }
 
-function writeAdvanced(on: boolean) {
+export function writeView(v: View) {
   try {
-    localStorage.setItem(ADVANCED_KEY, on ? '1' : '0');
+    localStorage.setItem(VIEW_KEY, v);
   } catch {
     // 忽略：只影響下次開啟
   }
@@ -34,31 +41,52 @@ export interface GoalsPageProps extends GoalsProps {
 }
 
 export function Goals({ noAutoWeekly, scope, ...props }: GoalsPageProps) {
-  const [advanced, setAdvanced] = useState(readAdvanced);
-  const set = (on: boolean) => {
-    setAdvanced(on);
-    writeAdvanced(on);
+  const [view, setViewState] = useState<View>(readView);
+  const setView = (v: View) => {
+    setViewState(v);
+    writeView(v);
   };
   const toggle = (
     <SegmentedControl
       label={t('goals.view.label')}
       options={[
-        { value: 'line', label: t('goals.view.line') },
+        { value: 'position', label: t('goals.view.position') },
+        { value: 'ogsm', label: t('goals.view.ogsm') },
         { value: 'timeline', label: t('goals.view.timeline') },
       ]}
-      value={advanced ? 'timeline' : 'line'}
-      onChange={(v) => set(v === 'timeline')}
+      value={view}
+      onChange={setView}
     />
   );
-  return advanced && scope !== 'team' ? (
-    <GoalsRoadmap {...props} headExtra={toggle} />
-  ) : (
+  if (scope !== 'team' && view === 'timeline')
+    return <GoalsRoadmap {...props} headExtra={toggle} />;
+  if (scope !== 'team' && view === 'ogsm')
+    return (
+      <OgsmPage
+        members={props.members}
+        teams={props.teams}
+        timezone={props.timezone}
+        headExtra={toggle}
+      />
+    );
+  return (
     <GuidedGoals
       {...props}
       toggle={scope === 'team' ? null : toggle}
       noAutoWeekly={noAutoWeekly}
       scope={scope}
-      onAdvanced={() => set(true)}
+      onAdvanced={() => setView('timeline')}
+      header={
+        scope === 'team' ? undefined : (
+          <OgsmPosition
+            members={props.members}
+            teams={props.teams}
+            tasks={props.tasks}
+            timezone={props.timezone}
+            onOgsm={() => setView('ogsm')}
+          />
+        )
+      }
     />
   );
 }

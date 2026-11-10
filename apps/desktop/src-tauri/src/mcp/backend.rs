@@ -274,7 +274,8 @@ impl McpBackend for RealBackend {
                 let d = to_v(commands::directions(self.state()).await)?;
                 let notes = to_v(commands::week_notes(self.state()).await)?;
                 Ok(
-                    json!({ "directions": d["directions"], "teamGoals": d["teamGoals"], "weekNotes": notes }),
+                    json!({ "directions": d["directions"], "teamGoals": d["teamGoals"], "weekNotes": notes,
+                        "purpose": d["purpose"], "teamPurposes": d["teamPurposes"], "strategies": d["strategies"] }),
                 )
             }
             "get_direction_summaries" => {

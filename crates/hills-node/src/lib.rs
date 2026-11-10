@@ -18,6 +18,7 @@ mod local;
 mod mailbox;
 pub mod mcp_policy;
 mod node;
+pub mod ogsm;
 pub mod onboarding;
 pub mod org;
 pub mod plans;

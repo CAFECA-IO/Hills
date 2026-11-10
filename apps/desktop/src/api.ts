@@ -646,6 +646,70 @@ export interface TeamGoal {
 export interface DirectionsView {
   directions: Direction[];
   teamGoals: TeamGoal[];
+  /** OGSM（D65）：公司目的 */
+  purpose?: Purpose | null;
+  teamPurposes?: Purpose[];
+  strategies?: StrategyView[];
+}
+
+// ── OGSM（technical-design §16.14 v0.35，D65）──
+
+export interface Purpose {
+  title: string;
+  why: string;
+  period: string;
+  /** 小組目的服務的公司目標 */
+  goalIds: string[];
+  updatedAt: number;
+  updatedBy: string;
+  /** 小組目的：小組 id */
+  team?: string;
+}
+
+export interface PurposeInput {
+  title: string;
+  why: string;
+  period: string;
+  goalIds: string[];
+}
+
+export type MeasureSource =
+  | { kind: 'goal'; goalId: string; krId?: string | null }
+  | { kind: 'manual'; current: number; target: number; unit?: string | null; updatedAt?: number };
+
+export interface Measure {
+  id: string;
+  title: string;
+  source: MeasureSource;
+}
+
+export interface Strategy {
+  id: string;
+  team: string;
+  title: string;
+  how: string | null;
+  goalIds: string[];
+  owners: string[];
+  measures: Measure[];
+  order: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface StrategyView extends Strategy {
+  progress: number;
+  /** 與 measures 同序 */
+  measureProgress: number[];
+}
+
+export interface StrategyInput {
+  id?: string | null;
+  team: string;
+  title: string;
+  how?: string | null;
+  goalIds: string[];
+  owners: string[];
+  measures: Measure[];
 }
 
 // ── 方向摘要與偏離（technical-design §16.14 v0.21，D47 第 2 批）──
@@ -1055,6 +1119,11 @@ export const api = {
   deleteDirection: (id: string) => call<void>('delete_direction', { id }),
   saveTeamGoal: (input: TeamGoalInput) => call<string>('save_team_goal', { input }),
   deleteTeamGoal: (team: string, id: string) => call<void>('delete_team_goal', { team, id }),
+  saveOrgPurpose: (input: PurposeInput) => call<void>('save_org_purpose', { input }),
+  saveTeamPurpose: (team: string, input: PurposeInput) =>
+    call<void>('save_team_purpose', { team, input }),
+  saveStrategy: (input: StrategyInput) => call<string>('save_strategy', { input }),
+  deleteStrategy: (team: string, id: string) => call<void>('delete_strategy', { team, id }),
   weekNotes: () => call<WeekNote[]>('week_notes'),
   mcpSettings: () => call<McpSettings>('mcp_settings'),
   setMcpEnabled: (enabled: boolean) => call<void>('set_mcp_enabled', { enabled }),

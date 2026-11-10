@@ -55,7 +55,7 @@ pub fn all() -> Vec<ToolDef> {
         ToolDef {
             name: "get_directions",
             kind: Kind::Read,
-            description: "Company directions (set by admins), team goals (set by team leads, each aligned to a direction) with progress, and each team lead's note for the week.",
+            description: "OGSM: the company purpose (why), company goals (\"directions\", set by admins), team goals (set by team leads, each aligned to a company goal) with progress, each team's purpose, strategies and measures with progress, and each team lead's note for the week.",
             schema: obj(json!({}), &[]),
         },
         ToolDef {

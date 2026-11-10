@@ -388,7 +388,7 @@ function TeamList({ overview }: { overview: Overview }) {
         })
       : null;
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-5 p-1">
       <div className="flex items-center gap-3">
         <p className="flex-1 text-sm text-muted">
           {t('team.summary', { online, total: members.length })}

@@ -281,17 +281,20 @@ pub type SignedChange = Signed<SignedChangeBody>;
 // ---------- 金鑰與加密封包（technical-design §4.1、§4.4） ----------
 
 /// 金鑰家族（keyId 的前半段）。
+///
+/// postcard 以變體的**順序**編碼（封包、金鑰庫、信箱都存這個值），
+/// 新變體只能加在最後，不能插在中間或調整順序。
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum KeyFamily {
     Org,
     Team(String),
     MemberAttendance(MemberId),
     MemberPrivate(MemberId),
-    /// 工作紀錄金鑰 WK（technical-design §16.18 v0.34，D62）：本人與本人所屬小組的負責人
-    MemberWorklog(MemberId),
     Conv(String),
     /// 對話 meta 專用金鑰（technical-design §14.1 v0.9）；新成員取得全部 epoch
     ConvMeta(String),
+    /// 工作紀錄金鑰 WK（technical-design §16.18 v0.34，D62）：本人與本人所屬小組的負責人
+    MemberWorklog(MemberId),
 }
 
 /// `<family>:epoch:<n>`，n 從 1 開始。
@@ -395,6 +398,20 @@ versioned!(
 
 #[cfg(test)]
 mod tests {
+    /// 已存在的資料以變體順序編碼；順序變了舊的封包與金鑰就解不開（「格式錯誤」）。
+    #[test]
+    fn key_family_wire_tags_are_stable() {
+        let m = MemberId([0xab; 16]);
+        let tag = |f: KeyFamily| encode(&f).unwrap()[0];
+        assert_eq!(tag(KeyFamily::Org), 0);
+        assert_eq!(tag(KeyFamily::Team("t".into())), 1);
+        assert_eq!(tag(KeyFamily::MemberAttendance(m)), 2);
+        assert_eq!(tag(KeyFamily::MemberPrivate(m)), 3);
+        assert_eq!(tag(KeyFamily::Conv("c".into())), 4);
+        assert_eq!(tag(KeyFamily::ConvMeta("c".into())), 5);
+        assert_eq!(tag(KeyFamily::MemberWorklog(m)), 6);
+    }
+
     use super::*;
 
     fn mid(b: u8) -> MemberId {

@@ -181,8 +181,8 @@ function Neck({ kind, col }: { kind: CharacterKind; col: Colors }) {
   const wide = kind === 'elephant' ? 12 : kind === 'man' || kind === 'woman' ? 9 : 10;
   return (
     <>
-      <rect x={50 - wide / 2} y={37} width={wide} height={14} rx={2.5} fill={col.limb} />
-      <rect x={50 - wide / 2} y={44} width={wide} height={5} fill={SHADE} opacity={0.12} />
+      <rect x={50 - wide / 2} y={44} width={wide} height={7} rx={2.5} fill={col.limb} />
+      <rect x={50 - wide / 2} y={46} width={wide} height={2.5} fill={SHADE} opacity={0.12} />
     </>
   );
 }
@@ -258,7 +258,7 @@ function Head({ kind, col }: { kind: CharacterKind; col: Colors }) {
             fill={SHADE}
             opacity={0.16}
           />
-          <rect x={46} y={38} width={8} height={13} rx={2} fill={c} />
+          <rect x={46} y={37} width={8} height={7} rx={2} fill={c} />
           <ellipse cx={50} cy={26.5} rx={10.6} ry={13} fill={c} />
           <path d="M50 13.5 a10.6 13 0 0 1 0 26 Z" fill={SHADE} opacity={0.06} />
           <path
@@ -467,16 +467,21 @@ export function CharacterArt({
         {kind === 'man' && <path d="M44 49 L50 57 L56 49 Z" fill={SHADE} opacity={0.12} />}
         <Arms pose={pose} col={col} />
         {kind !== 'woman' && <Neck kind={kind} col={col} />}
-        <Head kind={kind} col={col} />
+        <g transform={`translate(0 ${HEAD_DROP})`}>
+          <Head kind={kind} col={col} />
+        </g>
       </g>
     </g>
   );
 }
 
+/** 頭部下移量：脖子只露出原本的 1/3（設定畫布 v23）。 */
+const HEAD_DROP = 7;
+
 /** 場景用比例：雙腳在原點、總高 64 單位（頭頂約在 -63）。 */
 export const SCENE_SCALE = 0.28;
 /** 場景座標中頭部中心的 y（給狀態配件定位）。 */
-export const SCENE_HEAD_Y = -(226 - 26) * SCENE_SCALE;
+export const SCENE_HEAD_Y = -(226 - 26 - HEAD_DROP) * SCENE_SCALE;
 
 export function Character({
   look,
@@ -497,7 +502,7 @@ export function Character({
 /** 頭肩像：頭部中心在 (0, -4)，給圓形裁切使用。 */
 export function CharacterHead({ look }: { look: Look }) {
   return (
-    <g transform="scale(0.7) translate(-50 -31.7)">
+    <g transform={`scale(0.7) translate(-50 ${-(31.7 + HEAD_DROP)})`}>
       <CharacterArt look={look} pose="rest" />
     </g>
   );

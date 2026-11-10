@@ -1,6 +1,6 @@
 # Hills 通用元件
 
-> 版本：v0.11 · 2026-11-10 · 對應 [feature-plan.md](./feature-plan.md) v1.38（D45、D47、D56、D58）
+> 版本：v0.12 · 2026-11-10 · 對應 [feature-plan.md](./feature-plan.md) v1.43（D45、D47、D56、D58、D63）
 > 本文件定義 `apps/desktop/src/ui/` 的通用元件：用途、何時用、變體、狀態、鍵盤與無障礙、API。視覺基礎（token、字級、間距）見 [design-system.md](./design-system.md)。
 > 畫面只能組合這些元件（design-system §1、§11）。需要新元件或新變體時，**先改本文件，再改 `src/ui/`**，並補 `src/ui/ui.test.tsx`。
 
@@ -27,7 +27,7 @@
 
 | prop | 型別 | 預設 | 說明 |
 |---|---|---|---|
-| `variant` | `primary` \| `secondary` \| `soft` \| `danger` \| `ghost` | `primary` | 見下表 |
+| `variant` | `primary` \| `secondary` \| `soft` \| `danger` \| `destructive` \| `ghost` | `primary` | 見下表 |
 | `size` | `sm` \| `md` | `md` | md 高 36、sm 高 28 |
 | `busy` | boolean | false | 執行中：停用並標示 `aria-busy` |
 
@@ -36,7 +36,8 @@
 | `primary` | 晴藍實心 | 這一頁 / 這個對話框最主要的一個動作（每頁一個） |
 | `secondary` | 白底細框 | 一般動作、取消、期間切換 |
 | `soft` | 天空霧底主色字 | 建議動作、目前選取的選項（例如「不設定」回來時間） |
-| `danger` | 紅框紅字，hover 紅底 | 刪除、移除；不可逆時改用 `ConfirmButton` |
+| `danger` | 紅框紅字，hover 紅底 | 頁面或動作列左側的刪除、移除入口；不可逆時改用 `ConfirmButton` |
+| `destructive`（v0.12，D63） | 紅底白字實心 | **只用在**確認不可逆動作的動作列主按鈕（`ConfirmDialog tone="danger"`），不放在頁面上 |
 | `ghost` | 無框灰字 | 面板底部的次要新增、工具列內不顯眼的動作 |
 
 不要用：只有圖示時（用 `IconButton`）、行內文字連結（用 `LinkButton`）、整列可點的清單項目（用 `ListButton`）。
@@ -179,9 +180,22 @@
 | `placement` | `center` \| `top` | `center` | `top`：距頂 12vh、最高 60vh（指令面板） |
 | `padded` | boolean | true | false：無內距、內容自行排版（指令面板） |
 | `closeButton` | boolean | false | 右上角 × |
-| `dirty` | boolean | false | 有未儲存的修改：Esc、點遮罩、× 不直接關閉，改在對話框底部詢問「放棄未儲存的修改？〔放棄〕〔繼續編輯〕」（聚焦「繼續編輯」）。對話框內的「取消」按鈕是明確動作，直接呼叫 `onClose` |
+| `dirty` | boolean | false | 有未儲存的修改：Esc、點遮罩、× 不直接關閉，改在動作列上方詢問「放棄未儲存的修改？〔放棄〕〔繼續編輯〕」（聚焦「繼續編輯」）。對話框內的「取消」按鈕是明確動作，直接呼叫 `onClose` |
+| `footer` | ReactNode | — | v0.12（D63）：固定在底部的動作列，傳入 `DialogFooter`；`onSubmit` 時位於 `<form>` 內，`type="submit"` 有效 |
 
-內容由上而下：標題 → 欄位 → `ErrorText` → 動作列（右對齊，`取消` secondary 在左、主動作 primary 在右）。最高 90vh，超過時對話框內捲動。
+內容由上而下：標題（固定）→ 欄位與 `ErrorText`（可捲動）→ 動作列（固定在底部，design-system §5.1）。最高 90vh，超過時只有中間內容捲動。有動作的對話框一律用 `footer`，不在內容末尾手寫按鈕列。
+
+### DialogFooter（v0.12，D63）
+
+對話框與浮動面板的動作列：上緣 1 px `line` 分隔線，右側動作右對齊。
+
+| prop | 型別 | 說明 |
+|---|---|---|
+| `start` | ReactNode | 左側的附帶動作（例如編輯對話框的「刪除」`ConfirmButton`） |
+| `children` | ReactNode | 右側動作，依序：`取消`（`secondary`）→ 主動作（`primary` 或 `destructive`，實心，只有一個） |
+| `bare` | boolean | 不加分隔線與內距（放在已有內距的浮動卡片內，例如 AI 代理確認卡） |
+
+用在：`Dialog footer`、`ConfirmDialog`、`NoticeDialog`、有確認 / 取消的 `Popover`、AI 代理確認卡。
 
 用在：新增 / 編輯（目標、知識）、閱讀詳情、指令面板。不要用在：需要使用者確認或簽署條文（用 `ConfirmDialog`）、通知使用者（用 `NoticeDialog`）、錨定在按鈕旁的小面板（用 `Popover`）。
 
@@ -193,7 +207,7 @@
 |---|---|---|---|
 | `title` | string | — | 一句話問題，例如「刪除『設施清冊』？」 |
 | `body` | string | — | 說明，**Markdown**（`Markdown` 元件：不轉譯原始 HTML，連結以外部瀏覽器開啟）；長內容在對話框內捲動 |
-| `tone` | `primary` \| `danger` | `primary` | `danger`：主按鈕為 danger 樣式，用於不可逆動作 |
+| `tone` | `primary` \| `danger` | `primary` | `danger`：主按鈕為 `destructive`（紅底白字實心），用於不可逆動作 |
 | `confirmLabel` | string | 「確認」 | 主按鈕文字，寫出動作（「刪除」「我了解，開啟」） |
 | `cancelLabel` | string | 「取消」 | |
 | `acknowledge` | string | — | 有值時在說明下方顯示 `Checkbox`（例如「我已閱讀並同意以上內容」），勾選後主按鈕才能按（簽署條文的例外：此時以停用表示「尚未同意」） |
@@ -202,7 +216,7 @@
 
 - `role="alertdialog"`，`aria-labelledby` = 標題、`aria-describedby` = 說明。
 - 開啟時聚焦：`danger` 聚焦「取消」（避免 Enter 誤刪），`primary` 聚焦主按鈕；有 `acknowledge` 時聚焦勾選框。
-- 版面：寬 `sm`；標題 → 說明 → 勾選框 → `ErrorText` → 動作列（取消在左、主按鈕在右）。
+- 版面：寬 `sm`；標題 → 說明 → 勾選框 → `ErrorText`，動作列固定在底部（`DialogFooter`：取消在左、主按鈕在右）。
 
 ### NoticeDialog（v0.6）
 
@@ -450,7 +464,7 @@ v0.7：
 |---|---|
 | **頁首** | `PageHead`（`layout.tsx`）：標題、副標、頁面動作（SegmentedControl、期間切換 IconButton + Button、主按鈕）都放在頂列，主按鈕在最右。 |
 | **主從版面** | 左 / 中為清單（`ListButton` 或 `Pressable` 卡片），右欄 `Card` 顯示選取項目詳情；右欄寬依 ui-spec「版面」。 |
-| **表單對話框** | `Dialog onSubmit dirty` + 多個 `Field` + `ErrorText` + 動作列（取消、儲存）。必填欄位用 `Field required` 標示；**不以停用儲存鍵表示驗證失敗**——按下儲存時在欄位顯示錯誤（`Field error`）並聚焦第一個錯誤欄位；儲存鍵只在執行中停用（`busy`）。欄位順序依相依關係：先放會決定其他欄位的選項（例如目標的層級與期間）。 |
+| **表單對話框** | `Dialog onSubmit dirty footer` + 多個 `Field` + `ErrorText`；動作列用 `footer={<DialogFooter start={刪除}>取消、儲存</DialogFooter>}`（D63）。必填欄位用 `Field required` 標示；**不以停用儲存鍵表示驗證失敗**——按下儲存時在欄位顯示錯誤（`Field error`）並聚焦第一個錯誤欄位；儲存鍵只在執行中停用（`busy`）。欄位順序依相依關係：先放會決定其他欄位的選項（例如目標的層級與期間）。 |
 | **行內表單** | 卡片或清單內直接編輯：`TextInput size="sm"` + `Button size="sm"`。 |
 | **錨定面板** | 觸發按鈕（`aria-expanded`）+ `Popover anchorRef`，或 `Menu`。 |
 | **空與錯** | 每個列表 `EmptyState`；每個動作 `useAction` + `ErrorText`。 |

@@ -19,6 +19,7 @@ import {
   Button,
   Checkbox,
   Dialog,
+  DialogFooter,
   ErrorText,
   IconButton,
   MarkdownEditor,
@@ -81,6 +82,17 @@ export function TaskCloseDialog({
       onSubmit={() => void submit()}
       dirty
       width="lg"
+      footer={
+        <DialogFooter>
+          {uploading && <span className="text-xs text-muted">{t('close.uploading')}</span>}
+          <Button variant="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" busy={busy} disabled={uploading}>
+            {t('close.submit')}
+          </Button>
+        </DialogFooter>
+      }
     >
       <div className="flex items-center gap-3">
         <SegmentedControl
@@ -171,15 +183,6 @@ export function TaskCloseDialog({
         )}
       </section>
       <ErrorText message={error} />
-      <div className="flex items-center justify-end gap-2">
-        {uploading && <span className="text-xs text-muted">{t('close.uploading')}</span>}
-        <Button variant="secondary" onClick={onClose}>
-          {t('common.cancel')}
-        </Button>
-        <Button type="submit" busy={busy} disabled={uploading}>
-          {t('close.submit')}
-        </Button>
-      </div>
     </Dialog>
   );
 }

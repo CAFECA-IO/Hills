@@ -35,6 +35,7 @@ import {
   Card,
   ConfirmButton,
   Dialog,
+  DialogFooter,
   Field,
   Switch,
   TextInput,
@@ -826,6 +827,16 @@ function NoteDialog({
       onSubmit={async () => {
         if (await attempt(() => api.setWeekNote(team.id, week, text))) onSaved();
       }}
+      footer={
+        <DialogFooter>
+          <Button variant="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" busy={busy}>
+            {t('common.save')}
+          </Button>
+        </DialogFooter>
+      }
     >
       <Field label={t('drift.note.field')} hint={t('drift.note.hint')}>
         <TextInput
@@ -836,14 +847,6 @@ function NoteDialog({
         />
       </Field>
       <ErrorText message={error} />
-      <div className="flex justify-end gap-2 pt-2">
-        <Button variant="secondary" onClick={onClose}>
-          {t('common.cancel')}
-        </Button>
-        <Button type="submit" busy={busy}>
-          {t('common.save')}
-        </Button>
-      </div>
     </Dialog>
   );
 }

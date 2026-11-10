@@ -19,6 +19,7 @@ import {
   Button,
   Checkbox,
   Chip,
+  DialogFooter,
   EmptyState,
   ErrorText,
   ListButton,
@@ -234,11 +235,11 @@ function TaskPicker({
           </li>
         ))}
       </ul>
-      <div className="mt-1 flex justify-end">
+      <DialogFooter bare className="mt-1 border-t border-line pt-2">
         <Button variant="secondary" size="sm" onClick={onClose}>
           {t('common.close')}
         </Button>
-      </div>
+      </DialogFooter>
     </Popover>
   );
 }

@@ -20,6 +20,7 @@ import {
   ConfirmButton,
   ConfirmDialog,
   Dialog,
+  DialogFooter,
   EmptyState,
   ErrorText,
   Field,
@@ -190,6 +191,30 @@ function TeamDialog({
       onClose={onClose}
       onSubmit={() => void save()}
       dirty={JSON.stringify(d) !== JSON.stringify(initial)}
+      footer={
+        <DialogFooter
+          start={
+            <>
+              {team && isAdmin && (
+                <ConfirmButton
+                  label={t('teams.archive')}
+                  message={t('teams.archive.confirm', { name: team.name })}
+                  onConfirm={async () => {
+                    if (await attempt(() => api.archiveTeam(team.id, true))) onSaved();
+                  }}
+                />
+              )}
+            </>
+          }
+        >
+          <Button variant="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" busy={busy} disabled={d.members.length === 0 || confirming}>
+            {team ? t('common.save') : t('teams.create')}
+          </Button>
+        </DialogFooter>
+      }
     >
       {isAdmin && (
         <Field label={t('teams.name')} error={nameError} required>
@@ -256,25 +281,6 @@ function TeamDialog({
         />
       )}
       <ErrorText message={error} />
-      <div className="flex items-center gap-2 pt-2">
-        {team && isAdmin && (
-          <ConfirmButton
-            label={t('teams.archive')}
-            message={t('teams.archive.confirm', { name: team.name })}
-            onConfirm={async () => {
-              if (await attempt(() => api.archiveTeam(team.id, true))) onSaved();
-            }}
-          />
-        )}
-        <span className="ml-auto flex gap-2">
-          <Button variant="secondary" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button type="submit" busy={busy} disabled={d.members.length === 0 || confirming}>
-            {team ? t('common.save') : t('teams.create')}
-          </Button>
-        </span>
-      </div>
     </Dialog>
   );
 }

@@ -51,6 +51,7 @@ import { TaskDialog, type TaskDraft } from './tasks';
 import {
   Button,
   Dialog,
+  DialogFooter,
   EmptyState,
   ErrorText,
   IconButton,
@@ -847,6 +848,24 @@ function BreakdownDialog({
       onClose={onClose}
       onSubmit={create}
       dirty={filled.length > 0}
+      footer={
+        <DialogFooter
+          start={
+            <>
+              <span className="text-sm text-muted">
+                {t('roadmap.bd.count', { n: filled.length, level: levelName(child) })}
+              </span>
+            </>
+          }
+        >
+          <Button variant="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" busy={busy} disabled={filled.length === 0}>
+            {t('roadmap.bd.create', { n: filled.length, level: levelName(child) })}
+          </Button>
+        </DialogFooter>
+      }
     >
       <p className="text-sm text-muted">{t('roadmap.bd.hint')}</p>
       {slots.map((s) => {
@@ -941,19 +960,6 @@ function BreakdownDialog({
         </div>
       )}
       <ErrorText message={error} />
-      <div className="flex items-center gap-2 pt-2">
-        <span className="text-sm text-muted">
-          {t('roadmap.bd.count', { n: filled.length, level: levelName(child) })}
-        </span>
-        <span className="ml-auto flex gap-2">
-          <Button variant="secondary" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button type="submit" busy={busy} disabled={filled.length === 0}>
-            {t('roadmap.bd.create', { n: filled.length, level: levelName(child) })}
-          </Button>
-        </span>
-      </div>
     </Dialog>
   );
 }

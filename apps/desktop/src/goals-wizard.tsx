@@ -37,6 +37,7 @@ import {
   Chip,
   ConfirmButton,
   Dialog,
+  DialogFooter,
   ErrorText,
   Field,
   IconButton,
@@ -990,7 +991,39 @@ export function GuidedEditor({
     if (ok) onSaved();
   };
   return (
-    <Dialog title={t('guide.edit.title')} onClose={onClose} onSubmit={save} dirty={dirty}>
+    <Dialog
+      title={t('guide.edit.title')}
+      onClose={onClose}
+      onSubmit={save}
+      dirty={dirty}
+      footer={
+        <DialogFooter
+          start={
+            <>
+              <ConfirmButton
+                label={t('goals.delete')}
+                message={t('goals.delete.confirm', { title: item.title })}
+                onConfirm={async () => {
+                  if (await attempt(() => api.deletePlan(item.id))) onSaved();
+                }}
+              />
+              {onBreakdown && (
+                <LinkButton className="text-sm" onClick={onBreakdown}>
+                  {t('guide.edit.breakdown')}
+                </LinkButton>
+              )}
+            </>
+          }
+        >
+          <Button variant="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" busy={busy}>
+            {t('common.save')}
+          </Button>
+        </DialogFooter>
+      }
+    >
       <Field label={t('goals.field.title')} error={titleError} required>
         <TextInput
           autoFocus
@@ -1022,28 +1055,6 @@ export function GuidedEditor({
         </>
       )}
       <ErrorText message={error} />
-      <div className="flex items-center gap-2 pt-2">
-        <ConfirmButton
-          label={t('goals.delete')}
-          message={t('goals.delete.confirm', { title: item.title })}
-          onConfirm={async () => {
-            if (await attempt(() => api.deletePlan(item.id))) onSaved();
-          }}
-        />
-        {onBreakdown && (
-          <LinkButton className="text-sm" onClick={onBreakdown}>
-            {t('guide.edit.breakdown')}
-          </LinkButton>
-        )}
-        <span className="ml-auto flex gap-2">
-          <Button variant="secondary" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button type="submit" busy={busy}>
-            {t('common.save')}
-          </Button>
-        </span>
-      </div>
     </Dialog>
   );
 }

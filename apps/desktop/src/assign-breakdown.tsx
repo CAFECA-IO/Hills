@@ -20,6 +20,7 @@ import {
   Badge,
   Button,
   Dialog,
+  DialogFooter,
   ErrorText,
   Field,
   IconButton,
@@ -133,6 +134,16 @@ export function BreakdownDialog({
       onSubmit={() => void create()}
       dirty={toCreate.length > 0}
       width="lg"
+      footer={
+        <DialogFooter>
+          <Button variant="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" busy={busy} disabled={toCreate.length === 0}>
+            {t('breakdown.create', { count: toCreate.length })}
+          </Button>
+        </DialogFooter>
+      }
     >
       <Field label={t('breakdown.goal')}>
         <Select value={goal} onChange={(e) => setGoal(e.target.value)}>
@@ -240,14 +251,6 @@ export function BreakdownDialog({
         </aside>
       </div>
       <ErrorText message={error} />
-      <div className="flex justify-end gap-2 pt-2">
-        <Button variant="secondary" onClick={onClose}>
-          {t('common.cancel')}
-        </Button>
-        <Button type="submit" busy={busy} disabled={toCreate.length === 0}>
-          {t('breakdown.create', { count: toCreate.length })}
-        </Button>
-      </div>
     </Dialog>
   );
 }

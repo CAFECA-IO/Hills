@@ -16,6 +16,7 @@ import {
   ConfirmDialog,
   Chip,
   Dialog,
+  DialogFooter,
   EmptyState,
   Field,
   IconButton,
@@ -332,6 +333,46 @@ describe('ui 元件（docs/components.md）', () => {
     // 主按鈕（最後一個按鈕）停用
     const last = h.slice(h.lastIndexOf('<button'));
     expect(last).toContain('disabled=""');
+  });
+
+  it('動作列固定在底部：內容之後、在 form 內，上緣分隔線（D63）', () => {
+    const h = html(
+      <Dialog
+        title="編輯"
+        onClose={noop}
+        onSubmit={noop}
+        footer={
+          <DialogFooter start={<Button variant="danger">刪除</Button>}>
+            <Button variant="secondary">取消</Button>
+            <Button type="submit">儲存</Button>
+          </DialogFooter>
+        }
+      >
+        <p>內容</p>
+      </Dialog>,
+    );
+    const body = h.indexOf('內容');
+    const foot = h.indexOf('data-dialog-footer');
+    expect(foot).toBeGreaterThan(body);
+    expect(h.indexOf('</form>')).toBeGreaterThan(foot);
+    expect(h.slice(foot)).toContain('border-t border-line');
+    // 只有內容區捲動
+    expect(h.slice(0, body)).toContain('scroll-panel');
+    expect(h.slice(foot)).not.toContain('scroll-panel');
+    // 刪除在左、取消在主動作之前
+    expect(h.indexOf('刪除')).toBeLessThan(h.indexOf('取消'));
+    expect(h.indexOf('取消')).toBeLessThan(h.indexOf('儲存'));
+  });
+
+  it('破壞性確認：主按鈕紅底實心、取消白底細框且預設聚焦（D63）', () => {
+    const h = html(<ConfirmDialog title="刪除？" tone="danger" onConfirm={noop} onCancel={noop} />);
+    const foot = h.slice(h.indexOf('data-dialog-footer'));
+    const [cancel, confirm] = foot.split('<button').slice(1);
+    expect(cancel).toContain('border-line bg-surface');
+    expect(cancel).toContain(t('common.cancel'));
+    expect(confirm).toContain('bg-danger');
+    expect(confirm).toContain('text-on-primary');
+    expect(html(<Button variant="destructive">刪</Button>)).toContain('bg-danger');
   });
 
   it('NoticeDialog 依等級標示文字，警告與錯誤為 alertdialog', () => {

@@ -28,6 +28,7 @@ import {
   Checkbox,
   ConfirmButton,
   Dialog,
+  DialogFooter,
   EmptyState,
   ErrorText,
   Field,
@@ -188,6 +189,31 @@ export function GoalEditor({
       onClose={onClose}
       onSubmit={() => void save()}
       dirty={dirty}
+      footer={
+        <DialogFooter
+          start={
+            <>
+              {initial.id && (
+                <ConfirmButton
+                  label={t('goals.delete')}
+                  message={t('goals.delete.confirm', { title: initial.title })}
+                  onConfirm={async () => {
+                    const id = initial.id;
+                    if (id && (await attempt(() => api.deletePlan(id)))) (onDeleted ?? onClose)();
+                  }}
+                />
+              )}
+            </>
+          }
+        >
+          <Button type="button" variant="secondary" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" busy={busy}>
+            {t('goals.save')}
+          </Button>
+        </DialogFooter>
+      }
     >
       <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-3">
         <Field label={t('goals.field.level')}>
@@ -407,26 +433,6 @@ export function GoalEditor({
         <p className="text-xs text-muted">{t('goals.override.hint')}</p>
       </div>
       <ErrorText message={error} />
-      <div className="flex items-center gap-2">
-        {initial.id && (
-          <ConfirmButton
-            label={t('goals.delete')}
-            message={t('goals.delete.confirm', { title: initial.title })}
-            onConfirm={async () => {
-              const id = initial.id;
-              if (id && (await attempt(() => api.deletePlan(id)))) (onDeleted ?? onClose)();
-            }}
-          />
-        )}
-        <span className="ml-auto flex gap-2">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button type="submit" busy={busy}>
-            {t('goals.save')}
-          </Button>
-        </span>
-      </div>
     </Dialog>
   );
 }

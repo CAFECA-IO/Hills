@@ -65,6 +65,7 @@ export function Dialog({
   dirty = false,
   alert = false,
   describedBy,
+  footer,
   children,
 }: {
   title?: ReactNode;
@@ -82,6 +83,8 @@ export function Dialog({
   alert?: boolean;
   /** 說明文字的 id（`aria-describedby`） */
   describedBy?: string;
+  /** 固定在底部的動作列（`DialogFooter`，D63） */
+  footer?: ReactNode;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLElement | null>(null);
@@ -110,24 +113,42 @@ export function Dialog({
     >
       <span>{t('dialog.discard.message')}</span>
       <span className="flex gap-2">
-        <Button variant="danger" size="sm" onClick={onClose}>
-          {t('dialog.discard.confirm')}
-        </Button>
         <Button variant="secondary" size="sm" autoFocus onClick={keepEditing}>
           {t('dialog.discard.keep')}
+        </Button>
+        <Button variant="destructive" size="sm" onClick={onClose}>
+          {t('dialog.discard.confirm')}
         </Button>
       </span>
     </div>
   );
-  const cls = `flex max-w-[calc(100vw-2rem)] flex-col rounded-card bg-surface shadow-lg outline-none ${placement === 'top' ? 'max-h-[60vh]' : 'max-h-[90vh]'} ${padded ? 'scroll-panel gap-3 p-5' : 'overflow-hidden'} ${WIDTH[width]}`;
+  // 標題與動作列固定，只有中間內容捲動（design-system §5.1，D63）
+  const cls = `flex max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-card bg-surface shadow-lg outline-none ${placement === 'top' ? 'max-h-[60vh]' : 'max-h-[90vh]'} ${WIDTH[width]}`;
   const head = (title || closeButton) && (
-    <div className="flex items-start justify-between gap-3">
+    <div className={`flex shrink-0 items-start justify-between gap-3 ${padded ? 'px-5 pt-5' : ''}`}>
       {title && <h2 className="text-lg font-bold">{title}</h2>}
       {closeButton && (
         <IconButton label={t('common.close')} size="sm" onClick={requestClose}>
           ×
         </IconButton>
       )}
+    </div>
+  );
+  const body = (
+    <div
+      className={
+        padded
+          ? `scroll-panel flex min-h-0 flex-1 flex-col gap-3 px-5 ${head ? 'pt-3' : 'pt-5'} ${footer ? 'pb-4' : 'pb-5'}`
+          : 'flex min-h-0 flex-1 flex-col'
+      }
+    >
+      {children}
+    </div>
+  );
+  const bottom = (discard || footer) && (
+    <div className="flex shrink-0 flex-col gap-2">
+      {discard && <div className={padded ? 'px-5 pb-1' : ''}>{discard}</div>}
+      {footer}
     </div>
   );
   const aria = {
@@ -156,8 +177,8 @@ export function Dialog({
           {...aria}
         >
           {head}
-          {children}
-          {discard}
+          {body}
+          {bottom}
         </form>
       ) : (
         <div
@@ -168,10 +189,37 @@ export function Dialog({
           {...aria}
         >
           {head}
-          {children}
-          {discard}
+          {body}
+          {bottom}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * 對話框與浮動面板的動作列（components「DialogFooter」、design-system §5.1，D63）：
+ * 上緣分隔線；`start` 為左側附帶動作（例如刪除），children 右對齊——取消（secondary）在左、主動作（實心）在最右。
+ */
+export function DialogFooter({
+  start,
+  bare = false,
+  className = '',
+  children,
+}: {
+  start?: ReactNode;
+  /** 不加分隔線與內距（放在已有內距的浮動卡片內） */
+  bare?: boolean;
+  className?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div
+      data-dialog-footer=""
+      className={`flex shrink-0 flex-wrap items-center gap-2 ${bare ? '' : 'border-t border-line px-5 py-3'} ${className}`}
+    >
+      {start}
+      <span className="ml-auto flex flex-wrap items-center justify-end gap-2">{children}</span>
     </div>
   );
 }

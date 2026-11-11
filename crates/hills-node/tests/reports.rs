@@ -21,6 +21,7 @@ fn input(team: &str, progress: &str) -> ReportInput {
             vec![team.into()]
         },
         generated_at: Some(1),
+        data: None,
     }
 }
 

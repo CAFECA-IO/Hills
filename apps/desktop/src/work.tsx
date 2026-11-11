@@ -19,6 +19,8 @@ import { navigate } from './nav';
 import { t } from './i18n';
 import { HeadContext, PageHead } from './layout';
 import { Reports } from './reports';
+import { ExportDialog } from './report-export';
+import type { PeriodKind } from './report-utils';
 import { TeamOverview } from './team-overview';
 import { periodsAt } from './goals-utils';
 import { Tasks } from './tasks';
@@ -120,9 +122,20 @@ export function Work({
       onChange={go}
     />
   );
+  const [exporting, setExporting] = useState<PeriodKind | null>(null);
   const title =
     sub === 'tasks' ? t('work.allTasks') : sub === 'friday' ? t('work.friday') : t('nav.work');
 
+  // 匯出入口（ui-spec「報表 › 匯出」）：今天 = 日報、這週 = 週報、目標 = 月報；週五收尾與小組另有入口
+  const exportKind: PeriodKind | null = sub
+    ? null
+    : tab === 'today'
+      ? 'daily'
+      : tab === 'week'
+        ? 'weekly'
+        : tab === 'goals'
+          ? 'monthly'
+          : null;
   let body: ReactNode;
   if (sub === 'tasks') {
     body = (
@@ -200,7 +213,29 @@ export function Work({
   }
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      <PageHead title={title} actions={tabs} />
+      <PageHead
+        title={title}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {exportKind && (
+              <Button size="sm" variant="secondary" onClick={() => setExporting(exportKind)}>
+                {t(`exp.go.${exportKind}`)}
+              </Button>
+            )}
+            {tabs}
+          </div>
+        }
+      />
+      {exporting && (
+        <ExportDialog
+          initialKind={exporting}
+          members={members}
+          teams={teams}
+          tasks={tasks}
+          timezone={timezone}
+          onClose={() => setExporting(null)}
+        />
+      )}
       <div className="min-h-0 flex-1">
         <SubHead>{body}</SubHead>
       </div>
@@ -236,6 +271,7 @@ function TeamTab({
   const me = members.find((m) => m.isMe)?.id ?? '';
   const myTeams = teams.filter((x) => x.members.includes(me) || x.leads.includes(me));
   const [teamSel, setTeam] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const team = myTeams.find((x) => x.id === teamSel) ?? myTeams[0] ?? null;
   const [now] = useState(() => Date.now());
   const periods = periodsAt(now, timezone);
@@ -289,7 +325,24 @@ function TeamTab({
           value={view}
           onChange={setView}
         />
+        <span className="flex-1" />
+        {isLead && (
+          <Button size="sm" variant="secondary" onClick={() => setExporting(true)}>
+            {t('exp.team')}
+          </Button>
+        )}
       </div>
+      {exporting && (
+        <ExportDialog
+          initialKind="weekly"
+          initialScope={team.id}
+          members={members}
+          teams={teams}
+          tasks={tasks}
+          timezone={timezone}
+          onClose={() => setExporting(false)}
+        />
+      )}
       <TeamBar
         team={team}
         goals={goals}

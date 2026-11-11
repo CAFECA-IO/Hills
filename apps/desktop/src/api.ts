@@ -587,6 +587,50 @@ export interface Report {
   generatedAt: number;
   publishedAt: number;
   editedAt: number | null;
+  /** v2 的六段（D61；v1 為 null） */
+  data?: ReportData | null;
+}
+
+// ── 報告 v2（technical-design §16.13 v0.34，D61）──
+
+/** `project` = 小組目標 id、`other`（其他任務）或 `nontask`（會議、訊息與零碎）。 */
+export interface TimeRow {
+  project: string;
+  minutes: number;
+}
+
+export interface ProjectRow {
+  project: string;
+  title: string;
+  start: number | null;
+  end: number;
+  /** 我的貢獻（百分點） */
+  mine: number;
+}
+
+export interface PlanMinutes {
+  project: string;
+  planned: number;
+  actual: number;
+}
+
+export type ReasonKind = 'blocked' | 'underestimate' | 'unplanned' | 'reopened' | 'leave' | 'other';
+
+export interface Reason {
+  kind: ReasonKind;
+  text: string;
+  minutes?: number | null;
+}
+
+export interface ReportData {
+  summary: string;
+  summaryEdited: boolean;
+  time: TimeRow[];
+  projects: ProjectRow[];
+  plan: { minutes: PlanMinutes[]; tasks: { planned: number; done: number; carried: number } };
+  reasons: Reason[];
+  doneMd: string;
+  nextMd: string;
 }
 
 export interface ReportInput {
@@ -595,6 +639,8 @@ export interface ReportInput {
   sections: ReportSections;
   publishedTo: string[];
   generatedAt?: number | null;
+  /** v2 的六段（D61） */
+  data?: ReportData | null;
 }
 
 export interface ReportMine {

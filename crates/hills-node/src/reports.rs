@@ -58,7 +58,137 @@ pub struct ReportSections {
     pub next: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// 週報 v2 的六段（technical-design §16.13 v0.34，D61）。發佈到小組的內容只有專案層級（D62）。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportData {
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default)]
+    pub summary_edited: bool,
+    #[serde(default)]
+    pub time: Vec<TimeRow>,
+    #[serde(default)]
+    pub projects: Vec<ProjectRow>,
+    #[serde(default)]
+    pub plan: PlanData,
+    #[serde(default)]
+    pub reasons: Vec<Reason>,
+    #[serde(default)]
+    pub done_md: String,
+    #[serde(default)]
+    pub next_md: String,
+}
+
+/// `project` = 小組目標 id、`other`（其他任務）或 `nontask`（會議、訊息與零碎）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimeRow {
+    pub project: String,
+    pub minutes: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectRow {
+    pub project: String,
+    #[serde(default)]
+    pub title: String,
+    /// 期初、期末進度 0–100（期初不知道時 None）
+    #[serde(default)]
+    pub start: Option<f64>,
+    pub end: f64,
+    /// 我的貢獻（百分點）
+    #[serde(default)]
+    pub mine: f64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanData {
+    #[serde(default)]
+    pub minutes: Vec<PlanMinutes>,
+    #[serde(default)]
+    pub tasks: PlanTasks,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanMinutes {
+    pub project: String,
+    pub planned: u32,
+    pub actual: u32,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanTasks {
+    pub planned: u32,
+    pub done: u32,
+    pub carried: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Reason {
+    /// blocked | underestimate | unplanned | reopened | leave | other
+    pub kind: String,
+    pub text: String,
+    #[serde(default)]
+    pub minutes: Option<u32>,
+}
+
+const REASON_KINDS: [&str; 6] = [
+    "blocked",
+    "underestimate",
+    "unplanned",
+    "reopened",
+    "leave",
+    "other",
+];
+const MAX_ROWS: usize = 50;
+const MAX_SUMMARY: usize = 2000;
+const MAX_TEXT: usize = 500;
+
+fn validate_data(d: &ReportData) -> Result<()> {
+    if d.summary.chars().count() > MAX_SUMMARY {
+        bail!("摘要最多 {MAX_SUMMARY} 字");
+    }
+    if d.done_md.len() > MAX_SECTION || d.next_md.len() > MAX_SECTION {
+        bail!("每個欄位最多 32 KB");
+    }
+    if d.time.len() > MAX_ROWS
+        || d.projects.len() > MAX_ROWS
+        || d.plan.minutes.len() > MAX_ROWS
+        || d.reasons.len() > MAX_ROWS
+    {
+        bail!("報告的列數太多");
+    }
+    let pct = |v: f64| v.is_finite() && (0.0..=100.0).contains(&v);
+    if d.projects
+        .iter()
+        .any(|p| !pct(p.end) || p.start.is_some_and(|s| !pct(s)) || !p.mine.is_finite())
+    {
+        bail!("專案進度需為 0–100");
+    }
+    if d.projects
+        .iter()
+        .any(|p| p.title.chars().count() > MAX_TEXT)
+    {
+        bail!("專案名稱太長");
+    }
+    for r in &d.reasons {
+        if !REASON_KINDS.contains(&r.kind.as_str()) {
+            bail!("不認得的偏離原因");
+        }
+        if r.text.chars().count() > MAX_TEXT {
+            bail!("原因說明最多 {MAX_TEXT} 字");
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ReportBody {
     v: u8,
@@ -70,9 +200,12 @@ struct ReportBody {
     published_at: Timestamp,
     #[serde(default)]
     edited_at: Option<Timestamp>,
+    /// v2（D61）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    data: Option<ReportData>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Report {
     #[serde(serialize_with = "member_str")]
@@ -84,6 +217,8 @@ pub struct Report {
     pub generated_at: Timestamp,
     pub published_at: Timestamp,
     pub edited_at: Option<Timestamp>,
+    /// v2 的六段（v1 為 None）
+    pub data: Option<ReportData>,
 }
 
 fn member_str<S: serde::Serializer>(m: &MemberId, s: S) -> Result<S::Ok, S::Error> {
@@ -100,6 +235,9 @@ pub struct ReportInput {
     /// 產生草稿的時間（前端）
     #[serde(default)]
     pub generated_at: Option<Timestamp>,
+    /// v2 的六段（D61；週報）
+    #[serde(default)]
+    pub data: Option<ReportData>,
 }
 
 /// 只存在本機的報表設定：草稿與「已提醒」紀錄（§16.13）。
@@ -133,6 +271,9 @@ fn validate(input: &ReportInput) -> Result<()> {
     if input.published_to.is_empty() {
         bail!("請選擇至少一個發佈的小組");
     }
+    if let Some(d) = &input.data {
+        validate_data(d)?;
+    }
     Ok(())
 }
 
@@ -150,6 +291,7 @@ fn parse(member: MemberId, json: &str) -> Option<Report> {
         generated_at: b.generated_at,
         published_at: b.published_at,
         edited_at: b.edited_at,
+        data: b.data,
     })
 }
 
@@ -195,7 +337,7 @@ impl Node {
         let existing = self.my_report(input.kind, &input.period)?;
         let now = now_ms();
         let body = ReportBody {
-            v: 1,
+            v: if input.data.is_some() { 2 } else { 1 },
             kind: input.kind,
             period: input.period.clone(),
             sections: input.sections,
@@ -203,6 +345,7 @@ impl Node {
             generated_at: input.generated_at.unwrap_or(now),
             published_at: now,
             edited_at: existing.as_ref().map(|_| now),
+            data: input.data,
         };
         let json = serde_json::to_string(&body)?;
         let key = report_key(input.kind, &input.period);
@@ -363,6 +506,7 @@ mod tests {
             },
             published_to: teams.iter().map(|s| (*s).to_owned()).collect(),
             generated_at: None,
+            data: None,
         }
     }
 
@@ -398,6 +542,7 @@ mod tests {
                 generated_at: 1,
                 published_at: at,
                 edited_at: None,
+                data: None,
             })
             .unwrap()
         };
@@ -417,5 +562,71 @@ mod tests {
         assert_eq!(v["member"], m(1).to_string());
         assert_eq!(v["kind"], "weekly");
         assert_eq!(v["publishedTo"][0], "a");
+    }
+
+    #[test]
+    fn v2_data_validates_and_round_trips() {
+        let mut i = input("2026-W46", &["a"]);
+        let d = ReportData {
+            summary: "這週主要投入 M1（12 小時）".into(),
+            time: vec![
+                TimeRow {
+                    project: "tg1".into(),
+                    minutes: 720,
+                },
+                TimeRow {
+                    project: "nontask".into(),
+                    minutes: 300,
+                },
+            ],
+            projects: vec![ProjectRow {
+                project: "tg1".into(),
+                title: "M1".into(),
+                start: Some(40.0),
+                end: 52.0,
+                mine: 6.5,
+            }],
+            plan: PlanData {
+                minutes: vec![PlanMinutes {
+                    project: "tg1".into(),
+                    planned: 600,
+                    actual: 720,
+                }],
+                tasks: PlanTasks {
+                    planned: 5,
+                    done: 3,
+                    carried: 2,
+                },
+            },
+            reasons: vec![Reason {
+                kind: "blocked".into(),
+                text: "等測試主機".into(),
+                minutes: Some(120),
+            }],
+            ..Default::default()
+        };
+        i.data = Some(d.clone());
+        assert!(validate(&i).is_ok());
+        let body = ReportBody {
+            v: 2,
+            kind: ReportKind::Weekly,
+            period: "2026-W46".into(),
+            sections: ReportSections::default(),
+            published_to: vec!["a".into()],
+            generated_at: 1,
+            published_at: 2,
+            edited_at: None,
+            data: Some(d.clone()),
+        };
+        let r = parse(m(1), &serde_json::to_string(&body).unwrap()).unwrap();
+        assert_eq!(r.data, Some(d.clone()));
+        let mut bad = d.clone();
+        bad.reasons[0].kind = "nope".into();
+        i.data = Some(bad);
+        assert!(validate(&i).is_err());
+        let mut bad = d;
+        bad.projects[0].end = 140.0;
+        i.data = Some(bad);
+        assert!(validate(&i).is_err());
     }
 }

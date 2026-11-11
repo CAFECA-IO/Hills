@@ -1,6 +1,5 @@
 /** 日 / 週報（ui-spec「報表」，feature-plan §5.5、D32、D16；technical-design §16.13）。 */
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { useEffect, useRef, useState } from 'react';
 import {
   api,
   type MemberView,
@@ -9,7 +8,6 @@ import {
   type ReportKind,
   type ReportSections,
   type PlanView,
-  type ScrumReport,
   type Task,
   type TeamView,
 } from './api';
@@ -18,10 +16,12 @@ import { useLoad } from './hooks';
 import { effectiveTimezone } from './profile-utils';
 import { formatTime, t, type MessageKey } from './i18n';
 import { PageHead } from './layout';
+import { printMarkdown } from './print';
+import { useMyReport } from './report-data';
+import { ExportDialog } from './report-export';
+import { SixSections } from './report-view';
 import {
   carryCandidates,
-  daysOf,
-  generate,
   mergeTeam,
   nextMondaySameTime,
   periodOf,
@@ -39,7 +39,6 @@ import {
   Markdown,
   Pressable,
   Select,
-  TextArea,
   useAction,
   Switch,
 } from './ui';
@@ -85,6 +84,7 @@ export function Reports({ members, teams, tasks, timezone }: Props) {
   const [team, setTeam] = useState<string | null>(null);
   const teamId = team ?? myTeams[0]?.id ?? '';
   const nameOf = (id: string) => members.find((m) => m.id === id)?.name ?? id;
+  const [exporting, setExporting] = useState(false);
   return (
     <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_340px] gap-3 wide:grid-cols-[minmax(0,1fr)_420px] wide:gap-4">
       <PageHead
@@ -123,7 +123,18 @@ export function Reports({ members, teams, tasks, timezone }: Props) {
         myTeams={myTeams}
         tasks={tasks}
         timezone={timezone}
+        onExport={() => setExporting(true)}
       />
+      {exporting && (
+        <ExportDialog
+          initialKind="weekly"
+          members={members}
+          teams={teams}
+          tasks={tasks}
+          timezone={timezone}
+          onClose={() => setExporting(false)}
+        />
+      )}
       <TeamReports
         teams={myTeams}
         teamId={teamId}
@@ -144,6 +155,7 @@ function MyReport({
   myTeams,
   tasks,
   timezone,
+  onExport,
 }: {
   kind: ReportKind;
   period: string;
@@ -151,41 +163,25 @@ function MyReport({
   myTeams: TeamView[];
   tasks: Task[];
   timezone: string;
+  onExport: () => void;
 }) {
   const mine = useLoad(() => api.reportMine(kind, period), ['doc', 'org']);
   const plans = useLoad(() => api.plans(true), ['doc']);
-  const days = daysOf(kind, period);
-  const scrum = useLoad(async () => {
-    const out: ScrumReport[] = [];
-    for (const tm of myTeams.slice(0, 1)) {
-      out.push(...(await api.scrumTeam(tm.id, days[0]!, days[days.length - 1]!)));
-    }
-    return out;
-  }, ['doc']);
+  const dirs = useLoad(api.directions, ['doc', 'org', 'roster']);
+  const [skipCarry, setSkipCarry] = useState<string[]>([]);
+  const candidates = carryCandidates(tasks, me, period, timezone, plans.data ?? []);
+  const carried = candidates.filter((x) => !skipCarry.includes(x.id));
+  const six = useMyReport('weekly', period, me, tasks, timezone, carried.length);
   const [form, setForm] = useState<ReportInput | null>(null);
-  const [preview, setPreview] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [confirmRegen, setConfirmRegen] = useState(false);
-  const [skipCarry, setSkipCarry] = useState<string[]>([]);
   const { busy, error, attempt } = useAction();
-  const L = useMemo(() => labels(), []);
-  const build = (): ReportSections =>
-    generate({
-      kind,
-      period,
-      me,
-      tz: timezone,
-      scrum: scrum.data ?? [],
-      tasks,
-      plans: plans.data ?? [],
-      labels: L,
-    });
   const allTeams = myTeams.map((x) => x.id);
-  // 初始化：草稿 → 已發佈 → 自動產生（資料都讀到之後）
+  // 初始化：草稿 → 已發佈（v2）→ 依資料產生（資料都讀到之後）
   const inited = useRef(false);
   useEffect(() => {
-    if (inited.current || !mine.data || !plans.data || !scrum.data) return;
+    if (inited.current || !mine.data || !plans.data || !six.ready) return;
     inited.current = true;
     const d = mine.data;
     let v: ReportInput | null = null;
@@ -196,43 +192,66 @@ function MyReport({
         /* 草稿格式錯誤時忽略 */
       }
     }
-    if (!v && d.report) {
+    if (v && !v.data) v = null;
+    if (!v && d.report?.data) {
       v = {
         kind,
         period,
         sections: d.report.sections,
         publishedTo: d.report.publishedTo,
         generatedAt: d.report.generatedAt,
+        data: d.report.data,
       };
     }
     setForm(
       v ?? {
         kind,
         period,
-        sections: build(),
-        publishedTo: allTeams,
+        sections: EMPTY_SECTIONS,
+        publishedTo: d.report?.publishedTo ?? allTeams,
         generatedAt: Date.now(),
+        data: six.build(),
       },
     );
-    // build 依賴的資料都已在條件中
+    // six.build 依賴的資料都已在條件中
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mine.data, plans.data, scrum.data]);
-  if (!form) {
+  }, [mine.data, plans.data, six.ready]);
+  if (!form?.data) {
     return (
       <Card className="flex items-center justify-center text-sm text-muted">
+        <ErrorText message={six.error ?? mine.error} />
         {t('common.loading')}
       </Card>
     );
   }
+  const data = form.data;
   const set = (p: Partial<ReportInput>) => {
     setForm({ ...form, ...p });
     setDirty(true);
     setStatus(null);
   };
+  const regen = () => {
+    const fresh = six.build();
+    // 改過的摘要不覆蓋（D61）
+    set({
+      data: data.summaryEdited ? { ...fresh, summary: data.summary, summaryEdited: true } : fresh,
+      generatedAt: Date.now(),
+    });
+  };
   const published = mine.data?.report ?? null;
-  const candidates = carryCandidates(tasks, me, period, timezone, plans.data ?? []);
-  const carried = candidates.filter((x) => !skipCarry.includes(x.id));
-  const md = toMarkdown(titleOf(kind, period), form.sections, L);
+  const goals = dirs.data?.teamGoals ?? [];
+  // 舊版讀者看得到的四欄（v1 相容）
+  const withSections = (d: typeof data): ReportInput => ({
+    ...form,
+    data: {
+      ...d,
+      plan: {
+        ...d.plan,
+        tasks: { ...d.plan.tasks, carried: published ? d.plan.tasks.carried : carried.length },
+      },
+    },
+    sections: { progress: d.doneMd, okr: d.summary, attendance: '', next: d.nextMd },
+  });
   return (
     <Card className="scroll-panel flex min-h-0 flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -244,80 +263,32 @@ function MyReport({
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="secondary"
-          className="h-8 px-3 py-0 text-xs"
-          onClick={() => setPreview((p) => !p)}
-        >
-          {preview ? t('kb.field.write') : t('kb.field.preview')}
-        </Button>
         {confirmRegen ? (
           <span className="flex items-center gap-2 text-xs">
-            {t('report.regen.confirm')}
+            {t('rep.regen.confirm')}
             <Button
-              className="h-8 px-3 py-0 text-xs"
+              size="sm"
               onClick={() => {
-                set({ sections: build(), generatedAt: Date.now() });
+                regen();
                 setConfirmRegen(false);
               }}
             >
               {t('report.regen')}
             </Button>
-            <Button
-              variant="secondary"
-              className="h-8 px-3 py-0 text-xs"
-              onClick={() => setConfirmRegen(false)}
-            >
+            <Button size="sm" variant="secondary" onClick={() => setConfirmRegen(false)}>
               {t('common.cancel')}
             </Button>
           </span>
         ) : (
-          <Button
-            variant="secondary"
-            className="h-8 px-3 py-0 text-xs"
-            onClick={() => setConfirmRegen(true)}
-          >
+          <Button size="sm" variant="secondary" onClick={() => setConfirmRegen(true)}>
             {t('report.regen')}
           </Button>
         )}
-        <Button
-          variant="secondary"
-          className="h-8 px-3 py-0 text-xs"
-          onClick={() =>
-            void attempt(async () => {
-              if (await api.exportText(`${titleOf(kind, period)}.md`, md))
-                setStatus(t('report.exported'));
-            })
-          }
-        >
-          {t('report.exportMd')}
-        </Button>
-        <Button
-          variant="secondary"
-          className="h-8 px-3 py-0 text-xs"
-          onClick={() => printMarkdown(md)}
-        >
-          {t('report.print')}
+        <Button size="sm" variant="secondary" onClick={onExport}>
+          {t('exp.open')}
         </Button>
       </div>
-      {SECTIONS.map((k) => (
-        <section key={k} className="flex flex-col gap-1">
-          <h3 className="text-sm font-semibold">{t(`report.section.${k}` as MessageKey)}</h3>
-          {preview ? (
-            <div className="prose-hills rounded-control border border-line p-3 text-sm">
-              <Markdown>{form.sections[k]}</Markdown>
-            </div>
-          ) : (
-            <TextArea
-              value={form.sections[k]}
-              aria-label={t(`report.section.${k}` as MessageKey)}
-              rows={k === 'attendance' ? 2 : 5}
-              onChange={(e) => set({ sections: { ...form.sections, [k]: e.target.value } })}
-              className="font-mono text-xs"
-            />
-          )}
-        </section>
-      ))}
+      <SixSections data={data} goals={goals} onChange={(d) => set({ data: d })} />
       {!published && candidates.length > 0 && (
         <fieldset className="flex flex-col gap-1 text-sm">
           <legend className="mb-1 text-xs text-muted">{t('report.carry')}</legend>
@@ -353,6 +324,7 @@ function MyReport({
           />
         ))}
       </fieldset>
+      <p className="text-xs text-muted">{t('rep.publishPrivacy')}</p>
       <ErrorText message={error ?? mine.error} />
       <div className="mt-auto flex items-center justify-end gap-2">
         {status && (
@@ -376,7 +348,7 @@ function MyReport({
           disabled={busy || form.publishedTo.length === 0}
           onClick={async () => {
             const ok = await attempt(async () => {
-              await api.reportPublish(form);
+              await api.reportPublish(withSections(data));
               if (!published) await carryOver(carried, period, plans.data ?? []);
             });
             if (ok) {
@@ -392,6 +364,8 @@ function MyReport({
     </Card>
   );
 }
+
+const EMPTY_SECTIONS = { progress: '', okr: '', attendance: '', next: '' };
 
 /**
  * 延到下期（D61）：期限移到下週一同一時間；連到這週週目標的任務改連到下週同名的週目標，沒有時建立。
@@ -432,23 +406,6 @@ async function carryOver(list: Task[], week: string, plans: PlanView[]) {
       teamGoalId: x.teamGoalId,
     });
   }
-}
-
-/** 列印 / 存成 PDF：把 Markdown 轉成 HTML 放進列印區，呼叫系統列印對話框（可選「存成 PDF」）。 */
-function printMarkdown(md: string) {
-  const area = document.createElement('div');
-  area.className = 'print-area prose-hills';
-  // react-markdown 不轉譯原始 HTML（skipHtml），輸出可安全放入
-  area.innerHTML = renderToStaticMarkup(<Markdown>{md}</Markdown>);
-  document.body.appendChild(area);
-  const done = () => {
-    area.remove();
-    window.removeEventListener('afterprint', done);
-  };
-  window.addEventListener('afterprint', done);
-  window.print();
-  // 部分 WebView 不會觸發 afterprint
-  setTimeout(done, 60_000);
 }
 
 function TeamReports({

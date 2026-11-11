@@ -49,6 +49,7 @@ import type {
   TimerSegment,
   WorkRef,
   DayLog,
+  WorkEntry,
   WeekPlan,
 } from '../api';
 import { periodsAt } from '../goals-utils';
@@ -362,8 +363,50 @@ const segments: TimerSegment[] = [
     source: 'start',
   },
 ];
-let worklog: DayLog[] = [];
-let weekPlans: WeekPlan[] = [];
+/** 本週一起的日期（示範計時資料用）。 */
+const mockDays = (() => {
+  const now = new Date();
+  const dow = (now.getDay() + 6) % 7;
+  return Array.from({ length: dow + 1 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow + i);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+})();
+const mockTask = (task: string, title: string, team = 'default') =>
+  ({ kind: 'task', team, task, title }) as const;
+let worklog: DayLog[] = mockDays.map((date, i) => ({
+  date,
+  updatedAt: 0,
+  entries: (
+    [
+      {
+        ref: mockTask('t2', '撰寫檔案分享部署說明'),
+        project: 'tg-1',
+        minutes: 150 + i * 20,
+        source: 'auto',
+      },
+      {
+        ref: mockTask('t1', 'Windows 驗收'),
+        project: 'tg-1',
+        minutes: i % 2 ? 60 : 0,
+        source: 'auto',
+      },
+      { ref: mockTask('t3', '寫週報', 'private'), project: null, minutes: 40, source: 'auto' },
+      { ref: { kind: 'meeting' }, minutes: 50, source: 'auto' },
+    ] as WorkEntry[]
+  ).filter((e) => e.minutes > 0),
+}));
+let weekPlans: WeekPlan[] = [
+  {
+    week: periodsAt(Date.now(), 'Asia/Taipei').week,
+    capacity: 2400,
+    createdAt: 0,
+    tasks: [
+      { ref: mockTask('t2', '撰寫檔案分享部署說明'), estimate: 360, project: 'tg-1' },
+      { ref: mockTask('t1', 'Windows 驗收'), estimate: 120, project: 'tg-1' },
+    ],
+  },
+];
 /** 紀錄摘要：負責人最新百分比、未解決的卡住了（technical-design §16.8 v0.34）。 */
 const logSummary = (t: MockTask) => {
   let reported: number | null = null;
@@ -933,6 +976,23 @@ let reports: Report[] = [
       attendance: '出勤資料將於假勤功能上線後自動帶入。',
       next: '- 檢查 relay',
     },
+    data: {
+      summary: '主要時間花在「M1、M2 準時上線」22 小時（73%），我推進了 6 個百分點。',
+      summaryEdited: false,
+      time: [
+        { project: 'tg-1', minutes: 1320 },
+        { project: 'other', minutes: 240 },
+        { project: 'nontask', minutes: 240 },
+      ],
+      projects: [{ project: 'tg-1', title: 'M1、M2 準時上線', start: 30, end: 36, mine: 6 }],
+      plan: {
+        minutes: [{ project: 'tg-1', planned: 1200, actual: 1320 }],
+        tasks: { planned: 5, done: 4, carried: 1 },
+      },
+      reasons: [{ kind: 'blocked', text: '「SAS 驗證」卡住：需要 relay 測試主機', minutes: 120 }],
+      doneMd: '- 邀請碼流程',
+      nextMd: '- 檢查 relay',
+    },
     publishedTo: ['default'],
     generatedAt: now0 - 7200_000,
     publishedAt: now0 - 3600_000,
@@ -1388,6 +1448,7 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
       generatedAt: input.generatedAt ?? Date.now(),
       publishedAt: Date.now(),
       editedAt: old ? Date.now() : null,
+      data: input.data,
     };
     reports = [...reports.filter((x) => x !== old), r];
     delete reportDrafts[`${input.kind}:${input.period}`];

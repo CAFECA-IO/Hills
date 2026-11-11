@@ -563,6 +563,8 @@ export async function downloadFile(
   token: string,
   path: string,
   onProgress: (done: number) => void,
+  /** 單檔下載時記下完成位置（「檔案」頁，D64）：FileManifest.fileId */
+  record?: string,
 ): Promise<string> {
   try {
     await decodeFile(
@@ -572,7 +574,7 @@ export async function downloadFile(
       { write: (offset, data) => api.writePartial(token, path, offset, data) },
       { onProgress: (done) => onProgress(done) },
     );
-    return await api.finishDownload(token, path, manifest.size);
+    return await api.finishDownload(token, path, manifest.size, record);
   } catch (e) {
     await api.abortDownload(token, path).catch(() => undefined);
     throw e;

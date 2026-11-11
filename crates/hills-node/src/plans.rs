@@ -541,7 +541,7 @@ fn pct(v: f64) -> f64 {
     v.clamp(0.0, 100.0)
 }
 
-pub(crate) fn kr_value(k: &KeyResult) -> f64 {
+pub fn kr_value(k: &KeyResult) -> f64 {
     let span = k.target - k.start;
     if span == 0.0 {
         if k.current >= k.target { 100.0 } else { 0.0 }

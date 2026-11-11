@@ -55,7 +55,7 @@ pub fn all() -> Vec<ToolDef> {
         ToolDef {
             name: "get_directions",
             kind: Kind::Read,
-            description: "Company directions (set by admins), team goals (set by team leads, each aligned to a direction) with progress, and each team lead's note for the week.",
+            description: "OGSM: the company purpose (why), company goals (\"directions\", set by admins), team goals (set by team leads, each aligned to a company goal) with progress, each team's purpose, strategies and measures with progress, and each team lead's note for the week.",
             schema: obj(json!({}), &[]),
         },
         ToolDef {
@@ -118,6 +118,19 @@ pub fn all() -> Vec<ToolDef> {
                     "to": { "type": "string", "description": "YYYY-MM-DD" }
                 }),
                 &["from", "to"],
+            ),
+        },
+        ToolDef {
+            name: "list_files",
+            kind: Kind::Read,
+            description: "Files the user can see (attachments in conversations, task close reports and the knowledge base) with where each was shared (source). Names, sizes and sources only — no keys or contents.",
+            schema: obj(
+                json!({
+                    "query": { "type": "string", "description": "Match file name or message excerpt (optional)" },
+                    "source": { "type": "string", "enum": ["message", "taskReport", "kb"], "description": "Only files with this kind of source (optional)" },
+                    "limit": { "type": "integer", "minimum": 1, "maximum": 100 }
+                }),
+                &[],
             ),
         },
         ToolDef {

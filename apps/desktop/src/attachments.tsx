@@ -2,6 +2,7 @@
 import { useRef, useState, useSyncExternalStore } from 'react';
 import { api, errorMessage, type FolderPick, type MemberView } from './api';
 import { formatTime, t, type MessageKey } from './i18n';
+import { navigate } from './nav';
 import {
   cancel,
   decodeToMemory,
@@ -324,14 +325,20 @@ export function AttachmentCard({
   a,
   author,
   createdAt,
+  showInFiles = true,
 }: {
   a: Attachment;
   author: MemberView | undefined;
   createdAt: number;
+  /** ⋯ 選單「在檔案中顯示」（D64）；「檔案」頁本身不顯示 */
+  showInFiles?: boolean;
 }) {
   const [state, setState] = useState<DownloadState>({ phase: 'idle' });
   const [choosing, setChoosing] = useState<{ token: string; entries: FolderFile[] } | null>(null);
+  const [menu, setMenu] = useState(false);
+  const menuBtn = useRef<HTMLButtonElement>(null);
   const folder = a.type === 'folder';
+  const fileKey = folder ? a.manifestRef.fileId : a.manifest.fileId;
   const name = folder ? a.name : a.manifest.name;
   const size = folder ? a.totalSize : a.manifest.size;
   const fail = (e: unknown) => {
@@ -353,8 +360,14 @@ export function AttachmentCard({
     if (!token) return;
     setState({ phase: 'running', done: 0, total: a.manifest.size, current: a.manifest.name });
     try {
-      const final = await downloadFile(a.manifest, a.fileKey, token, '', (done) =>
-        setState({ phase: 'running', done, total: a.manifest.size, current: a.manifest.name }),
+      const final = await downloadFile(
+        a.manifest,
+        a.fileKey,
+        token,
+        '',
+        (done) =>
+          setState({ phase: 'running', done, total: a.manifest.size, current: a.manifest.name }),
+        a.manifest.fileId,
       );
       setState({
         phase: 'done',
@@ -399,6 +412,10 @@ export function AttachmentCard({
         last = { path: f.path, name: final };
         base += f.manifest.size;
       }
+      // 整個資料夾下載完：記下位置（「檔案」頁的「已下載」，D64）
+      if (!only && a.type === 'folder') {
+        await api.recordFolderDownload(target, a.manifestRef.fileId).catch(() => undefined);
+      }
       setState({ phase: 'done', token: target, folder: true, result: { renamed, last } });
     } catch (e) {
       fail(e);
@@ -431,6 +448,37 @@ export function AttachmentCard({
             {author && ` · ${author.name}`} · {formatTime(createdAt)}
           </p>
         </div>
+        {showInFiles && (
+          <span className="relative ml-auto shrink-0">
+            <IconButton
+              ref={menuBtn}
+              size="sm"
+              label={t('files.more')}
+              aria-haspopup="menu"
+              aria-expanded={menu}
+              onClick={() => setMenu((o) => !o)}
+            >
+              ⋯
+            </IconButton>
+            {menu && (
+              <Menu
+                label={t('files.more')}
+                onClose={() => setMenu(false)}
+                anchorRef={menuBtn}
+                className="absolute top-full right-0 mt-1"
+              >
+                <MenuItem
+                  onSelect={() => {
+                    setMenu(false);
+                    navigate({ page: 'files', fileKey });
+                  }}
+                >
+                  {t('files.showInFiles')}
+                </MenuItem>
+              </Menu>
+            )}
+          </span>
+        )}
       </div>
       {state.phase === 'running' && (
         <div className="flex flex-col gap-1">

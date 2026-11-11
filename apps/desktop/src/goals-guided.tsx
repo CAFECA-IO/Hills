@@ -130,7 +130,10 @@ export function GuidedGoals({
   onAdvanced,
   noAutoWeekly = false,
   scope,
+  header,
 }: GoalsProps & {
+  /** 「我的位置」的四個問題卡（D65），放在一條線上方 */
+  header?: ReactNode;
   toggle: ReactNode;
   onAdvanced: () => void;
   noAutoWeekly?: boolean;
@@ -306,6 +309,7 @@ export function GuidedGoals({
         />
       ) : (
         <Home
+          header={header}
           loading={plans.data === null && !plans.error}
           periods={periods}
           items={items}
@@ -401,7 +405,9 @@ function Home({
   direction,
   suggestion,
   loading = false,
+  header,
 }: {
+  header?: ReactNode;
   /** 目標還沒載入（顯示骨架） */
   loading?: boolean;
   direction: ReactNode;
@@ -436,118 +442,123 @@ function Home({
     if (next) setPicked((p) => ({ ...p, [level]: next.id }));
   };
   return (
-    <div className="flex min-h-0 flex-1 gap-3 wide:gap-4">
-      <section className="flex min-w-0 flex-1 flex-col gap-3">
-        {suggestion}
-        {prompt && (
-          <PromptCard
-            prompt={prompt}
-            thisYear={periods.year}
-            onGo={() =>
-              prompt.kind === 'planYear' ? onPlanYear(prompt.year) : onBreakdown(prompt.parent.id)
-            }
-            onLater={() => {
-              writeDismissed(periods.day);
-              setDismissed(periods.day);
-            }}
-          />
-        )}
-        <Card padding="none" className="flex min-h-0 flex-1 flex-col">
-          <div className="flex items-baseline gap-2.5 px-5 pt-4 pb-1.5">
-            <h2 className="text-base font-bold">{t('guide.chain.title')}</h2>
-            <span className="text-xs text-muted">{t('guide.chain.hint')}</span>
-          </div>
-          <div className="scroll-panel min-h-0 flex-1">
-            {rows.length === 0 ? (
-              <EmptyState art="goals" loading={loading}>
-                <span className="flex flex-col items-center gap-3">
-                  {t('guide.chain.empty')}
-                  <Button onClick={() => onPlanYear(periods.year)}>
-                    {t('guide.planYear', { year: periods.year })}
-                  </Button>
-                </span>
-              </EmptyState>
-            ) : (
-              rows.map((r) => {
-                const item = items.find((i) => i.id === r.id);
-                const level = r.kind as PlanLevel;
-                return (
-                  <div
-                    key={r.kind}
-                    className={`grid grid-cols-[96px_minmax(0,1fr)_120px] items-center gap-4 border-t border-line px-5 py-3 first:border-t-0 ${r.kind === 'direction' || r.kind === 'teamGoal' ? 'bg-bg' : ''}`}
-                  >
-                    <span className={`text-sm font-bold ${ROW_TEXT[r.kind]}`}>
-                      {t(`guide.row.${r.kind}` as MessageKey)}
-                    </span>
-                    <div className="flex min-w-0 flex-col gap-0.5">
-                      {item ? (
-                        <LinkButton
-                          className="self-start truncate text-left text-base font-semibold"
-                          onClick={() => onEdit(item)}
-                        >
-                          {r.title}
-                        </LinkButton>
-                      ) : (
-                        <span className="truncate text-base font-semibold">{r.title}</span>
-                      )}
-                      <span className="truncate text-xs text-muted">
-                        {r.kind === 'week'
-                          ? t('guide.row.weekTasks', {
-                              done: weekTasks.filter((x) => x.status === 'done').length,
-                              total: weekTasks.length,
-                            })
-                          : r.forTitle
-                            ? t('guide.forTitle', { title: r.forTitle })
-                            : r.kind === 'direction'
-                              ? t('guide.row.directionHint')
-                              : ''}
+    <div className="flex min-h-0 flex-1 flex-col gap-3 wide:gap-4">
+      {header}
+      <div className="flex min-h-0 flex-1 gap-3 wide:gap-4">
+        <section className="flex min-w-0 flex-1 flex-col gap-3">
+          {suggestion}
+          {prompt && (
+            <PromptCard
+              prompt={prompt}
+              thisYear={periods.year}
+              onGo={() =>
+                prompt.kind === 'planYear' ? onPlanYear(prompt.year) : onBreakdown(prompt.parent.id)
+              }
+              onLater={() => {
+                writeDismissed(periods.day);
+                setDismissed(periods.day);
+              }}
+            />
+          )}
+          <Card padding="none" className="flex min-h-0 flex-1 flex-col">
+            <div className="flex items-baseline gap-2.5 px-5 pt-4 pb-1.5">
+              <h2 className="text-base font-bold">{t('guide.chain.title')}</h2>
+              <span className="text-xs text-muted">{t('guide.chain.hint')}</span>
+            </div>
+            <div className="scroll-panel min-h-0 flex-1">
+              {rows.length === 0 ? (
+                <EmptyState art="goals" loading={loading}>
+                  <span className="flex flex-col items-center gap-3">
+                    {t('guide.chain.empty')}
+                    <Button onClick={() => onPlanYear(periods.year)}>
+                      {t('guide.planYear', { year: periods.year })}
+                    </Button>
+                  </span>
+                </EmptyState>
+              ) : (
+                rows.map((r) => {
+                  const item = items.find((i) => i.id === r.id);
+                  const level = r.kind as PlanLevel;
+                  return (
+                    <div
+                      key={r.kind}
+                      className={`grid grid-cols-[96px_minmax(0,1fr)_120px] items-center gap-4 border-t border-line px-5 py-3 first:border-t-0 ${r.kind === 'direction' || r.kind === 'teamGoal' ? 'bg-bg' : ''}`}
+                    >
+                      <span className={`text-sm font-bold ${ROW_TEXT[r.kind]}`}>
+                        {t(`guide.row.${r.kind}` as MessageKey)}
                       </span>
+                      <div className="flex min-w-0 flex-col gap-0.5">
+                        {item ? (
+                          <LinkButton
+                            className="self-start truncate text-left text-base font-semibold"
+                            onClick={() => onEdit(item)}
+                          >
+                            {r.title}
+                          </LinkButton>
+                        ) : (
+                          <span className="truncate text-base font-semibold">{r.title}</span>
+                        )}
+                        <span className="truncate text-xs text-muted">
+                          {r.kind === 'week'
+                            ? t('guide.row.weekTasks', {
+                                done: weekTasks.filter((x) => x.status === 'done').length,
+                                total: weekTasks.length,
+                              })
+                            : r.forTitle
+                              ? t('guide.forTitle', { title: r.forTitle })
+                              : r.kind === 'direction'
+                                ? t('guide.row.directionHint')
+                                : ''}
+                        </span>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="text-sm font-bold">{Math.round(r.progress)}%</span>
+                        <ProgressBar
+                          value={r.progress / 100}
+                          size="sm"
+                          className="w-30"
+                          barClassName={ROW_BG[r.kind]}
+                          label={r.title}
+                        />
+                        {r.alternatives > 1 && (
+                          <LinkButton className="text-xs" onClick={() => cycle(level, r.id)}>
+                            {t('guide.row.switch', { n: r.alternatives })}
+                          </LinkButton>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <span className="text-sm font-bold">{Math.round(r.progress)}%</span>
-                      <ProgressBar
-                        value={r.progress / 100}
-                        size="sm"
-                        className="w-30"
-                        barClassName={ROW_BG[r.kind]}
-                        label={r.title}
-                      />
-                      {r.alternatives > 1 && (
-                        <LinkButton className="text-xs" onClick={() => cycle(level, r.id)}>
-                          {t('guide.row.switch', { n: r.alternatives })}
-                        </LinkButton>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
+                  );
+                })
+              )}
+            </div>
+            <div className="flex gap-4 border-t border-line px-5 py-3 text-sm">
+              <LinkButton onClick={onAll}>{t('guide.allGoals')}</LinkButton>
+              <span className="ml-auto text-xs text-muted">{t('guide.advancedHint')}</span>
+            </div>
+          </Card>
+        </section>
+        <Card className="flex w-70 shrink-0 flex-col gap-2.5 wide:w-85">
+          {direction}
+          <div className="flex items-center border-t border-line pt-3">
+            <h2 className="text-base font-bold">{t('guide.week.title')}</h2>
+            <LinkButton className="ml-auto text-sm" onClick={onWeek}>
+              {t('guide.week.all')}
+            </LinkButton>
+          </div>
+          {weekRow && (
+            <p className="text-xs text-muted">{t('guide.forTitle', { title: weekRow.title })}</p>
+          )}
+          <div className="scroll-panel flex min-h-0 flex-1 flex-col">
+            {weekTasks.length === 0 ? (
+              <EmptyState art="tasks">{t('guide.week.empty')}</EmptyState>
+            ) : (
+              weekTasks.map((x) => (
+                <CheckRow key={x.id} task={x} members={members} me={me} compact />
+              ))
             )}
           </div>
-          <div className="flex gap-4 border-t border-line px-5 py-3 text-sm">
-            <LinkButton onClick={onAll}>{t('guide.allGoals')}</LinkButton>
-            <span className="ml-auto text-xs text-muted">{t('guide.advancedHint')}</span>
-          </div>
         </Card>
-      </section>
-      <Card className="flex w-70 shrink-0 flex-col gap-2.5 wide:w-85">
-        {direction}
-        <div className="flex items-center border-t border-line pt-3">
-          <h2 className="text-base font-bold">{t('guide.week.title')}</h2>
-          <LinkButton className="ml-auto text-sm" onClick={onWeek}>
-            {t('guide.week.all')}
-          </LinkButton>
-        </div>
-        {weekRow && (
-          <p className="text-xs text-muted">{t('guide.forTitle', { title: weekRow.title })}</p>
-        )}
-        <div className="scroll-panel flex min-h-0 flex-1 flex-col">
-          {weekTasks.length === 0 ? (
-            <EmptyState art="tasks">{t('guide.week.empty')}</EmptyState>
-          ) : (
-            weekTasks.map((x) => <CheckRow key={x.id} task={x} members={members} me={me} compact />)
-          )}
-        </div>
-      </Card>
+      </div>
     </div>
   );
 }

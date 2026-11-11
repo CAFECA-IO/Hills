@@ -25,6 +25,7 @@ import { AssignedCard } from './assign-inbox';
 import { useSize } from './hooks';
 import { formatClock, formatDate, t } from './i18n';
 import { PageHead } from './layout';
+import { OgsmHomeCard } from './ogsm';
 import { TaskCloseDialog } from './task-close';
 import { closeIsPrimary } from './task-utils';
 import {
@@ -68,6 +69,8 @@ interface Props {
   convs: ConvRow[];
   onOpenConv: (conv: string) => void;
   onOpenTasks: () => void;
+  /** 「我們往哪裡去」卡片（D65）：到「工作 › 目標 › 我的位置」 */
+  onOpenPosition?: () => void;
   now: number;
 }
 
@@ -77,7 +80,16 @@ interface Picked {
   y: number;
 }
 
-export function Home({ overview, tasks, focus, convs, onOpenConv, onOpenTasks, now }: Props) {
+export function Home({
+  overview,
+  tasks,
+  focus,
+  convs,
+  onOpenConv,
+  onOpenTasks,
+  onOpenPosition,
+  now,
+}: Props) {
   const [view, setView] = useState<'scene' | 'list'>('scene');
   const [picked, setPicked] = useState<Picked | null>(null);
   const [choosing, setChoosing] = useState(false);
@@ -178,6 +190,9 @@ export function Home({ overview, tasks, focus, convs, onOpenConv, onOpenTasks, n
         )}
       </section>
       <aside className="scroll-panel flex min-h-0 flex-col gap-3">
+        {onOpenPosition && (
+          <OgsmHomeCard members={overview.members} teams={overview.teams} onOpen={onOpenPosition} />
+        )}
         <NextStepCard task={task} me={me} nameOf={nameOf} now={clock} onOpenTasks={onOpenTasks} />
         <AssignedCard tasks={tasks} members={overview.members} timezone={overview.timezone} />
         <UnreadCard convs={convs} overview={overview} onOpenConv={onOpenConv} />

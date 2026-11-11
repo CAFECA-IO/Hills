@@ -34,7 +34,7 @@ use crate::local::LocalDoc;
 use crate::org::{self, OrgSnapshot};
 use crate::policy;
 
-pub(crate) fn now_ms() -> Timestamp {
+pub fn now_ms() -> Timestamp {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)

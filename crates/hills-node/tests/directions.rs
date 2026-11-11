@@ -136,3 +136,100 @@ async fn directions_team_goals_and_alignment() {
     admin.delete_team_goal(DEFAULT_TEAM, &goal).await.unwrap();
     assert!(!admin.alignable_goal_exists(&goal).unwrap());
 }
+
+/// D65：OGSM——公司目的只有管理者能寫；小組目的、策略與衡量只有負責人（或管理者）能寫，全員讀得到。
+#[tokio::test]
+async fn ogsm_purpose_strategies_and_measures() {
+    use hills_node::ogsm::{Measure, MeasureSource, PurposeInput, StrategyInput};
+    let mb = mailbox().await;
+    let d: Vec<_> = (0..2).map(|_| tempfile::tempdir().unwrap()).collect();
+    let admin = create(d[0].path(), store(), &mb.code).await;
+    let alice = invite_and_join(&admin, d[1].path(), store(), "alice").await;
+
+    let purpose = PurposeInput {
+        title: "讓每個人知道團隊往哪走".into(),
+        why: "工作散在 5 個工具".into(),
+        period: "2026–2027".into(),
+        goal_ids: vec![],
+    };
+    assert!(alice.save_org_purpose(purpose.clone()).await.is_err());
+    admin.save_org_purpose(purpose).await.unwrap();
+
+    let dir = admin
+        .save_direction(DirectionInput {
+            id: None,
+            year: "2027".into(),
+            title: "全員導入".into(),
+            key_results: vec![],
+        })
+        .await
+        .unwrap();
+    let goal = admin
+        .save_team_goal(TeamGoalInput {
+            id: None,
+            team: DEFAULT_TEAM.into(),
+            year: "2027".into(),
+            title: "M1、M2 準時上線".into(),
+            direction_id: Some(dir.clone()),
+            key_results: vec![],
+            criteria: vec![],
+        })
+        .await
+        .unwrap();
+
+    let team_purpose = PurposeInput {
+        title: "桌機版每天穩定可用".into(),
+        why: String::new(),
+        period: "2027".into(),
+        goal_ids: vec![dir.clone()],
+    };
+    assert!(
+        alice
+            .save_team_purpose(DEFAULT_TEAM, team_purpose.clone())
+            .await
+            .is_err()
+    );
+    admin
+        .save_team_purpose(DEFAULT_TEAM, team_purpose)
+        .await
+        .unwrap();
+
+    let strategy = StrategyInput {
+        id: None,
+        team: DEFAULT_TEAM.into(),
+        title: "先穩定 Mac / Windows".into(),
+        how: None,
+        goal_ids: vec![goal.clone()],
+        owners: vec![alice.member_id().to_string()],
+        measures: vec![Measure {
+            id: String::new(),
+            title: "安裝成功率".into(),
+            source: MeasureSource::Manual {
+                current: 48.0,
+                target: 50.0,
+                unit: None,
+                updated_at: 0,
+            },
+        }],
+        order: None,
+    };
+    assert!(alice.save_strategy(strategy.clone()).await.is_err());
+    let sid = admin.save_strategy(strategy).await.unwrap();
+
+    // alice 同步後讀得到公司目的、小組目的與策略（含她是負責的人）
+    assert!(
+        eventually(Duration::from_secs(10), || async {
+            let _ = alice.sync_now().await;
+            let (purposes, strategies) = alice.team_ogsm().unwrap();
+            alice.org_purpose().unwrap().is_some()
+                && purposes.iter().any(|p| p.goal_ids == vec![dir.clone()])
+                && strategies
+                    .iter()
+                    .any(|s| s.id == sid && s.owners == vec![alice.member_id().to_string()])
+        })
+        .await
+    );
+    assert!(alice.delete_strategy(DEFAULT_TEAM, &sid).await.is_err());
+    admin.delete_strategy(DEFAULT_TEAM, &sid).await.unwrap();
+    assert!(admin.team_ogsm().unwrap().1.is_empty());
+}

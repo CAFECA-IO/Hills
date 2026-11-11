@@ -80,9 +80,11 @@ interface Props {
   isAdmin: boolean;
   timezone: string;
   onOpenConv: (conv: string) => void;
+  /** 前往出處（D64）：直接開啟這則知識 */
+  openItem?: string | null;
 }
 
-export function Knowledge({ members, isAdmin, timezone, onOpenConv }: Props) {
+export function Knowledge({ members, isAdmin, timezone, onOpenConv, openItem = null }: Props) {
   const kb = useLoad(api.kb, ['doc', 'org', 'roster']);
   const convs = useLoad(api.conversations, ['convs']);
   const [view, setView] = useState<'sky' | 'list'>('sky');
@@ -91,7 +93,7 @@ export function Knowledge({ members, isAdmin, timezone, onOpenConv }: Props) {
   const [sel, setSel] = useState<string | null>(null);
   const [week, setWeek] = useState<string | null>(null);
   const [editing, setEditing] = useState<KbInput | null>(null);
-  const [reading, setReading] = useState<string | null>(null);
+  const [reading, setReading] = useState<string | null>(openItem);
   const [now] = useState(() => Date.now());
   const data: KbSnapshot = kb.data ?? { categories: [], topics: [], items: [] };
   const me = members.find((m) => m.isMe)?.id ?? '';

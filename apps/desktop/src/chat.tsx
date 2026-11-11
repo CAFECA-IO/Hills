@@ -33,6 +33,7 @@ import {
 import { useLoad, useMediaQuery } from './hooks';
 import { SaveToKb } from './kb';
 import { formatClock, formatDate, formatTime, t } from './i18n';
+import { navigate } from './nav';
 import {
   Badge,
   Button,
@@ -58,9 +59,18 @@ interface Props {
   offices?: OfficeView[];
   /** 從首頁開啟時直接進入的對話 */
   initial?: string | null;
+  /** 前往出處（D64）：捲到並高亮這則訊息 */
+  highlight?: string | null;
 }
 
-export function Chat({ members, tasks, teams, offices = [], initial = null }: Props) {
+export function Chat({
+  members,
+  tasks,
+  teams,
+  offices = [],
+  initial = null,
+  highlight = null,
+}: Props) {
   const convs = useLoad(api.conversations, ['convs', 'message', 'doc', 'roster']);
   const [pending, setPending] = useState<string[]>([]);
   useEffect(() => {
@@ -193,6 +203,7 @@ export function Chat({ members, tasks, teams, offices = [], initial = null }: Pr
               tasks={tasks}
               teams={teams}
               offices={offices}
+              highlight={selected.id === initial ? highlight : null}
             />
           ) : (
             <p className="m-auto text-sm text-muted">{t('chat.pick')}</p>
@@ -298,6 +309,7 @@ function Conversation({
   tasks,
   teams,
   offices,
+  highlight = null,
 }: {
   conv: ConvRow;
   me: string;
@@ -306,6 +318,7 @@ function Conversation({
   tasks: Task[];
   teams: TeamView[];
   offices: OfficeView[];
+  highlight?: string | null;
 }) {
   const msgs = useLoad(() => api.messages(conv.id), ['message', 'doc', 'convs']);
   const wide = useMediaQuery('(min-width: 1600px)');
@@ -335,8 +348,15 @@ function Conversation({
     void api.setActiveConv(conv.id, last?.createdAt).catch(() => undefined);
   }, [conv.id, last?.createdAt]);
   useEffect(() => {
+    if (highlight) {
+      const el = document.querySelector(`[data-msg="${CSS.escape(highlight)}"]`);
+      if (el) {
+        el.scrollIntoView({ block: 'center' });
+        return;
+      }
+    }
     bottom.current?.scrollIntoView({ block: 'end' });
-  }, [items.length]);
+  }, [items.length, highlight]);
 
   const candidates: MentionCandidate[] = members
     .filter((m) => conv.members.includes(m.id) && m.id !== me)
@@ -347,6 +367,13 @@ function Conversation({
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-2">
           <ConvHead conv={conv} me={me} members={members} nameOf={nameOf} offices={offices} />
+          <span className="flex-1" />
+          <LinkButton
+            className="text-xs"
+            onClick={() => navigate({ page: 'files', conv: conv.id })}
+          >
+            {t('fpage.convFiles')}
+          </LinkButton>
           <Button
             variant="secondary"
             className="h-8 px-3 py-0 text-xs"
@@ -394,6 +421,7 @@ function Conversation({
                 <MessageItem
                   key={`${it.m.author}:${it.m.id}`}
                   m={it.m}
+                  highlight={it.m.id === highlight}
                   mine={it.m.author === me}
                   head={heads[i] ?? true}
                   nameOf={nameOf}
@@ -448,8 +476,11 @@ function MessageItem({
   nameOf,
   author,
   actions,
+  highlight = false,
 }: {
   m: MessageView;
+  /** 前往出處的那一則（短暫高亮） */
+  highlight?: boolean;
   mine: boolean;
   /** 連續訊息的第一則：顯示頭像、名字與時間（D58） */
   head: boolean;
@@ -464,7 +495,8 @@ function MessageItem({
   const attachments = m.kind === 'files' ? parseAttachments(m.attachments) : [];
   return (
     <li
-      className={`group relative flex gap-2.5 px-2 py-0.5 ${head ? 'mt-2' : ''} ${mine ? 'flex-row-reverse' : ''} ${mentioned ? 'border-l-2 border-primary' : ''}`}
+      data-msg={m.id}
+      className={`group relative flex gap-2.5 rounded-control px-2 py-0.5 ${head ? 'mt-2' : ''} ${mine ? 'flex-row-reverse' : ''} ${mentioned ? 'border-l-2 border-primary' : ''} ${highlight ? 'hills-flash' : ''}`}
     >
       {actions && (
         <div

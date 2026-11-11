@@ -960,6 +960,14 @@ pub async fn my_logs_since(
     with_node!(state, n => n.my_logs_since(since).map_err(e))
 }
 
+/// 「檔案」頁（technical-design §16.19，D64）。
+#[tauri::command]
+pub async fn list_files(
+    state: State<'_, AppState>,
+) -> CmdResult<Vec<hills_node::files::FileEntry>> {
+    with_node!(state, n => n.list_files().map_err(e))
+}
+
 // ── 計時與工作紀錄（technical-design §16.18，D62）──
 
 #[tauri::command]
@@ -1242,6 +1250,10 @@ pub struct TeamGoalView {
 pub struct DirectionsView {
     directions: Vec<DirectionView>,
     team_goals: Vec<TeamGoalView>,
+    /// OGSM（D65）：公司目的、各小組目的與策略（含進度）
+    purpose: Option<hills_node::ogsm::Purpose>,
+    team_purposes: Vec<hills_node::ogsm::Purpose>,
+    strategies: Vec<hills_node::ogsm::StrategyView>,
 }
 
 /// 公司方向與小組目標，含讀者看得到的對齊進度。
@@ -1253,7 +1265,13 @@ pub async fn directions(state: State<'_, AppState>) -> CmdResult<DirectionsView>
         let goals = n.team_goals().map_err(e)?;
         let (items, r) = rolled_plans(n, hills_node::plans::PlanQuery::Visible).map_err(e)?;
         let p = direction_progress(&dirs, &goals, &items, &r.items);
+        let purpose = n.org_purpose().map_err(e)?;
+        let (team_purposes, strategies) = n.team_ogsm().map_err(e)?;
+        let strategies = hills_node::ogsm::strategy_views(strategies, &goals, &p.team_goals);
         Ok(DirectionsView {
+            purpose,
+            team_purposes,
+            strategies,
             directions: dirs
                 .into_iter()
                 .map(|d| DirectionView {
@@ -1270,6 +1288,40 @@ pub async fn directions(state: State<'_, AppState>) -> CmdResult<DirectionsView>
                 .collect(),
         })
     })
+}
+
+#[tauri::command]
+pub async fn save_org_purpose(
+    state: State<'_, AppState>,
+    input: hills_node::ogsm::PurposeInput,
+) -> CmdResult<()> {
+    with_node!(state, n => n.save_org_purpose(input).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn save_team_purpose(
+    state: State<'_, AppState>,
+    team: String,
+    input: hills_node::ogsm::PurposeInput,
+) -> CmdResult<()> {
+    with_node!(state, n => n.save_team_purpose(&team, input).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn save_strategy(
+    state: State<'_, AppState>,
+    input: hills_node::ogsm::StrategyInput,
+) -> CmdResult<String> {
+    with_node!(state, n => n.save_strategy(input).await.map_err(e))
+}
+
+#[tauri::command]
+pub async fn delete_strategy(
+    state: State<'_, AppState>,
+    team: String,
+    id: String,
+) -> CmdResult<()> {
+    with_node!(state, n => n.delete_strategy(&team, &id).await.map_err(e))
 }
 
 #[tauri::command]

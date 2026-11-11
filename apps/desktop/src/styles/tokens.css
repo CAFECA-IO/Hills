@@ -648,3 +648,23 @@ body {
     animation: none;
   }
 }
+
+/* 前往出處：短暫高亮原位置（ui-spec「檔案」v0.44，D64） */
+.hills-flash {
+  animation: hills-flash 2s ease-out 1;
+}
+@keyframes hills-flash {
+  0%,
+  60% {
+    background: var(--hills-primary-soft);
+  }
+  100% {
+    background: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hills-flash {
+    animation: none;
+    background: var(--hills-primary-soft);
+  }
+}

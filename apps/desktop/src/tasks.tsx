@@ -2,7 +2,7 @@
  * 任務頁（ui-spec「任務」，D40、D46）：依小組與「私人」分組的清單、勾選步驟，
  * 以及目標頁共用的新增 / 編輯任務對話框（任務可連結一個週目標、可設為私人）。
  */
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   api,
   isPrivateTask,
@@ -56,6 +56,8 @@ interface Props {
   isAdmin?: boolean;
   /** 任務還沒載入（顯示骨架） */
   loading?: boolean;
+  /** 展開並捲到這個任務（前往出處，D64） */
+  openTaskId?: string | null;
   /** 固定檢視（「工作 › 小組 › 分派板」用 board），不顯示切換 */
   forceView?: 'list' | 'board';
 }
@@ -88,6 +90,7 @@ export function Tasks({
   isAdmin = false,
   loading = false,
   forceView,
+  openTaskId = null,
 }: Props) {
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const plans = useLoad(() => api.plans(false), ['doc', 'org', 'roster']);
@@ -225,6 +228,7 @@ export function Tasks({
                   goal={goalOf(x.planItemId)}
                   linked={Boolean(x.planItemId)}
                   isFocus={focus?.task?.id === x.id}
+                  jumpTo={openTaskId === x.id}
                   nameOf={nameOf}
                   me={me?.id ?? ''}
                   members={members}
@@ -252,11 +256,14 @@ function TaskRow({
   teams,
   onEdit,
   onClose,
+  jumpTo = false,
 }: {
   task: Task;
   goal: PlanView | null;
   linked: boolean;
   isFocus: boolean;
+  /** 前往出處：預設展開、捲到這列並短暫高亮 */
+  jumpTo?: boolean;
   nameOf: (id: string | null) => string;
   me: string;
   members: MemberView[];
@@ -264,13 +271,20 @@ function TaskRow({
   onEdit: () => void;
   onClose: () => void;
 }) {
-  const [open, setOpen] = useState(isFocus);
+  const [open, setOpen] = useState(isFocus || jumpTo);
+  const rowRef = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (jumpTo) rowRef.current?.scrollIntoView({ block: 'center' });
+  }, [jumpTo]);
   const [now] = useState(() => Date.now());
   const { error, attempt } = useAction();
   const done = task.steps.filter((s) => s.done).length;
   const priv = isPrivateTask(task);
   return (
-    <li className="flex flex-col gap-2 py-3">
+    <li
+      ref={rowRef}
+      className={`flex flex-col gap-2 py-3 ${jumpTo ? 'hills-flash rounded-control' : ''}`}
+    >
       <div className="flex flex-wrap items-center gap-3">
         <Pressable
           aria-expanded={open}

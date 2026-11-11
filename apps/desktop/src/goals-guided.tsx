@@ -29,7 +29,7 @@ import { DirectionCompass } from './compass';
 import { MySentence, StatePill, TeamTab } from './team-direction';
 import { lookOf } from './summit';
 import { WeeklyCheck, weeklySeen } from './weekly-check';
-import { t, type MessageKey } from './i18n';
+import { formatTime, t, type MessageKey } from './i18n';
 import { PageHead } from './layout';
 import {
   Badge,
@@ -548,7 +548,7 @@ function Home({
           {weekRow && (
             <p className="text-xs text-muted">{t('guide.forTitle', { title: weekRow.title })}</p>
           )}
-          <div className="scroll-panel flex min-h-0 flex-1 flex-col">
+          <div className="scroll-panel flex min-h-24 flex-1 flex-col">
             {weekTasks.length === 0 ? (
               <EmptyState art="tasks">{t('guide.week.empty')}</EmptyState>
             ) : (
@@ -557,8 +557,52 @@ function Home({
               ))
             )}
           </div>
+          <RecentPushes tasks={tasks} items={items} />
         </Card>
       </div>
+    </div>
+  );
+}
+
+const PUSH_KINDS = new Set(['step', 'close', 'progress', 'resolved']);
+
+/**
+ * 「最近推動它的事」（ui-spec「工作 › 目標」A4）：近 14 天我寫的結案、步驟完成、回報與已解決，
+ * 只列連到目標的任務，最多 5 筆。
+ */
+function RecentPushes({ tasks, items }: { tasks: Task[]; items: PlanView[] }) {
+  const [since] = useState(() => Date.now() - 14 * 86_400_000);
+  const logs = useLoad(() => api.myLogsSince(since), ['doc']);
+  const byId = new Map(tasks.map((x) => [x.id, x]));
+  const goals = new Map(items.map((p) => [p.id, p]));
+  const list = (logs.data ?? [])
+    .filter((l) => PUSH_KINDS.has(l.log.kind))
+    .filter((l) => {
+      const task = byId.get(l.task);
+      return Boolean(task?.planItemId && goals.has(task.planItemId));
+    })
+    .sort((a, b) => b.log.at - a.log.at)
+    .slice(0, 3);
+  if (list.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-line pt-3">
+      <h2 className="text-sm font-bold">{t('guide.pushes.title')}</h2>
+      <ul className="flex flex-col gap-1.5">
+        {list.map((l) => {
+          const goal = goals.get(byId.get(l.task)?.planItemId ?? '');
+          return (
+            <li key={l.log.id} className="flex flex-col text-xs">
+              <span className="truncate">
+                <span className="font-semibold">{t(`tlog.kind.${l.log.kind}` as MessageKey)}</span>{' '}
+                {l.title}
+              </span>
+              <span className="truncate text-muted">
+                {goal ? t('guide.pushes.for', { title: goal.title }) : ''} · {formatTime(l.log.at)}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

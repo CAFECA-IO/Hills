@@ -41,6 +41,11 @@
   --hills-drift-floor: #eef3fa;
   --hills-drift-floor-edge: #d5deea;
   --hills-drift-zone: #cdefe0;
+  /* 往山丘走（design-system §2.2 v0.9，D59） */
+  --hills-hill-ground: #cfe8d6;
+  --hills-hill-path: #f2e7cf;
+  --hills-hill-path-edge: #c9b48a;
+  --hills-trail: #8a7a5a;
   /* 狀態：徽章色 / 文字色（文字對 surface ≥ 4.5:1） */
   --hills-st-online: #1e9e6a;
   --hills-st-online-text: #146c48;
@@ -257,6 +262,10 @@
     --hills-drift-floor: #1b2531;
     --hills-drift-floor-edge: #2a3646;
     --hills-drift-zone: #1e3a2d;
+    --hills-hill-ground: #1d3527;
+    --hills-hill-path: #3a3427;
+    --hills-hill-path-edge: #6e5f40;
+    --hills-trail: #b9a98a;
     --hills-st-online-text: #5fd3a0;
     --hills-st-busy-text: #ff8a8e;
     --hills-st-lunch-text: #ffab7a;
@@ -315,6 +324,10 @@
   --color-drift-floor: var(--hills-drift-floor);
   --color-drift-floor-edge: var(--hills-drift-floor-edge);
   --color-drift-zone: var(--hills-drift-zone);
+  --color-hill-ground: var(--hills-hill-ground);
+  --color-hill-path: var(--hills-hill-path);
+  --color-hill-path-edge: var(--hills-hill-path-edge);
+  --color-trail: var(--hills-trail);
   --color-st-online: var(--hills-st-online);
   --color-st-online-text: var(--hills-st-online-text);
   --color-st-busy: var(--hills-st-busy);

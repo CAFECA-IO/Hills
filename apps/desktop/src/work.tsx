@@ -3,16 +3,37 @@
  * 「所有任務」與「週五收尾」是分頁裡的子畫面，左上「‹ 回到工作」回來。
  */
 import { useContext, useState, type ReactNode } from 'react';
-import type { FocusView, MemberView, Task, TeamView } from './api';
+import {
+  api,
+  type FocusView,
+  type MemberView,
+  type Task,
+  type TeamGoal,
+  type TeamView,
+} from './api';
+import { DEFAULT_RULES } from './drift-utils';
 import { Goals } from './goals';
+import { HillView, useWalkers } from './hill';
+import { useLoad } from './hooks';
+import { navigate } from './nav';
 import { t } from './i18n';
 import { HeadContext, PageHead } from './layout';
 import { Reports } from './reports';
-import { TeamOverview } from './scrum';
+import { TeamOverview } from './team-overview';
 import { periodsAt } from './goals-utils';
 import { Tasks } from './tasks';
 import { Today } from './today';
-import { LinkButton, SegmentedControl } from './ui';
+import {
+  Button,
+  EmptyState,
+  ErrorText,
+  LinkButton,
+  ProgressBar,
+  SegmentedControl,
+  Select,
+  TextInput,
+  useAction,
+} from './ui';
 import { Week } from './week';
 
 export type WorkTab = 'today' | 'week' | 'goals' | 'team';
@@ -187,7 +208,7 @@ export function Work({
   );
 }
 
-/** 小組分頁（第 2 批暫時版）：總覽 = 小組今天的每日任務；分派板；方向 = 原團隊方向。 */
+/** 小組分頁（ui-spec「工作 › 小組」A5、A6）：總覽 · 分派板 · 方向（往山丘走）。 */
 function TeamTab({
   tasks,
   members,
@@ -214,37 +235,82 @@ function TeamTab({
   };
   const me = members.find((m) => m.isMe)?.id ?? '';
   const myTeams = teams.filter((x) => x.members.includes(me) || x.leads.includes(me));
-  const [team, setTeam] = useState<string | null>(null);
-  const teamId = team ?? myTeams[0]?.id ?? '';
+  const [teamSel, setTeam] = useState<string | null>(null);
+  const team = myTeams.find((x) => x.id === teamSel) ?? myTeams[0] ?? null;
   const [now] = useState(() => Date.now());
-  const today = periodsAt(now, timezone).day;
-  const switcher = (
-    <div className="flex flex-wrap items-center gap-2">
-      <SegmentedControl
-        label={t('work.team.view')}
-        options={(['overview', 'board', 'direction'] as const).map((v) => ({
-          value: v,
-          label: t(`work.team.${v}`),
-        }))}
-        value={view}
-        onChange={setView}
-      />
-    </div>
+  const periods = periodsAt(now, timezone);
+  const summaries = useLoad(api.directionSummaries, ['doc', 'org', 'roster']);
+  const rules = useLoad(api.directionRules, ['org']);
+  const dirs = useLoad(api.directions, ['doc', 'org', 'roster']);
+  const notes = useLoad(api.weekNotes, ['doc', 'org', 'roster']);
+  const walkers = useWalkers(
+    members,
+    team ?? { id: '', name: '', members: [], leads: [] },
+    summaries.data ?? [],
+    rules.data ?? DEFAULT_RULES,
+    periods,
+    now,
   );
+  if (!team) return <EmptyState art="team">{t('assign.noTeams')}</EmptyState>;
+  const isLead = isAdmin || team.leads.includes(me);
+  const goals = (dirs.data?.teamGoals ?? []).filter(
+    (g) => g.team === team.id && g.year === periods.year,
+  );
+  const note = (notes.data ?? []).find((n) => n.team === team.id && n.week === periods.week);
+  const message = (member: string) =>
+    void api.openDm(member).then(
+      (conv) => navigate({ page: 'chat', conv }),
+      () => undefined,
+    );
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      {switcher}
+      <div className="flex flex-wrap items-center gap-2">
+        {myTeams.length > 1 && (
+          <Select
+            size="sm"
+            className="w-auto"
+            aria-label={t('assign.team')}
+            value={team.id}
+            onChange={(e) => setTeam(e.target.value)}
+          >
+            {myTeams.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name}
+              </option>
+            ))}
+          </Select>
+        )}
+        <SegmentedControl
+          label={t('work.team.view')}
+          options={(['overview', 'board', 'direction'] as const).map((v) => ({
+            value: v,
+            label: t(`work.team.${v}`),
+          }))}
+          value={view}
+          onChange={setView}
+        />
+      </div>
+      <TeamBar
+        team={team}
+        goals={goals}
+        note={note?.text ?? ''}
+        week={periods.week}
+        canEdit={isLead}
+        onSaved={notes.reload}
+      />
       <div className="min-h-0 flex-1">
         {view === 'overview' && (
-          <div className="scroll-panel h-full">
-            <TeamOverview
-              teams={myTeams}
-              teamId={teamId}
-              onTeam={setTeam}
-              members={members}
-              date={today}
-            />
-          </div>
+          <TeamOverview
+            team={team}
+            members={members}
+            tasks={tasks}
+            walkers={walkers}
+            periods={periods}
+            timezone={timezone}
+            isLead={isLead}
+            onBoard={() => setView('board')}
+            onMessage={message}
+          />
         )}
         {view === 'board' && (
           <div className="scroll-panel h-full">
@@ -261,17 +327,91 @@ function TeamTab({
           </div>
         )}
         {view === 'direction' && (
-          <Goals
-            members={members}
-            teams={teams}
-            tasks={tasks}
-            focusId={focus?.task?.id ?? null}
-            timezone={timezone}
-            noAutoWeekly
-            scope="team"
+          <HillView
+            team={team}
+            goal={goals[0] ?? null}
+            walkers={walkers}
+            periods={periods}
+            meId={me}
+            onMessage={message}
           />
         )}
       </div>
+    </div>
+  );
+}
+
+/** 上方列：小組目標與進度、這週重點（負責人可編輯）。 */
+function TeamBar({
+  team,
+  goals,
+  note,
+  week,
+  canEdit,
+  onSaved,
+}: {
+  team: TeamView;
+  goals: TeamGoal[];
+  note: string;
+  week: string;
+  canEdit: boolean;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const { busy, error, attempt } = useAction();
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-card bg-primary-soft px-4 py-2.5 text-sm">
+      <span className="font-bold text-primary">{team.name}</span>
+      {goals.length === 0 ? (
+        <span className="text-xs text-muted">{t('ogsm.noGoals')}</span>
+      ) : (
+        goals.slice(0, 2).map((g) => (
+          <span key={g.id} className="flex min-w-48 items-center gap-2 text-xs">
+            <span className="max-w-48 truncate font-semibold">{g.title}</span>
+            <ProgressBar size="sm" className="w-20" value={g.progress / 100} label={g.title} />
+            <span>{Math.round(g.progress)}%</span>
+          </span>
+        ))
+      )}
+      <span className="flex-1" />
+      {editing !== null ? (
+        <span className="flex items-center gap-2">
+          <TextInput
+            autoFocus
+            className="w-72"
+            maxLength={200}
+            aria-label={t('tov.note')}
+            value={editing}
+            onChange={(e) => setEditing(e.target.value)}
+          />
+          <Button
+            size="sm"
+            busy={busy}
+            onClick={async () => {
+              if (await attempt(() => api.setWeekNote(team.id, week, editing))) {
+                setEditing(null);
+                onSaved();
+              }
+            }}
+          >
+            {t('common.save')}
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setEditing(null)}>
+            {t('common.cancel')}
+          </Button>
+        </span>
+      ) : (
+        <span className="flex min-w-0 items-center gap-2 text-xs">
+          <span className="text-muted">{t('tov.note')}</span>
+          <span className="max-w-96 truncate font-semibold">{note || t('tov.noNote')}</span>
+          {canEdit && (
+            <LinkButton className="text-xs" onClick={() => setEditing(note)}>
+              {t('tov.editNote')}
+            </LinkButton>
+          )}
+        </span>
+      )}
+      <ErrorText message={error} />
     </div>
   );
 }

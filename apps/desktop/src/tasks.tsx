@@ -60,6 +60,8 @@ interface Props {
   openTaskId?: string | null;
   /** 固定檢視（「工作 › 小組 › 分派板」用 board），不顯示切換 */
   forceView?: 'list' | 'board';
+  /** 分派板固定在這個小組（「工作 › 小組」已有小組切換時用），不再顯示小組選單 */
+  fixedTeam?: string;
 }
 
 type View = 'list' | 'board';
@@ -91,6 +93,7 @@ export function Tasks({
   loading = false,
   forceView,
   openTaskId = null,
+  fixedTeam,
 }: Props) {
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const plans = useLoad(() => api.plans(false), ['doc', 'org', 'roster']);
@@ -110,7 +113,7 @@ export function Tasks({
     }
   };
   const [boardTeam, setBoardTeam] = useState('');
-  const team = myTeams.find((x) => x.id === boardTeam) ?? myTeams[0];
+  const team = myTeams.find((x) => x.id === (fixedTeam ?? boardTeam)) ?? myTeams[0];
   const [breakdown, setBreakdown] = useState(false);
   const [closing, setClosing] = useState<Task | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -141,7 +144,7 @@ export function Tasks({
             onChange={setView}
           />
         )}
-        {view === 'board' && myTeams.length > 0 && (
+        {view === 'board' && !fixedTeam && myTeams.length > 0 && (
           <Select
             size="sm"
             aria-label={t('assign.team')}
@@ -157,7 +160,10 @@ export function Tasks({
           </Select>
         )}
         <p className="text-sm text-muted">
-          {t('tasks.summary', { count: tasks.filter((x) => x.status !== 'done').length })}
+          {t('tasks.summary', {
+            count: tasks.filter((x) => x.status !== 'done' && (!fixedTeam || x.team === fixedTeam))
+              .length,
+          })}
         </p>
         <span className="flex-1" />
         {view === 'board' && canBreak && (

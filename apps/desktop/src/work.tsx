@@ -336,6 +336,7 @@ function TeamTab({
               error={tasksError}
               isAdmin={isAdmin}
               forceView="board"
+              fixedTeam={team.id}
             />
           </div>
         )}

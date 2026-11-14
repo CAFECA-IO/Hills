@@ -196,11 +196,17 @@ function TaskCard({
           </IconButton>
         )}
       </div>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex min-w-0 flex-wrap gap-1.5">
         {task.pendingAck && !concern && <Badge tone="primary">{t('assign.pending')}</Badge>}
         {concern && <Badge>{t('assign.concern')}</Badge>}
         {goal ? (
-          <Badge>{`${goal.period.split('-')[1] ?? ''} · ${goal.title}`}</Badge>
+          // 長的週目標名稱在卡片內截斷，完整名稱放在 title
+          <Badge className="max-w-full">
+            <span
+              className="min-w-0 truncate"
+              title={goal.title}
+            >{`${goal.period.split('-')[1] ?? ''} · ${goal.title}`}</span>
+          </Badge>
         ) : (
           task.pendingAck && <Badge>{t('assign.goalLater')}</Badge>
         )}

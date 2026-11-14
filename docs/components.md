@@ -1,6 +1,6 @@
 # Hills 通用元件
 
-> 版本：v0.13 · 2026-11-14 · 對應 [feature-plan.md](./feature-plan.md) v1.45（D45、D47、D56、D58、D63、D66）
+> 版本：v0.14 · 2026-11-14 · 對應 [feature-plan.md](./feature-plan.md) v1.46（D45、D47、D56、D58、D63、D66、D67）
 > 本文件定義 `apps/desktop/src/ui/` 的通用元件：用途、何時用、變體、狀態、鍵盤與無障礙、API。視覺基礎（token、字級、間距）見 [design-system.md](./design-system.md)。
 > 畫面只能組合這些元件（design-system §1、§11）。需要新元件或新變體時，**先改本文件，再改 `src/ui/`**，並補 `src/ui/ui.test.tsx`。
 
@@ -343,6 +343,8 @@ v0.13（D66）：外觀自繪（design-system §5.2）——原生 input 設 `ap
 | `label` | string |
 | `steps` | string[] |
 | `current` | number（0 起算） |
+| `vertical` | boolean：v0.14（D67）直排，用在引導流程的左欄；步驟之間不畫短線 |
+| `details` | (string \| undefined)[]：v0.14 直排時已完成步驟下方的一行（例如所選的期間） |
 
 ---
 

@@ -2,6 +2,8 @@
  * 左下角狀態選單（ui-spec「設定」狀態選單 v0.40：情境按鈕、精簡、回來時間跟著狀態、
  * 效果說明、倒數與自動回上線）與共用的狀態欄位；「設定 → 我是誰」也使用 `StatusFields`。
  */
+import { useTimer } from './today';
+import { hm } from './work-utils';
 import { useEffect, useId, useRef, useState, type RefObject } from 'react';
 import {
   api,
@@ -119,6 +121,16 @@ export function StatusMenu({
       }),
     );
   }, [me, now]);
+  // 計時中（D62，ui-spec「計時與預估時數」）：狀態下方顯示已計時，名稱與任務放進無障礙名稱
+  const { timer, now: tick } = useTimer();
+  const timing = timer?.current ? timer : null;
+  const timingText = timing ? hm((tick - timing.since) / 60_000) : null;
+  const timingTitle =
+    timing?.current && timing.current.kind !== 'meeting'
+      ? timing.current.title
+      : timing
+        ? t('time.meeting')
+        : null;
   const left = countdown(me.until, now, readSince(me.until));
   const ring = me.presence && me.presence !== 'Leave' && left ? left : null;
   const c = 2 * Math.PI * 27;
@@ -129,7 +141,16 @@ export function StatusMenu({
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((o) => !o)}
-        aria-label={t('status.menu.label', { state: stateLabel(me.presence) })}
+        aria-label={
+          timing
+            ? t('status.menu.timing', {
+                state: stateLabel(me.presence),
+                title: timingTitle ?? '',
+                time: timingText ?? '',
+              })
+            : t('status.menu.label', { state: stateLabel(me.presence) })
+        }
+        title={timing ? `${timingTitle} · ${timingText}` : undefined}
         className="flex w-16 flex-col items-center gap-1 rounded-control py-1.5 hover:bg-bg"
       >
         <span className="relative flex size-13 items-center justify-center">
@@ -155,7 +176,9 @@ export function StatusMenu({
           className={`max-w-full truncate text-2xs font-semibold ${statusTextClass[me.presence ?? 'Offline']}`}
         >
           {stateLabel(me.presence)}
-          {ring && ` · ${t('status.minutesLeft', { m: ring.minutes })}`}
+          {timingText
+            ? ` · ${timingText}`
+            : ring && ` · ${t('status.minutesLeft', { m: ring.minutes })}`}
         </span>
       </Pressable>
       {open && (

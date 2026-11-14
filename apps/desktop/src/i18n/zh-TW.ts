@@ -1308,6 +1308,7 @@ export const zhTW = {
   'team.online': '{online} 位在線',
   'team.leads': '負責人',
   'team.you': '（你）',
+  'status.menu.timing': '{state}，正在計時「{title}」{time}，開啟狀態選單',
   'status.menu.label': '我的狀態：{state}',
   'status.awayFor': '暫離 {m} 分鐘',
   'status.autoBack': '{state}結束，已回到上線',
@@ -1522,7 +1523,7 @@ export const zhTW = {
   'fpage.merged': '同一份檔案在不同地方分享只列一筆，出處依時間排列。',
   'fpage.back': '‹ 回到檔案',
   'fpage.jumped': '已前往檔案的出處',
-  'fpage.convFiles': '這段對話的檔案',
+  'fpage.convFilesN': '這段對話的檔案（{n}）',
   'goals.view.position': '我的位置',
   'goals.view.ogsm': 'OGSM',
   'ogsm.q1': '我們要往哪裡去？',
@@ -1640,7 +1641,8 @@ export const zhTW = {
   'hill.kind.unknown': '還沒有資料',
   'hill.kind.leave': '休假',
   'hill.you': '你',
-  'hill.openMember': '看他的方向',
+  'hill.hideChecks': '收起檢查',
+  'hill.openMember': '看四項檢查',
   'hill.message': '傳訊息',
   'hill.privacy':
     '小組成員都看得到這個畫面；私人目標與私人任務不列入。「方向歪了」與「往後退」只是提醒，點角色看原因。',
@@ -2026,6 +2028,8 @@ export const zhTW = {
   'fpage.seeAll': '看全部檔案',
   'fpage.clearFilters': '清除篩選',
   'fpage.noneInConv': '「{name}」這段對話還沒有分享檔案。',
+  'review.aside.time': '這一期花的時間',
+  'review.aside.minutes': '連上的任務共計時 {time}',
 } as const;
 
 export type MessageKey = keyof typeof zhTW;

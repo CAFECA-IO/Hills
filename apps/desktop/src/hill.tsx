@@ -3,7 +3,14 @@
  * technical-design §16.14 v0.34）。表格檢視是無障礙替代。
  */
 import { useState, type KeyboardEvent } from 'react';
-import type { DirectionRules, MemberDirection, MemberView, TeamGoal, TeamView } from './api';
+import {
+  api,
+  type DirectionRules,
+  type MemberDirection,
+  type MemberView,
+  type TeamGoal,
+  type TeamView,
+} from './api';
 import { Character } from './characters';
 import { quarterElapsed } from './drift-utils';
 import type { Periods } from './goals-utils';
@@ -22,7 +29,7 @@ import {
 } from './hill-utils';
 import { formatDate, t, type MessageKey } from './i18n';
 import { lookOf } from './summit';
-import { Button, Card, LinkButton, Switch } from './ui';
+import { Button, Card, ErrorText, LinkButton, Switch, useAction } from './ui';
 
 const MARK: Record<HillKind, string> = {
   onTrack: '●',
@@ -109,7 +116,6 @@ export function HillView({
   periods,
   meId,
   onMessage,
-  onOpenMember,
 }: {
   team: TeamView;
   /** 山頂：本季（或今年）的小組目標 */
@@ -118,7 +124,6 @@ export function HillView({
   periods: Periods;
   meId: string;
   onMessage: (member: string) => void;
-  onOpenMember?: (member: string) => void;
 }) {
   const [trails, setTrails] = useState(true);
   const [table, setTable] = useState(false);
@@ -177,27 +182,7 @@ export function HillView({
             ))}
           </ul>
         </Card>
-        {sel && (
-          <Card className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <strong>{sel.member.isMe ? t('hill.you') : sel.member.name}</strong>
-              <HillPill kind={sel.kind} />
-            </div>
-            <p className="text-sm">{reasonOf(sel)}</p>
-            <div className="flex flex-wrap gap-2">
-              {onOpenMember && (
-                <Button size="sm" variant="secondary" onClick={() => onOpenMember(sel.member.id)}>
-                  {t('hill.openMember')}
-                </Button>
-              )}
-              {!sel.member.isMe && (
-                <Button size="sm" variant="secondary" onClick={() => onMessage(sel.member.id)}>
-                  {t('hill.message')}
-                </Button>
-              )}
-            </div>
-          </Card>
-        )}
+        {sel && <WalkerCard key={sel.member.id} w={sel} goal={goal} onMessage={onMessage} />}
         <p className="mt-auto text-xs text-muted">{t('hill.privacy')}</p>
       </aside>
     </div>
@@ -457,5 +442,96 @@ function HillTable({ walkers }: { walkers: Walker[] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * 選取的角色卡（ui-spec「工作 › 小組 › 方向」A6）：原因、四項檢查（看他的方向）、
+ * 建議對齊到小組目標（目標沒對齊時；由對方決定要不要改）、傳訊息。
+ */
+function WalkerCard({
+  w,
+  goal,
+  onMessage,
+}: {
+  w: Walker;
+  goal: TeamGoal | null;
+  onMessage: (member: string) => void;
+}) {
+  const [checks, setChecks] = useState(false);
+  const [sent, setSent] = useState(false);
+  const { busy, error, attempt } = useAction();
+  const a = w.a;
+  const self = Boolean(w.member.isMe);
+  const target = a.week?.goals.find((g) => !g.alignedGoalId);
+  const rows: { ok: boolean; text: string }[] = [
+    {
+      ok: !a.unaligned,
+      text: a.unaligned ? t('drift.reason.unaligned') : t('drift.check.aligned'),
+    },
+    {
+      ok: !a.elsewhere,
+      text: a.elsewhere ? t('drift.reason.elsewhere') : t('drift.check.focused'),
+    },
+    { ok: !a.behind, text: a.behind ? t('drift.reason.behind') : t('drift.check.onPace') },
+    { ok: !a.stale, text: a.stale ? t('drift.reason.stale') : t('drift.check.fresh') },
+  ];
+  return (
+    <Card className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <strong>{self ? t('hill.you') : w.member.name}</strong>
+        <HillPill kind={w.kind} />
+      </div>
+      <p className="text-sm">{reasonOf(w)}</p>
+      {checks && (
+        <ul className="flex flex-col gap-1 border-t border-line pt-2 text-sm">
+          {rows.map((r) => (
+            <li key={r.text} className="flex items-center gap-2">
+              <span
+                aria-hidden="true"
+                className={`flex size-4.5 shrink-0 items-center justify-center rounded-full text-2xs font-bold text-surface ${r.ok ? 'bg-st-online' : 'bg-warning'}`}
+              >
+                {r.ok ? '✓' : '!'}
+              </span>
+              <span className={r.ok ? '' : 'font-semibold text-warning'}>{r.text}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="secondary"
+          aria-expanded={checks}
+          onClick={() => setChecks(!checks)}
+        >
+          {checks ? t('hill.hideChecks') : t('hill.openMember')}
+        </Button>
+        {!self && (
+          <Button size="sm" variant="secondary" onClick={() => onMessage(w.member.id)}>
+            {t('hill.message')}
+          </Button>
+        )}
+      </div>
+      {!self && a.unaligned && goal && target && (
+        <div className="flex flex-col gap-1 border-t border-line pt-2">
+          <Button
+            size="sm"
+            busy={busy}
+            disabled={sent}
+            onClick={async () => {
+              if (await attempt(() => api.suggestAlign(w.member.id, target.id, goal.id)))
+                setSent(true);
+            }}
+          >
+            {sent ? t('drift.suggest.sent') : t('drift.suggest', { title: goal.title })}
+          </Button>
+          <span className="text-xs text-muted">
+            {t('drift.suggest.hint', { name: w.member.name })}
+          </span>
+          <ErrorText message={error} />
+        </div>
+      )}
+    </Card>
   );
 }

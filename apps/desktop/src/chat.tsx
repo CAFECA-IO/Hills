@@ -321,6 +321,11 @@ function Conversation({
   highlight?: string | null;
 }) {
   const msgs = useLoad(() => api.messages(conv.id), ['message', 'doc', 'convs']);
+  // 「這段對話的檔案」旁的件數（ui-spec v0.47）
+  const files = useLoad(api.listFiles, ['message', 'doc', 'convs']);
+  const fileCount = (files.data ?? []).filter((f) =>
+    f.sources.some((x) => x.kind === 'message' && x.convId === conv.id),
+  ).length;
   const wide = useMediaQuery('(min-width: 1600px)');
   const [drawer, setDrawer] = useState<boolean | null>(drawerPref);
   const open = drawer ?? wide;
@@ -368,12 +373,14 @@ function Conversation({
         <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-2">
           <ConvHead conv={conv} me={me} members={members} nameOf={nameOf} offices={offices} />
           <span className="flex-1" />
-          <LinkButton
-            className="text-xs"
-            onClick={() => navigate({ page: 'files', conv: conv.id })}
-          >
-            {t('fpage.convFiles')}
-          </LinkButton>
+          {fileCount > 0 && (
+            <LinkButton
+              className="text-xs"
+              onClick={() => navigate({ page: 'files', conv: conv.id })}
+            >
+              {t('fpage.convFilesN', { n: fileCount })}
+            </LinkButton>
+          )}
           <Button
             variant="secondary"
             className="h-8 px-3 py-0 text-xs"

@@ -16,6 +16,7 @@ import { toInput } from './goals-editor';
 import {
   carryInput,
   firstDay,
+  lastDay,
   newPlanInput,
   parentChoices,
   periodOptions,
@@ -1164,6 +1165,7 @@ export function ReviewFlow({
   window: w,
   items,
   tasks,
+  me,
   onCancel,
   onDone,
   onPlanNext,
@@ -1181,6 +1183,13 @@ export function ReviewFlow({
   );
   const set = (p: Partial<ReviewDraft>) => setD((x) => ({ ...x, ...p }));
   const { busy, error, run } = useAction();
+  // 依據：這一期花在這個目標（連上的任務）的時間（D62 worklog）
+  const from = firstDay(w.level, w.period);
+  const to = lastDay(w.level, w.period);
+  const months: string[] = [];
+  for (let m = from.slice(0, 7); m <= to.slice(0, 7); m = shiftPeriod('month', m, 1))
+    months.push(m);
+  const worklog = useLoad(() => (me ? api.worklogDays(me, months) : Promise.resolve([])), ['doc']);
   const [finished, setFinished] = useState<ReturnType<typeof reviewCounts> | null>(null);
   const goals = list;
   const current = goals[d.index];
@@ -1316,6 +1325,22 @@ export function ReviewFlow({
                 ))}
               </ul>
             )}
+            <AsideHead>{t('review.aside.time')}</AsideHead>
+            <p className="text-sm">
+              {t('review.aside.minutes', {
+                time: hm(
+                  (worklog.data ?? [])
+                    .filter((dl) => dl.date >= from && dl.date <= to)
+                    .flatMap((dl) => dl.entries)
+                    .filter(
+                      (e) =>
+                        e.ref.kind === 'task' &&
+                        linked.some((x) => e.ref.kind === 'task' && x.id === e.ref.task),
+                    )
+                    .reduce((n, e) => n + e.minutes, 0),
+                ),
+              })}
+            </p>
             {current.parentId && items.find((p) => p.id === current.parentId) && (
               <>
                 <AsideHead>{t('review.aside.parent')}</AsideHead>

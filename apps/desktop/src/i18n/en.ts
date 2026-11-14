@@ -1349,6 +1349,7 @@ export const en: Record<MessageKey, string> = {
   'team.online': '{online} online',
   'team.leads': 'Leads',
   'team.you': ' (you)',
+  'status.menu.timing': '{state}, timing "{title}" {time}; open status menu',
   'status.menu.label': 'My status: {state}',
   'status.awayFor': 'Away {m} min',
   'status.autoBack': '{state} ended — you are back online',
@@ -1570,7 +1571,7 @@ export const en: Record<MessageKey, string> = {
     'The same file shared in several places is listed once; sources are in time order.',
   'fpage.back': '‹ Back to Files',
   'fpage.jumped': 'Opened where the file was shared',
-  'fpage.convFiles': 'Files in this conversation',
+  'fpage.convFilesN': 'Files in this conversation ({n})',
   'goals.view.position': 'My place',
   'goals.view.ogsm': 'OGSM',
   'ogsm.q1': 'Where are we going?',
@@ -1690,7 +1691,8 @@ export const en: Record<MessageKey, string> = {
   'hill.kind.unknown': 'No data yet',
   'hill.kind.leave': 'On leave',
   'hill.you': 'You',
-  'hill.openMember': 'See their direction',
+  'hill.hideChecks': 'Hide checks',
+  'hill.openMember': 'See the four checks',
   'hill.message': 'Message',
   'hill.privacy':
     'Everyone in the team sees this view; private goals and tasks are not included. “Off course” and “Walking back” are only nudges — pick a person to see why.',
@@ -2080,4 +2082,6 @@ export const en: Record<MessageKey, string> = {
   'fpage.seeAll': 'See all files',
   'fpage.clearFilters': 'Clear filters',
   'fpage.noneInConv': 'No files have been shared in "{name}" yet.',
+  'review.aside.time': 'Time spent this period',
+  'review.aside.minutes': '{time} tracked on linked tasks',
 };

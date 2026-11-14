@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.35 草案 · 2026-11-10 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.36 草案 · 2026-11-14 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -873,6 +873,8 @@ member/<id>/plans/{private | team/<teamId> | org} = {
     done: boolean,                 // 月 / 週
     progressOverride?: 0..100,
     keyResults: [ { id, title, start, target, current, unit, manual } ],   // 年 / 季，0–5 個
+    review?: { outcome: achieved|partial|missed|dropped, percent: 0..100,  // v0.36（D67）：回顧或調整的結果
+               note?: string, carriedTo?: planItemId, at },
     createdAt, updatedAt
   }
 }
@@ -884,12 +886,15 @@ member/<id>/plans/{private | team/<teamId> | org} = {
 - 改變可見度：在新文件寫入同一 id，再從舊文件刪除；同一 id 同時出現在兩份文件時取 `updatedAt` 較新者。
 - **v0.20（D47）**：`alignedGoalId` 只用於年 / 季，指向公司目標（org 文件 `direction:<id>`）或小組目標（`team-goals/<teamId>` 的 `goal:<id>`）；寫入時檢查目標存在。所指的方向或小組目標被刪除時，讀取端視為未對齊。取代原預留的 `alignedTeamGoalId`。`criteria`（每則 1–80 字）與 `helps` 只供引導式介面顯示，不參與進度彙總；`helps` 指向的標準不存在時略過。
 
+- **v0.36（D67）`review`**：期末回顧或「調整目標」寫入，只有本人可寫。`note` 0–200 字；`percent` 0–100；`carriedTo` 須為同一位擁有者的計劃項目（延到下一期時新建的那一個），寫入時檢查存在。寫入 `review` 時介面同時設定：`achieved` / `partial` / `missed` → `progressOverride = percent`（月 / 週另設 `done = true`）；`dropped`（不做了）→ 保留紀錄、`done = true`（月 / 週）。延到下一期：在下一期建立同層項目（同 `parentId`、`krRef`、可見度），原項目寫 `carriedTo`；未完成而連到原項目的任務可一併改連新項目（§16.8 `planItemId`）。回顧的 `note` 由本人的月報 / 季報帶入「差異原因」（kind = `other`，前綴目標名稱；§16.13）。MCP `list_goals` 回傳 `review`，不提供寫入工具。
+
 **進度彙總**（0–100，由投影層計算，不存入文件）：
 
 - 待辦（月 / 週）：子項目（月 → 週目標）與連結的任務（週目標，§16.8 任務進度）合併平均；都沒有時完成 = 100、未完成 = 0。
 - 關鍵結果：`manual` 為真 → `(current − start) / (target − start)`（限制在 0–100）；否則有以 `krRef` 連結的待辦 → 其平均；都沒有 → 以 `current` 計算。
 - 年 / 季目標：有關鍵結果 → 關鍵結果平均；否則子項目平均；都沒有 → 0。
 - `progressOverride` 優先於自動計算；讀者看不到的子項目與任務不列入計算。
+- **v0.36（D67）**：`review.outcome = dropped` 的子項目不列入上一層的平均（也不列入關鍵結果以 `krRef` 計算的平均）；它本身的進度仍顯示 `progressOverride`。
 
 ### 16.11 知識庫（v0.16，D42「星空」）
 

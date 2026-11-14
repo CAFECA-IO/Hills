@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { FileEntry, FileSource } from './api';
-import { DEFAULT_FILTER, badgeOf, expiryOf, filterFiles, scopeCounts, typeOf } from './files-utils';
+import {
+  DEFAULT_FILTER,
+  badgeOf,
+  expiryOf,
+  filterFiles,
+  isFiltered,
+  scopeCounts,
+  typeOf,
+} from './files-utils';
 
 const msg = (conv: string, author: string, excerpt = ''): FileSource => ({
   kind: 'message',
@@ -62,6 +70,11 @@ describe('files-utils', () => {
     expect(keys({ query: '季報' })).toEqual(['theirs']);
     expect(keys({ query: '範本' })).toEqual(['kb']);
     expect(scopeCounts(files, 'me')).toEqual({ all: 3, mine: 1, others: 2, downloaded: 1 });
+    // 其他篩選（例如只看某段對話）也套用到數字上，與清單一致
+    const none = scopeCounts(files, 'me', { ...DEFAULT_FILTER, conv: 'no-such-conv' });
+    expect(none).toEqual({ all: 0, mine: 0, others: 0, downloaded: 0 });
+    expect(isFiltered(DEFAULT_FILTER)).toBe(false);
+    expect(isFiltered({ ...DEFAULT_FILTER, conv: 'c' })).toBe(true);
   });
 
   it('warns 30 days before storage expiry', () => {

@@ -1480,9 +1480,9 @@ export const zhTW = {
   'fpage.scope.others': '別人分享給我的',
   'fpage.scope.downloaded': '已下載到這台電腦',
   'fpage.source': '出處',
-  'fpage.source.message': '💬 對話',
-  'fpage.source.taskReport': '☑ 任務結案報告',
-  'fpage.source.kb': '★ 知識庫',
+  'fpage.source.message': '對話',
+  'fpage.source.taskReport': '任務結案報告',
+  'fpage.source.kb': '知識庫',
   'fpage.type': '類型',
   'fpage.type.doc': '文件',
   'fpage.type.image': '圖片',
@@ -1516,7 +1516,6 @@ export const zhTW = {
   'fpage.src.report': '結案報告',
   'fpage.src.kb': '知識「{title}」',
   'fpage.src.kbSub': '知識庫',
-  'fpage.pick': '選一個檔案看出處',
   'fpage.keepUntil': '保留到 {date}',
   'fpage.sources': '出處 · {n} 處',
   'fpage.first': '第一次分享',
@@ -2021,6 +2020,12 @@ export const zhTW = {
   'roadmap.detail.breakdown': '拆到下一層',
   'roadmap.detail.adjust': '調整…',
   'review.o.dropped': '不做了',
+  'fpage.onlyConv': '只看「{name}」',
+  'fpage.convTitle': '「{name}」的檔案',
+  'fpage.showAllConvs': '所有對話',
+  'fpage.seeAll': '看全部檔案',
+  'fpage.clearFilters': '清除篩選',
+  'fpage.noneInConv': '「{name}」這段對話還沒有分享檔案。',
 } as const;
 
 export type MessageKey = keyof typeof zhTW;

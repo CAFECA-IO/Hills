@@ -110,14 +110,25 @@ export function filterFiles(files: FileEntry[], f: FileFilter, me: string): File
   });
 }
 
-/** 各範圍的數量（左欄）。 */
-export function scopeCounts(files: FileEntry[], me: string): Record<FileScope, number> {
-  return {
-    all: files.length,
-    mine: files.filter((x) => x.sharedBy === me).length,
-    others: files.filter((x) => x.sharedBy !== me).length,
-    downloaded: files.filter((x) => x.downloaded).length,
-  };
+/** 各範圍的數量（左欄）：套用目前範圍以外的篩選，與清單一致。 */
+export function scopeCounts(
+  files: FileEntry[],
+  me: string,
+  filter: FileFilter = DEFAULT_FILTER,
+): Record<FileScope, number> {
+  const n = (scope: FileScope) => filterFiles(files, { ...filter, scope }, me).length;
+  return { all: n('all'), mine: n('mine'), others: n('others'), downloaded: n('downloaded') };
+}
+
+/** 除了範圍與搜尋以外，是否有篩選（空狀態的「清除篩選」）。 */
+export function isFiltered(f: FileFilter): boolean {
+  return (
+    f.sources.length > 0 ||
+    f.types.length > 0 ||
+    f.sharer !== null ||
+    f.conv !== null ||
+    f.query.trim() !== ''
+  );
 }
 
 export type Expiry = { kind: 'ok' } | { kind: 'soon'; days: number } | { kind: 'expired' };

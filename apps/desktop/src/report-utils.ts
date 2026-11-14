@@ -517,6 +517,58 @@ export function toCsv(rows: (string | number)[][]): string {
   return rows.map((r) => r.map(cell).join(',')).join('\r\n') + '\r\n';
 }
 
+/** 本人範圍的明細列（不含表頭）：日期、項目、專案、分鐘、來源。 */
+export function worklogRows(
+  worklog: DayLog[],
+  days: string[],
+  project: (p: string) => string,
+  item: (title: string) => string,
+): (string | number)[][] {
+  const set = new Set(days);
+  const rows: (string | number)[][] = [];
+  for (const d of [...worklog].sort((a, b) => a.date.localeCompare(b.date))) {
+    if (!set.has(d.date)) continue;
+    for (const e of d.entries) {
+      const title = e.ref.kind === 'meeting' ? item('meeting') : e.ref.title;
+      rows.push([d.date, title, project(projectOfEntry(e)), e.minutes, e.source]);
+    }
+  }
+  return rows;
+}
+
+/** 小組 / 全公司範圍的明細列：專案、分鐘、比例。 */
+export function timeShareRows(
+  time: TimeRow[],
+  project: (p: string) => string,
+): (string | number)[][] {
+  const total = time.reduce((n, x) => n + x.minutes, 0);
+  return time.map((r) => [
+    project(r.project),
+    r.minutes,
+    `${total ? Math.round((r.minutes / total) * 100) : 0}%`,
+  ]);
+}
+
+/** 期間顯示用的數字（ui-spec v0.45）：日 / 週給起訖月日與星期，月 / 季 / 年給年與序號。 */
+export function periodParts(
+  kind: PeriodKind,
+  period: string,
+): { y: number; n: number; start: [number, number]; end: [number, number]; weekday: number } {
+  const days = periodDays(kind, period);
+  const [y0, m0, d0] = ymd(days[0]!);
+  const [, m1, d1] = ymd(days[days.length - 1]!);
+  const weekday = new Date(Date.UTC(y0, m0 - 1, d0)).getUTCDay();
+  let y = y0;
+  let n = 0;
+  if (kind === 'weekly') {
+    const [ys, ws] = period.split('-W');
+    y = Number(ys);
+    n = Number(ws);
+  } else if (kind === 'monthly') n = m0;
+  else if (kind === 'quarterly') n = Number(period.split('-Q')[1]);
+  return { y, n, start: [m0, d0], end: [m1, d1], weekday };
+}
+
 /** 本人範圍的 CSV 明細：日期、項目、專案、分鐘、來源。 */
 export function worklogCsv(
   worklog: DayLog[],
@@ -525,14 +577,5 @@ export function worklogCsv(
   project: (p: string) => string,
   item: (title: string) => string,
 ): string {
-  const set = new Set(days);
-  const rows: (string | number)[][] = [header];
-  for (const d of [...worklog].sort((a, b) => a.date.localeCompare(b.date))) {
-    if (!set.has(d.date)) continue;
-    for (const e of d.entries) {
-      const title = e.ref.kind === 'meeting' ? item('meeting') : e.ref.title;
-      rows.push([d.date, title, project(projectOfEntry(e)), e.minutes, e.source]);
-    }
-  }
-  return toCsv(rows);
+  return toCsv([header, ...worklogRows(worklog, days, project, item)]);
 }

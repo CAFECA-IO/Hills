@@ -7,6 +7,7 @@ import { GuidedGoals } from './goals-guided';
 import { GoalsRoadmap, type GoalsProps } from './goals-roadmap';
 import { t } from './i18n';
 import { OgsmPage, OgsmPosition } from './ogsm';
+import { ExportButton } from './report-export';
 import { SegmentedControl } from './ui';
 
 const VIEW_KEY = 'hills.goals.view';
@@ -46,7 +47,18 @@ export function Goals({ noAutoWeekly, scope, ...props }: GoalsPageProps) {
     setViewState(v);
     writeView(v);
   };
-  const toggle = (
+  // 目標頁的匯出帶入月報（ui-spec v0.45）
+  const exportButton = (
+    <ExportButton
+      label={t('exp.open')}
+      initialKind="monthly"
+      members={props.members}
+      teams={props.teams}
+      tasks={props.tasks}
+      timezone={props.timezone}
+    />
+  );
+  const segmented = (
     <SegmentedControl
       label={t('goals.view.label')}
       options={[
@@ -57,6 +69,12 @@ export function Goals({ noAutoWeekly, scope, ...props }: GoalsPageProps) {
       value={view}
       onChange={setView}
     />
+  );
+  const toggle = (
+    <span className="flex items-center gap-2">
+      {view !== 'ogsm' && exportButton}
+      {segmented}
+    </span>
   );
   if (scope !== 'team' && view === 'timeline')
     return <GoalsRoadmap {...props} headExtra={toggle} />;

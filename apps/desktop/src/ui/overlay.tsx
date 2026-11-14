@@ -15,8 +15,13 @@ import {
 import { t } from '../i18n';
 import { Button, IconButton } from './button';
 
-export type DialogWidth = 'sm' | 'md' | 'lg';
-const WIDTH: Record<DialogWidth, string> = { sm: 'w-120', md: 'w-140', lg: 'w-150' };
+export type DialogWidth = 'sm' | 'md' | 'lg' | 'xl';
+const WIDTH: Record<DialogWidth, string> = {
+  sm: 'w-120',
+  md: 'w-140',
+  lg: 'w-150',
+  xl: 'w-240',
+};
 
 /** 把焦點移到容器內（若焦點不在裡面），讓 Esc 與 Tab 在浮層內作用。 */
 function useFocusInside(ref: RefObject<HTMLElement | null>) {

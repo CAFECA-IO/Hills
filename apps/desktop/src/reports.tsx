@@ -18,7 +18,7 @@ import { formatTime, t, type MessageKey } from './i18n';
 import { PageHead } from './layout';
 import { printMarkdown } from './print';
 import { useMyReport } from './report-data';
-import { ExportDialog } from './report-export';
+import { ExportButton } from './report-export';
 import { SixSections } from './report-view';
 import {
   carryCandidates,
@@ -84,7 +84,6 @@ export function Reports({ members, teams, tasks, timezone }: Props) {
   const [team, setTeam] = useState<string | null>(null);
   const teamId = team ?? myTeams[0]?.id ?? '';
   const nameOf = (id: string) => members.find((m) => m.id === id)?.name ?? id;
-  const [exporting, setExporting] = useState(false);
   return (
     <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_340px] gap-3 wide:grid-cols-[minmax(0,1fr)_420px] wide:gap-4">
       <PageHead
@@ -123,18 +122,9 @@ export function Reports({ members, teams, tasks, timezone }: Props) {
         myTeams={myTeams}
         tasks={tasks}
         timezone={timezone}
-        onExport={() => setExporting(true)}
+        members={members}
+        teams={teams}
       />
-      {exporting && (
-        <ExportDialog
-          initialKind="weekly"
-          members={members}
-          teams={teams}
-          tasks={tasks}
-          timezone={timezone}
-          onClose={() => setExporting(false)}
-        />
-      )}
       <TeamReports
         teams={myTeams}
         teamId={teamId}
@@ -155,7 +145,8 @@ function MyReport({
   myTeams,
   tasks,
   timezone,
-  onExport,
+  members,
+  teams,
 }: {
   kind: ReportKind;
   period: string;
@@ -163,7 +154,8 @@ function MyReport({
   myTeams: TeamView[];
   tasks: Task[];
   timezone: string;
-  onExport: () => void;
+  members: MemberView[];
+  teams: TeamView[];
 }) {
   const mine = useLoad(() => api.reportMine(kind, period), ['doc', 'org']);
   const plans = useLoad(() => api.plans(true), ['doc']);
@@ -284,9 +276,17 @@ function MyReport({
             {t('report.regen')}
           </Button>
         )}
-        <Button size="sm" variant="secondary" onClick={onExport}>
-          {t('exp.open')}
-        </Button>
+        {/* 匯出用畫面上的週報（含尚未發佈的修改與延到下期件數，ui-spec v0.45） */}
+        <ExportButton
+          label={t('exp.open')}
+          initialKind="weekly"
+          initialPeriod={period}
+          initialData={withSections(data).data ?? undefined}
+          members={members}
+          teams={teams}
+          tasks={tasks}
+          timezone={timezone}
+        />
       </div>
       <SixSections data={data} goals={goals} onChange={(d) => set({ data: d })} />
       {!published && candidates.length > 0 && (

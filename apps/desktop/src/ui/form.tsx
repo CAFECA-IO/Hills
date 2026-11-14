@@ -113,22 +113,53 @@ export const Select = forwardRef<
   );
 });
 
-/** 核取方塊；有 `label` 時整列可點。 */
+/**
+ * 自繪的勾選框外觀（design-system §5.2，D66）：原生 input `appearance-none` 疊在上面，
+ * 鍵盤、表單與螢幕閱讀器行為不變；勾勾與橫線用 `peer-checked` / `peer-indeterminate` 顯示。
+ */
+const BOX_INPUT = `peer absolute inset-0 m-0 cursor-pointer appearance-none rounded border border-line bg-surface transition-colors duration-(--hills-motion) hover:border-primary checked:border-primary checked:bg-primary indeterminate:border-primary indeterminate:bg-primary disabled:cursor-not-allowed disabled:border-line disabled:bg-bg disabled:checked:bg-muted disabled:checked:border-muted ${FOCUS_RING}`;
+
+/** 核取方塊；有 `label` 時整列可點。`indeterminate` 顯示橫線（部分選取）。 */
 export const Checkbox = forwardRef<
   HTMLInputElement,
-  Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'size'> & { label?: ReactNode }
->(function Checkbox({ label, className = '', ...rest }, ref) {
+  Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'size'> & {
+    label?: ReactNode;
+    indeterminate?: boolean;
+  }
+>(function Checkbox({ label, className = '', indeterminate = false, ...rest }, ref) {
+  const setRef = (el: HTMLInputElement | null) => {
+    if (el) el.indeterminate = indeterminate;
+    if (typeof ref === 'function') ref(el);
+    else if (ref) ref.current = el;
+  };
   const box = (
-    <input
-      ref={ref}
-      type="checkbox"
-      className={`size-4 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${label ? '' : className}`}
-      {...rest}
-    />
+    <span className={`relative inline-flex size-4.5 shrink-0 ${label ? '' : className}`}>
+      <input ref={setRef} type="checkbox" className={BOX_INPUT} {...rest} />
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 18 18"
+        className="pointer-events-none relative size-4.5 text-on-primary opacity-0 transition-opacity duration-(--hills-motion) peer-checked:opacity-100 peer-indeterminate:opacity-0"
+      >
+        <path
+          d="M4.5 9.2l3 3 6-6.4"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute top-1/2 left-1/2 h-0.5 w-2.5 -translate-1/2 rounded-full bg-on-primary opacity-0 peer-indeterminate:opacity-100"
+      />
+    </span>
   );
   if (!label) return box;
   return (
-    <label className={`inline-flex cursor-pointer items-center gap-2 text-sm ${className}`}>
+    <label
+      className={`inline-flex cursor-pointer items-center gap-2 text-sm has-disabled:cursor-not-allowed has-disabled:text-muted ${className}`}
+    >
       {box}
       <span className="min-w-0">{label}</span>
     </label>
@@ -218,22 +249,30 @@ export function Field(props: FieldProps) {
   );
 }
 
-/** 單選按鈕；同一組用相同 `name`。有 `label` 時整列可點。 */
+/** 單選按鈕；同一組用相同 `name`。有 `label` 時整列可點（外觀自繪，design-system §5.2）。 */
 export const Radio = forwardRef<
   HTMLInputElement,
   Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'size'> & { label?: ReactNode }
 >(function Radio({ label, className = '', ...rest }, ref) {
   const dot = (
-    <input
-      ref={ref}
-      type="radio"
-      className={`size-4 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${label ? '' : className}`}
-      {...rest}
-    />
+    <span className={`relative inline-flex size-4.5 shrink-0 ${label ? '' : className}`}>
+      <input
+        ref={ref}
+        type="radio"
+        className={`peer absolute inset-0 m-0 cursor-pointer appearance-none rounded-full border border-line bg-surface transition-colors duration-(--hills-motion) hover:border-primary checked:border-2 checked:border-primary disabled:cursor-not-allowed disabled:bg-bg disabled:checked:border-muted ${FOCUS_RING}`}
+        {...rest}
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute top-1/2 left-1/2 size-2 -translate-1/2 rounded-full bg-primary opacity-0 transition-opacity duration-(--hills-motion) peer-checked:opacity-100 peer-disabled:bg-muted"
+      />
+    </span>
   );
   if (!label) return dot;
   return (
-    <label className={`inline-flex cursor-pointer items-center gap-2 text-sm ${className}`}>
+    <label
+      className={`inline-flex cursor-pointer items-center gap-2 text-sm has-disabled:cursor-not-allowed has-disabled:text-muted ${className}`}
+    >
       {dot}
       <span className="min-w-0">{label}</span>
     </label>

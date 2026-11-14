@@ -349,6 +349,7 @@
   --text-2xs--line-height: 1rem;
   --font-sans: 'Inter', 'Noto Sans TC', system-ui, -apple-system, 'Segoe UI', sans-serif;
   /* 版面（D43，ui-spec「版面」）：≥ 1600 寬放大欄寬與間距 */
+  --breakpoint-preview: 1440px;
   --breakpoint-wide: 1600px;
 }
 

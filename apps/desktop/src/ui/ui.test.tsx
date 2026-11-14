@@ -13,6 +13,9 @@ import {
   SwatchGroup,
   Checkbox,
   ChoiceCard,
+  OptionTile,
+  Radio,
+  ToggleChip,
   ConfirmDialog,
   Chip,
   Dialog,
@@ -221,8 +224,45 @@ describe('ui 元件（docs/components.md）', () => {
 
   it('Checkbox 有 label 時以 label 包住', () => {
     const h = html(<Checkbox label="同意" checked={false} onChange={noop} />);
-    expect(h).toMatch(/^<label[^>]*><input[^>]*type="checkbox"/);
+    expect(h).toMatch(/^<label[^>]*><span[^>]*><input[^>]*type="checkbox"/);
     expect(h).toContain('同意');
+  });
+
+  it('Checkbox / Radio 自繪外觀仍是原生 input（D66）', () => {
+    const c = html(<Checkbox aria-label="選" checked onChange={noop} />);
+    expect(c).toMatch(/<input[^>]*type="checkbox"[^>]*appearance-none/);
+    expect(c).toContain('aria-hidden="true"');
+    const r = html(<Radio name="g" label="A" checked onChange={noop} />);
+    expect(r).toMatch(/<input[^>]*type="radio"[^>]*name="g"/);
+  });
+
+  it('ToggleChip 是 role=checkbox，選取時有 ✓', () => {
+    const on = html(
+      <ToggleChip checked onChange={noop}>
+        摘要
+      </ToggleChip>,
+    );
+    expect(on).toMatch(/role="checkbox" aria-checked="true"/);
+    expect(on).toContain('<svg');
+    const off = html(
+      <ToggleChip checked={false} disabled title="原因" onChange={noop}>
+        摘要
+      </ToggleChip>,
+    );
+    expect(off).toMatch(/aria-checked="false" disabled="" title="原因"/);
+  });
+
+  it('OptionTile 是 radiogroup，只有選取的卡可 Tab 聚焦；停用的卡不可選', () => {
+    const opts = [
+      { value: 'a', title: 'A', description: '說明' },
+      { value: 'b', title: 'B' },
+      { value: 'c', title: 'C', disabled: true },
+    ];
+    const h = html(<OptionTile label="格式" options={opts} value="b" onChange={noop} />);
+    expect(h).toContain('role="radiogroup"');
+    expect(h).toContain('grid-cols-3');
+    expect(h).toMatch(/aria-checked="true" data-value="b" tabindex="0"/);
+    expect(h).toMatch(/data-value="c" disabled="" tabindex="-1"/);
   });
 
   it('Dialog 是 aria-modal 的對話框，onSubmit 時為 form', () => {

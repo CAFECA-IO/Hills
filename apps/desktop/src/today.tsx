@@ -2,6 +2,7 @@
  * 工作 › 今天（ui-spec「工作 › 今天」v0.42，D59、D60、D62）：今天要做的任務（主動作、回報進度、
  * 卡住了、開始做計時）與每日任務卡、昨天的時間。
  */
+import { ExportButton } from './report-export';
 import { useEffect, useMemo, useState } from 'react';
 import {
   api,
@@ -126,6 +127,16 @@ export function Today({ tasks, members, teams, focusId, timezone, onAllTasks, on
           focusId={focusId}
           timezone={timezone}
           me={me}
+          headExtra={
+            <ExportButton
+              label={t('exp.go.daily')}
+              initialKind="daily"
+              members={members}
+              teams={teams}
+              tasks={tasks}
+              timezone={timezone}
+            />
+          }
         />
         <YesterdayTime me={me} tasks={tasks} timezone={timezone} today={today} />
         <LinkButton className="self-start text-sm" onClick={onTeam}>

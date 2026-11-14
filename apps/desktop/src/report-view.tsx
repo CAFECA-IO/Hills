@@ -8,7 +8,9 @@ import {
   hours,
   NONTASK,
   OTHER,
+  periodParts,
   type MdText,
+  type PeriodKind,
   type ReasonText,
   type SectionKey,
   type SummaryText,
@@ -44,7 +46,10 @@ export const reasonText = (): ReasonText => ({
 export const summaryText = (team = false): SummaryText => ({
   empty: t('rep.s.empty'),
   top: (title, h, share, mine) =>
-    team ? t('rep.s.topTeam', { title, h, share }) : t('rep.s.top', { title, h, share, mine }),
+    // 小組範圍或沒推進時不寫「我推進了 0 個百分點」
+    team || Number(mine) === 0
+      ? t('rep.s.topTeam', { title, h, share })
+      : t('rep.s.top', { title, h, share, mine }),
   rest: (other, unplanned, nontask) => t('rep.s.rest', { other, unplanned, nontask }),
   tasks: (done, planned) => t('rep.s.tasks', { done, planned }),
   deviation: (pct) => t('rep.s.deviation', { pct }),
@@ -52,6 +57,28 @@ export const summaryText = (team = false): SummaryText => ({
   end: t('rep.s.end'),
   reasonName,
 });
+
+/** 期間的顯示寫法（ui-spec v0.45）：日「11/14（六）」、週「11/09 – 11/15 · W46」、月「2026 年 11 月」…。 */
+export function periodLabel(kind: PeriodKind, period: string): string {
+  const p = periodParts(kind, period);
+  const md = ([m, d]: [number, number]) =>
+    `${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}`;
+  switch (kind) {
+    case 'daily':
+      return t('period.day', {
+        md: md(p.start),
+        wd: t(`scrum.weekday.${p.weekday}` as MessageKey),
+      });
+    case 'weekly':
+      return t('period.week', { a: md(p.start), b: md(p.end), w: p.n });
+    case 'monthly':
+      return t('period.month', { y: p.y, m: p.n });
+    case 'quarterly':
+      return t('period.quarter', { y: p.y, q: p.n });
+    case 'yearly':
+      return String(p.y);
+  }
+}
 
 export const mdText = (goals: TeamGoal[]): MdText => ({
   section: (k) => t(`rep.sec.${k}` as MessageKey),
@@ -72,10 +99,13 @@ export function SixSections({
   goals,
   sections,
   onChange,
+  team = false,
 }: {
   data: ReportData;
   goals: TeamGoal[];
   sections?: SectionKey[];
+  /** 小組 / 全公司範圍（欄名改為成員推進合計） */
+  team?: boolean;
   /** 有值時可編輯（摘要、原因、做了什麼與下期） */
   onChange?: (d: ReportData) => void;
 }) {
@@ -160,9 +190,13 @@ export function SixSections({
               <thead>
                 <tr className="border-b border-line text-left text-muted">
                   <th className="py-1 pr-2 font-semibold">{t('rep.col.project')}</th>
-                  <th className="py-1 pr-2 font-semibold">{t('rep.col.myTime')}</th>
+                  <th className="py-1 pr-2 font-semibold">
+                    {t(team ? 'rep.col.teamTime' : 'rep.col.myTime')}
+                  </th>
                   <th className="py-1 pr-2 font-semibold">{t('rep.col.progress')}</th>
-                  <th className="py-1 font-semibold">{t('rep.col.mine')}</th>
+                  <th className="py-1 font-semibold">
+                    {t(team ? 'rep.col.teamMine' : 'rep.col.mine')}
+                  </th>
                 </tr>
               </thead>
               <tbody>

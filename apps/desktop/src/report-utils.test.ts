@@ -8,6 +8,8 @@ import {
   mergeReports,
   periodDays,
   periodOfDay,
+  periodParts,
+  timeShareRows,
   planOf,
   reportMarkdown,
   shiftKindPeriod,
@@ -239,5 +241,34 @@ describe('export', () => {
     expect(hours(90)).toBe('1.5');
     expect(hours(120)).toBe('2');
     expect(hours(5)).toBe('0.1');
+  });
+});
+
+describe('periodParts', () => {
+  it('gives numbers for each kind', () => {
+    expect(periodParts('daily', '2026-11-14')).toMatchObject({ start: [11, 14], weekday: 6 });
+    expect(periodParts('weekly', '2026-W46')).toMatchObject({
+      y: 2026,
+      n: 46,
+      start: [11, 9],
+      end: [11, 15],
+    });
+    expect(periodParts('monthly', '2026-02')).toMatchObject({ y: 2026, n: 2, end: [2, 28] });
+    expect(periodParts('quarterly', '2026-Q4')).toMatchObject({ y: 2026, n: 4 });
+    expect(periodParts('yearly', '2026')).toMatchObject({ y: 2026, n: 0 });
+  });
+  it('lists project share rows', () => {
+    expect(
+      timeShareRows(
+        [
+          { project: 'a', minutes: 30 },
+          { project: 'b', minutes: 90 },
+        ],
+        (p) => p.toUpperCase(),
+      ),
+    ).toEqual([
+      ['A', 30, '25%'],
+      ['B', 90, '75%'],
+    ]);
   });
 });

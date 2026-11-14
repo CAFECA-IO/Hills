@@ -132,9 +132,12 @@ export function MyScrum({
   focusId,
   timezone,
   me,
+  headExtra,
 }: {
   date: string;
   editable: boolean;
+  /** 標題列右側（今天 › 「匯出日報」，ui-spec v0.45） */
+  headExtra?: ReactNode;
   members: MemberView[];
   tasks: Task[];
   focusId: string | null;
@@ -216,11 +219,14 @@ export function MyScrum({
     <Card className="scroll-panel flex min-h-0 flex-col gap-4">
       <div className="flex items-center justify-between">
         <h2 className="font-bold">{t('scrum.mine')}</h2>
-        {submitted && (
-          <span className="text-xs text-muted">
-            {t('scrum.submittedAt', { time: formatTime(submitted.updatedAt) })}
-          </span>
-        )}
+        <span className="flex items-center gap-2">
+          {submitted && (
+            <span className="text-xs text-muted">
+              {t('scrum.submittedAt', { time: formatTime(submitted.updatedAt) })}
+            </span>
+          )}
+          {headExtra}
+        </span>
       </div>
       <RefSection
         title={t('scrum.done')}

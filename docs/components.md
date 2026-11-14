@@ -146,6 +146,8 @@ v0.13（D66）：外觀自繪（design-system §5.2）——原生 input 設 `ap
 | `value`、`onChange` | 受控 |
 | `columns` | number | 預設依選項數自動（最多 3 欄） |
 
+沒有說明的卡改為圖示在上、名稱在下置中（窄欄的三選一，例如雙欄匯出對話框的格式；此時把選取項的說明放在群組下方）。
+
 每張卡是 `role="radio"`、`aria-checked`；只有選取的卡可 Tab 聚焦，← → ↑ ↓ 移動並選取（略過停用的卡），Space 選取。
 
 ### Slider

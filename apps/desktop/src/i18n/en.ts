@@ -2084,4 +2084,12 @@ export const en: Record<MessageKey, string> = {
   'fpage.noneInConv': 'No files have been shared in "{name}" yet.',
   'review.aside.time': 'Time spent this period',
   'review.aside.minutes': '{time} tracked on linked tasks',
+  'hill.returned': 'See returned feedback',
+  'hill.hideReturned': 'Hide returned feedback',
+  'hill.noReturned': 'Nothing returned in the last two weeks',
+  'hill.returnedBy': 'Returned by {name} · {date}',
+  'hill.knock': 'Knock',
+  'hill.knockHint': 'They are busy; your message will notify them after {time}',
+  'timer.idle.ask': 'You were away for {n} minutes. Count that time?',
+  'timer.idle.count': 'Count it',
 };

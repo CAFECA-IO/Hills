@@ -1282,6 +1282,8 @@ export const api = {
     call<void>('save_upload_jobs', { jobs }),
   uploadJobs: () => call<StoredUploadJob[]>('upload_jobs'),
   appVersion: () => call<{ version: string; commit: string }>('app_version'),
+  /** 系統閒置秒數；不支援的平台為 null（ui-spec v0.48） */
+  idleSeconds: () => call<number | null>('idle_seconds'),
   syncStatus: () => call<SyncStatus | null>('sync_status'),
   syncNow: () => call<void>('sync_now'),
   orgCode: () => call<Code>('org_code'),

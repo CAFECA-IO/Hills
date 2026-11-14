@@ -1819,6 +1819,7 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     });
     touch();
   },
+  idle_seconds: () => null,
   timer_state: () => timer,
   timer_segments: (a) => segments.filter((x) => x.end > Number(a.from) && x.start < Number(a.to)),
   timer_start: (a) => {

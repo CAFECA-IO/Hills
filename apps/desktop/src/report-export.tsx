@@ -187,7 +187,9 @@ export function ExportDialog({
   const current = periodOfDay(kind, today);
   const [period, setPeriod] = useState(initialPeriod ?? current);
   const leadOf = teams.filter((x) => x.leads.includes(meId));
-  const [scope, setScope] = useState(initialScope === 'org' && !isAdmin ? 'me' : initialScope);
+  const [scope, setScope] = useState(
+    (initialScope === 'org' && !isAdmin) || initialKind === 'daily' ? 'me' : initialScope,
+  );
   const [sections, setSections] = useState<SectionKey[]>(SECTION_KEYS);
   const [perPerson, setPerPerson] = useState(false);
   const [format, setFormat] = useState<Format>('pdf');
@@ -279,7 +281,8 @@ export function ExportDialog({
       description: t('exp.scope.me.desc'),
       icon: ICON.me,
     },
-    ...leadOf.map((x) => ({
+    // 日報只有「我自己」：小組與全公司只彙總已發佈的週報（ui-spec v0.48）
+    ...(kind === 'daily' ? [] : leadOf).map((x) => ({
       value: x.id,
       title: x.name,
       description: t('exp.scope.team.desc', {
@@ -287,7 +290,7 @@ export function ExportDialog({
       }),
       icon: ICON.team,
     })),
-    ...(isAdmin
+    ...(isAdmin && kind !== 'daily'
       ? [
           {
             value: 'org',
@@ -319,6 +322,10 @@ export function ExportDialog({
           onChange={(k) => {
             setKind(k);
             setPeriod(periodOfDay(k, today));
+            if (k === 'daily') {
+              setScope('me');
+              setPerPerson(false);
+            }
             reset();
           }}
         />

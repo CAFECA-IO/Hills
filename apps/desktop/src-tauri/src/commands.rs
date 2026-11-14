@@ -313,6 +313,19 @@ macro_rules! with_node {
     }};
 }
 
+/// 系統閒置秒數（計時的閒置 15 分鐘，ui-spec v0.48）。只支援 macOS / Windows，其他平台回傳 `None`。
+#[tauri::command]
+pub fn idle_seconds() -> Option<u64> {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        user_idle::UserIdle::get_time().ok().map(|t| t.as_seconds())
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        None
+    }
+}
+
 #[tauri::command]
 pub fn app_version() -> AppVersion {
     AppVersion {

@@ -2,6 +2,7 @@
  * 左下角狀態選單（ui-spec「設定」狀態選單 v0.40：情境按鈕、精簡、回來時間跟著狀態、
  * 效果說明、倒數與自動回上線）與共用的狀態欄位；「設定 → 我是誰」也使用 `StatusFields`。
  */
+import { idleStep } from './idle-utils';
 import { useTimer } from './today';
 import { hm } from './work-utils';
 import { useEffect, useId, useRef, useState, type RefObject } from 'react';
@@ -12,6 +13,7 @@ import {
   type OfficeView,
   type Overview,
   type PresenceState,
+  type WorkRef,
 } from './api';
 import { Avatar, StatusBadge, stateLabel, statusTextClass } from './figures';
 import { formatClock, formatDate, t, type MessageKey } from './i18n';
@@ -122,7 +124,32 @@ export function StatusMenu({
     );
   }, [me, now]);
   // 計時中（D62，ui-spec「計時與預估時數」）：狀態下方顯示已計時，名稱與任務放進無障礙名稱
-  const { timer, now: tick } = useTimer();
+  const { timer, now: tick, reload: reloadTimer } = useTimer();
+  // 閒置 15 分鐘（ui-spec v0.48）：計時中每 30 秒查系統閒置時間
+  const [idle, setIdle] = useState<{ since: number; work: WorkRef } | null>(null);
+  const [idleAsk, setIdleAsk] = useState<{ since: number; work: WorkRef; minutes: number } | null>(
+    null,
+  );
+  const running = Boolean(timer?.current);
+  useEffect(() => {
+    if (!running && !idle) return;
+    const check = async () => {
+      const secs = await api.idleSeconds().catch(() => null);
+      const at = Date.now();
+      const step = idleStep({ running, idleSince: idle?.since ?? null }, secs, at);
+      if (step?.kind === 'pause' && timer?.current) {
+        const work = timer.current;
+        await api.timerStop(step.at, true).catch(() => undefined);
+        setIdle({ since: step.at, work });
+        reloadTimer();
+      } else if (step?.kind === 'ask' && idle) {
+        setIdleAsk({ ...idle, minutes: step.minutes });
+        setIdle(null);
+      }
+    };
+    const id = setInterval(() => void check(), 30_000);
+    return () => clearInterval(id);
+  }, [running, idle, timer, reloadTimer]);
   const timing = timer?.current ? timer : null;
   const timingText = timing ? hm((tick - timing.since) / 60_000) : null;
   const timingTitle =
@@ -196,6 +223,20 @@ export function StatusMenu({
             setOpen(false);
             onOpenLook();
           }}
+        />
+      )}
+      {idleAsk && (
+        <Toast
+          key={idleAsk.since}
+          message={t('timer.idle.ask', { n: idleAsk.minutes })}
+          action={{
+            label: t('timer.idle.count'),
+            onClick: () => {
+              void api.timerStart(idleAsk.work, 'idle', idleAsk.since).then(reloadTimer);
+              setIdleAsk(null);
+            },
+          }}
+          onClose={() => setIdleAsk(null)}
         />
       )}
       {toast && (

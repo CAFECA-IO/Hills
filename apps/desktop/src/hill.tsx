@@ -8,6 +8,9 @@ import {
   type DirectionRules,
   type MemberDirection,
   type MemberView,
+  type PresenceState,
+  type Task,
+  type TaskLog,
   type TeamGoal,
   type TeamView,
 } from './api';
@@ -27,7 +30,7 @@ import {
   type HillKind,
   type Walker,
 } from './hill-utils';
-import { formatDate, t, type MessageKey } from './i18n';
+import { formatClock, formatDate, t, type MessageKey } from './i18n';
 import { lookOf } from './summit';
 import { Button, Card, ErrorText, LinkButton, Switch, useAction } from './ui';
 
@@ -116,6 +119,8 @@ export function HillView({
   periods,
   meId,
   onMessage,
+  tasks = [],
+  nameOf = (id: string) => id,
 }: {
   team: TeamView;
   /** 山頂：本季（或今年）的小組目標 */
@@ -124,6 +129,9 @@ export function HillView({
   periods: Periods;
   meId: string;
   onMessage: (member: string) => void;
+  /** 退回意見用：小組的任務 */
+  tasks?: Task[];
+  nameOf?: (id: string) => string;
 }) {
   const [trails, setTrails] = useState(true);
   const [table, setTable] = useState(false);
@@ -182,7 +190,16 @@ export function HillView({
             ))}
           </ul>
         </Card>
-        {sel && <WalkerCard key={sel.member.id} w={sel} goal={goal} onMessage={onMessage} />}
+        {sel && (
+          <WalkerCard
+            key={sel.member.id}
+            w={sel}
+            goal={goal}
+            onMessage={onMessage}
+            tasks={tasks}
+            nameOf={nameOf}
+          />
+        )}
         <p className="mt-auto text-xs text-muted">{t('hill.privacy')}</p>
       </aside>
     </div>
@@ -449,16 +466,53 @@ function HillTable({ walkers }: { walkers: Walker[] }) {
  * 選取的角色卡（ui-spec「工作 › 小組 › 方向」A6）：原因、四項檢查（看他的方向）、
  * 建議對齊到小組目標（目標沒對齊時；由對方決定要不要改）、傳訊息。
  */
+const KNOCK: PresenceState[] = ['Meeting', 'Lunch', 'Focus'];
+const RETURNED_DAYS = 14;
+
 function WalkerCard({
   w,
   goal,
   onMessage,
+  tasks,
+  nameOf,
 }: {
   w: Walker;
   goal: TeamGoal | null;
   onMessage: (member: string) => void;
+  tasks: Task[];
+  nameOf: (id: string) => string;
 }) {
   const [checks, setChecks] = useState(false);
+  const [returned, setReturned] = useState<{ title: string; log: TaskLog }[] | null>(null);
+  const [now] = useState(() => Date.now());
+  const knock =
+    w.member.presence &&
+    KNOCK.includes(w.member.presence) &&
+    w.member.until !== null &&
+    w.member.until > now;
+  // 看退回意見：他負責、近 14 天更新過的任務（前 10 件），讀取紀錄中的退回（ui-spec v0.48）
+  const loadReturned = async () => {
+    const since = now - RETURNED_DAYS * 86_400_000;
+    const mine = tasks
+      .filter((x) => x.assignee === w.member.id && x.updatedAt >= since)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 10);
+    const lists = await Promise.all(
+      mine.map((x) =>
+        api
+          .taskLogs(x.team, x.id)
+          .then((logs) => logs.map((log) => ({ title: x.title, log })))
+          .catch(() => []),
+      ),
+    );
+    setReturned(
+      lists
+        .flat()
+        .filter((r) => r.log.kind === 'reopen' && r.log.at >= since && r.log.author !== w.member.id)
+        .sort((a, b) => b.log.at - a.log.at)
+        .slice(0, 3),
+    );
+  };
   const [sent, setSent] = useState(false);
   const { busy, error, attempt } = useAction();
   const a = w.a;
@@ -508,11 +562,43 @@ function WalkerCard({
           {checks ? t('hill.hideChecks') : t('hill.openMember')}
         </Button>
         {!self && (
+          <Button
+            size="sm"
+            variant="secondary"
+            aria-expanded={returned !== null}
+            onClick={() => (returned ? setReturned(null) : void loadReturned())}
+          >
+            {returned ? t('hill.hideReturned') : t('hill.returned')}
+          </Button>
+        )}
+        {!self && (
           <Button size="sm" variant="secondary" onClick={() => onMessage(w.member.id)}>
-            {t('hill.message')}
+            {knock ? t('hill.knock') : t('hill.message')}
           </Button>
         )}
       </div>
+      {knock && w.member.until && (
+        <span className="text-xs text-muted">
+          {t('hill.knockHint', { time: formatClock(w.member.until) })}
+        </span>
+      )}
+      {returned && (
+        <ul className="flex flex-col gap-1.5 border-t border-line pt-2 text-sm">
+          {returned.length === 0 ? (
+            <li className="text-muted">{t('hill.noReturned')}</li>
+          ) : (
+            returned.map((r) => (
+              <li key={r.log.id} className="flex flex-col gap-0.5">
+                <span className="font-semibold">{r.title}</span>
+                <span className="text-xs text-muted">
+                  {t('hill.returnedBy', { name: nameOf(r.log.author), date: formatDate(r.log.at) })}
+                </span>
+                {r.log.text && <span className="text-xs">「{r.log.text}」</span>}
+              </li>
+            ))
+          )}
+        </ul>
+      )}
       {!self && a.unaligned && goal && target && (
         <div className="flex flex-col gap-1 border-t border-line pt-2">
           <Button

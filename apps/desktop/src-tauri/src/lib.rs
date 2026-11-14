@@ -30,6 +30,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_version,
+            commands::idle_seconds,
             mcp::mcp_settings,
             mcp::set_mcp_enabled,
             mcp::regenerate_mcp_token,

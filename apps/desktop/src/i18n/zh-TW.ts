@@ -2030,6 +2030,14 @@ export const zhTW = {
   'fpage.noneInConv': '「{name}」這段對話還沒有分享檔案。',
   'review.aside.time': '這一期花的時間',
   'review.aside.minutes': '連上的任務共計時 {time}',
+  'hill.returned': '看退回意見',
+  'hill.hideReturned': '收起退回意見',
+  'hill.noReturned': '近兩週沒有被退回',
+  'hill.returnedBy': '{name} 退回 · {date}',
+  'hill.knock': '敲門',
+  'hill.knockHint': '對方正在忙，訊息會在 {time} 後提醒',
+  'timer.idle.ask': '剛剛 {n} 分鐘沒有動作，要算進去嗎？',
+  'timer.idle.count': '算進去',
 } as const;
 
 export type MessageKey = keyof typeof zhTW;

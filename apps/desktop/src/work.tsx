@@ -348,6 +348,8 @@ function TeamTab({
             periods={periods}
             meId={me}
             onMessage={message}
+            tasks={tasks.filter((x) => x.team === team.id)}
+            nameOf={(id) => members.find((m) => m.id === id)?.name ?? id}
           />
         )}
       </div>

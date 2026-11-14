@@ -68,6 +68,7 @@ export function AssignBoard({
   const dragOver = (to: string) => (e: DragEvent) => {
     if (!editable) return;
     e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
     setOver(to);
   };
   const goalOf = (id: string | null) => (id ? plans.find((p) => p.id === id) : undefined);
@@ -178,7 +179,10 @@ function TaskCard({
   return (
     <li
       draggable={editable}
-      onDragStart={(e) => e.dataTransfer.setData('text/plain', task.id)}
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/plain', task.id);
+        e.dataTransfer.effectAllowed = 'move';
+      }}
       className={`relative flex flex-col gap-1.5 rounded-control border bg-surface px-3 py-2 text-sm ${task.pendingAck ? 'border-dashed border-line' : 'border-line'} ${editable ? 'cursor-grab' : ''}`}
     >
       <div className="flex items-start gap-2">

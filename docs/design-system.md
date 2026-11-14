@@ -1,6 +1,6 @@
 # Hills 設計系統
 
-> 版本：v0.10 · 2026-11-10 · 對應 [feature-plan.md](./feature-plan.md) v1.43（D22、D40、D43、D45、D47、D56、D58、D59、D63）
+> 版本：v0.11 · 2026-11-14 · 對應 [feature-plan.md](./feature-plan.md) v1.45（D22、D40、D43、D45、D47、D56、D58、D59、D63、D66）
 > 本文件定義視覺基礎：原則、token、字級、間距、圓角、陰影、層級、動態、無障礙、圖示與列印。通用元件的規格見 [components.md](./components.md)；畫面結構與流程見 [ui-spec.md](./ui-spec.md)。
 > 實作來源：`apps/desktop/src/styles/tokens.css`（token）、`apps/desktop/src/ui/`（元件）。三者不一致時以本文件為準，並修正程式碼。
 
@@ -80,7 +80,7 @@ SVG 插畫用 `var(--hills-*)` 指定 `fill` / `stroke`（`figures.tsx`、`home.
 
 - **4 px 網格**：只用 Tailwind 間距刻度（`1` = 4 px）。常用：元件內 `gap-1`–`gap-2`、區塊間 `gap-3`（`wide:gap-4`）、卡片內距 `p-4` / `p-5`、頁面外距見 ui-spec「版面」。
 - **控制項高度**：一般 36（`h-9`：Button md、輸入框與下拉選單 md、頂列動作）、小 28（`h-7`：Button sm、輸入框與下拉選單 sm、膠囊）。輸入框與下拉選單以固定高度實作，不靠上下內距（WebKit 會忽略原生 select 的內距）。觸控目標 ≥ 44（行動端）。
-- **固定寬度**：用間距刻度（`w-80` = 320、`w-140` = 560），不用 `w-[560px]`。對話框寬度只用 `Dialog` 的 sm 480 / md 560 / lg 600。版面欄寬見 ui-spec「版面」。
+- **固定寬度**：用間距刻度（`w-80` = 320、`w-140` = 560），不用 `w-[560px]`。對話框寬度只用 `Dialog` 的 sm 480 / md 560 / lg 600 / xl 960（v0.11，D66：xl 只給有即時預覽的對話框，視窗 ≥ 1440 px 時左選項 360、右預覽雙欄；較窄時單欄、預覽在下）。版面欄寬見 ui-spec「版面」。
 
 ## 5. 圓角、陰影、層級
 
@@ -126,9 +126,24 @@ SVG 插畫用 `var(--hills-*)` 指定 `fill` / `stroke`（`figures.tsx`、`home.
 | 焦點與鍵盤 | 一般確認預設聚焦主動作；破壞性確認預設聚焦「取消」；Esc = 取消；表單對話框 Enter = 主動作 |
 | 「放棄未儲存的修改？」 | `dirty` 時的詢問列出現在動作列上方，同樣固定在底部 |
 
+### 5.2 選擇控制項（v0.11，D66）
+
+Checkbox、Radio 一律自繪（原生 input 設 `appearance-none`，保留鍵盤、表單與螢幕閱讀器行為），不靠瀏覽器外觀，Mac 與 Windows 一致。
+
+| 控制項 | 未選 | 選取 | 互動 |
+|---|---|---|---|
+| Checkbox | 18 × 18、圓角 4（`rounded`）、`line` 框、`surface` 底 | `primary` 底、`on-primary` 勾勾（SVG 線寬 2.2）；不確定狀態為橫線 | hover 框線轉 `primary`；顏色以 `--hills-motion` 過渡 |
+| Radio | 18 圓、`line` 框、`surface` 底 | `primary` 框（2 px）＋ 8 px `primary` 內點 | 同上 |
+| ToggleChip | `Chip` 尺寸（膠囊、`text-xs`）、`line` 框、`surface` 底、`fg` 字 | `primary` 框、`primary-soft` 底、`primary` 字、前置 ✓ | hover 字轉 `primary` |
+| OptionTile | `rounded-control`、`line` 框、`surface` 底；圖示 18、標題 `text-sm` semibold、說明 `text-xs` `muted` | 2 px `primary` 框、`primary-soft` 底、右上角 `primary` 實心圓點 | hover 框線轉 `primary` |
+
+- 停用：`muted` 字、`bg` 底、`cursor-not-allowed`，並以說明文字或 `title` 告訴使用者原因；不以半透明表示。
+- 選擇的語意仍由文字表達（標題、✓、圓點），顏色不是唯一的線索（§1-3）。
+- 何時用哪一種見 components.md「怎麼選」。
+
 ## 6. 版面
 
-依 D43 與 ui-spec「版面」：App 最小 1280 × 720、整頁不捲動、左側圖示列 76（≥ 1600：88）、右欄 280（340）、頂列 52（60）。≥ 1600 寬用 Tailwind 斷點 `wide:`（`--breakpoint-wide: 1600px`）放大欄寬與間距。
+依 D43 與 ui-spec「版面」：App 最小 1280 × 720、整頁不捲動、左側圖示列 76（≥ 1600：88）、右欄 280（340）、頂列 52（60）。≥ 1600 寬用 Tailwind 斷點 `wide:`（`--breakpoint-wide: 1600px`）放大欄寬與間距。≥ 1440 寬有斷點 `preview:`（`--breakpoint-preview: 1440px`，v0.11，D66），只用在 xl 對話框的雙欄。
 
 面板內捲動一律用 `.scroll-panel`（4 px 捲動條，滑過或聚焦才顯示）。
 

@@ -1,6 +1,6 @@
 # Hills 通用元件
 
-> 版本：v0.12 · 2026-11-10 · 對應 [feature-plan.md](./feature-plan.md) v1.43（D45、D47、D56、D58、D63）
+> 版本：v0.13 · 2026-11-14 · 對應 [feature-plan.md](./feature-plan.md) v1.45（D45、D47、D56、D58、D63、D66）
 > 本文件定義 `apps/desktop/src/ui/` 的通用元件：用途、何時用、變體、狀態、鍵盤與無障礙、API。視覺基礎（token、字級、間距）見 [design-system.md](./design-system.md)。
 > 畫面只能組合這些元件（design-system §1、§11）。需要新元件或新變體時，**先改本文件，再改 `src/ui/`**，並補 `src/ui/ui.test.tsx`。
 
@@ -120,6 +120,34 @@
 
 沒有 `label` 時是單獨的方塊，必須放在 `<label>` 內或給 `aria-label`。同一組 `Radio` 用相同 `name`。
 
+v0.13（D66）：外觀自繪（design-system §5.2）——原生 input 設 `appearance-none` 疊在自繪方塊 / 圓點上，鍵盤、`name` 群組、表單送出與螢幕閱讀器行為不變；Checkbox 支援 `indeterminate`（橫線）。
+
+### ToggleChip（v0.13，D66）
+
+設定型對話框裡的**多選內容**（例如匯出時要包含哪幾段）：一排膠囊，選取時前置 ✓、晴藍框與淡藍底。和 Checkbox 的差別：項目是並列的短名稱、一眼要看出選了哪些時用 ToggleChip；表單欄位、清單列、同意條款仍用 Checkbox。
+
+| prop | 型別 | 說明 |
+|---|---|---|
+| `checked` | boolean | 受控 |
+| `onChange` | `(checked: boolean) => void` | |
+| `children` | ReactNode | 名稱 |
+| `disabled` | boolean | 停用時以 `title` 或旁邊的說明告訴使用者原因 |
+
+無障礙：`role="checkbox"`、`aria-checked`；Tab 聚焦、Space / Enter 切換。一組 ToggleChip 放在有 `aria-label` 或 `<legend>` 的群組內。
+
+### OptionTile（v0.13，D66）
+
+設定列的**單選小卡**（例如匯出的範圍、格式）：每張卡有圖示、標題、一行說明，可橫排或直排。和 ChoiceCard 的差別：ChoiceCard 是精靈中的大卡（一頁只問一件事）；OptionTile 是設定表單裡的一列小卡。選項只有短文字、不需要說明時用 Radio 或 SegmentedControl。
+
+| prop | 型別 | 說明 |
+|---|---|---|
+| `label` | string | 群組名稱（`role="radiogroup"` 的 `aria-label`） |
+| `options` | `{ value, title, description?, icon?, disabled? }[]` | `disabled` 的卡不能選，說明寫原因 |
+| `value`、`onChange` | 受控 |
+| `columns` | number | 預設依選項數自動（最多 3 欄） |
+
+每張卡是 `role="radio"`、`aria-checked`；只有選取的卡可 Tab 聚焦，← → ↑ ↓ 移動並選取（略過停用的卡），Space 選取。
+
 ### Slider
 
 原生 range。必須給 `aria-label` 與 `aria-valuetext`（例如時間軸的週次）。
@@ -149,6 +177,8 @@
 | 標示完成 | Checkbox | 任務步驟、這一週清單 |
 | 確認同意 | Checkbox | 還原頁「我了解」 |
 | 一列選填條件，按了就套用 | Chip | 這一週新增列的「哪一天？」「只有我看得到」 |
+| 設定型對話框的多選內容（並列的短名稱） | ToggleChip | 匯出報告的「內容」 |
+| 設定型對話框的單選（需要一行說明） | OptionTile | 匯出報告的「範圍」「格式」 |
 
 ### ChoiceCard（v0.3，D47）
 
@@ -176,7 +206,7 @@
 | `label` | string | — | 沒有可見標題時的無障礙名稱 |
 | `onClose` | () => void | — | Esc、點遮罩、關閉鈕 |
 | `onSubmit` | () => void | — | 有值時整個對話框是 `<form>`，Enter 送出 |
-| `width` | `sm` \| `md` \| `lg` | `md` | 480 / 560 / 600 |
+| `width` | `sm` \| `md` \| `lg` \| `xl` | `md` | 480 / 560 / 600 / 960（v0.13，D66：xl 只給有即時預覽的對話框；內容自行用 `preview:` 斷點排雙欄） |
 | `placement` | `center` \| `top` | `center` | `top`：距頂 12vh、最高 60vh（指令面板） |
 | `padded` | boolean | true | false：無內距、內容自行排版（指令面板） |
 | `closeButton` | boolean | false | 右上角 × |

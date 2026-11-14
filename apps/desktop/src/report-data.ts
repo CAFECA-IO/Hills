@@ -3,7 +3,7 @@
  * 上一期週報，組成六段。只在本機計算。
  */
 import { useState } from 'react';
-import { api, type PlanView, type ReportData, type Task } from './api';
+import { api, type PlanView, type Reason, type ReportData, type Task } from './api';
 import { periodsAt } from './goals-utils';
 import { useLoad } from './hooks';
 import { dayStartIn } from './work-utils';
@@ -101,8 +101,23 @@ export function useMyReport(
     logs.data &&
     prev.data,
   );
-  const build = () =>
-    buildReport({
+  // 期末回顧的說明帶進差異原因（D67，technical-design §16.10 v0.36）
+  const reviewReasons = (): Reason[] =>
+    (plans.data ?? [])
+      .filter(
+        (p) =>
+          p.mine &&
+          p.review?.note &&
+          p.review.at > 0 &&
+          days.includes(periodsAt(p.review.at, timezone).day),
+      )
+      .map((p) => ({
+        kind: 'other' as const,
+        text: `${p.title}：${p.review!.note}`,
+        minutes: null,
+      }));
+  const build = (): ReportData => {
+    const d = buildReport({
       kind,
       period,
       tz: timezone,
@@ -119,6 +134,8 @@ export function useMyReport(
       reasonText: reasonText(),
       summaryText: summaryText(),
     });
+    return { ...d, reasons: [...d.reasons, ...reviewReasons()].slice(0, 50) };
+  };
   return {
     ready,
     build,

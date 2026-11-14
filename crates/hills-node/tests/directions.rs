@@ -25,6 +25,7 @@ fn year(title: &str, aligned: Option<String>) -> PlanInput {
             text: "每週 80% 同事在用".into(),
         }],
         helps: vec![],
+        review: None,
         visibility: Visibility::Org,
     }
 }

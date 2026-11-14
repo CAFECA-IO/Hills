@@ -39,6 +39,7 @@ const plan = (
   alignedGoalId: null,
   criteria: [],
   helps: [],
+  review: null,
   createdAt: 0,
   updatedAt: 0,
   progress: 0,

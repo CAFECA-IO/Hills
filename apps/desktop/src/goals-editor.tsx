@@ -79,6 +79,7 @@ export function toInput(i: PlanView): PlanInput {
     alignedGoalId: i.alignedGoalId,
     criteria: i.criteria,
     helps: i.helps,
+    review: i.review,
     visibility: i.visibility,
   };
 }

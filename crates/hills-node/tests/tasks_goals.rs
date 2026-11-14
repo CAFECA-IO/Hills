@@ -22,6 +22,7 @@ fn week(title: &str) -> PlanInput {
         aligned_goal_id: None,
         criteria: vec![],
         helps: vec![],
+        review: None,
         visibility: Visibility::Private,
     }
 }

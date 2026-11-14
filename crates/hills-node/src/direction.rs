@@ -643,6 +643,7 @@ mod tests {
             aligned_goal_id: aligned.map(Into::into),
             criteria: vec![],
             helps: vec![],
+            review: None,
             created_at: 0,
             updated_at: 0,
         }

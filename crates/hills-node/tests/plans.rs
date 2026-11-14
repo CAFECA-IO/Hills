@@ -27,6 +27,7 @@ fn quarter(vis: Visibility) -> PlanInput {
         aligned_goal_id: None,
         criteria: vec![],
         helps: vec![],
+        review: None,
         visibility: vis,
     }
 }

@@ -1,6 +1,6 @@
 /**
  * 引導式目標的精靈與編輯（ui-spec「目標」v0.19，D47；設計畫布 C2–C4、D4、D5）：
- * 規劃精靈（想達成什麼 → 為了團隊哪個方向 → 分到四季 → 確認）、分到下一層、
+ * 規劃精靈（想達成什麼 → 為了團隊哪個方向 → 分到四季 → 確認）、
  * 設定小組方向（負責人），以及引導式的單頁編輯。
  */
 import { useState, type FormEvent, type ReactNode } from 'react';
@@ -10,7 +10,6 @@ import {
   type Direction,
   type MemberView,
   type PlanInput,
-  type PlanLevel,
   type PlanView,
   type TeamGoal,
   type TeamView,
@@ -654,132 +653,7 @@ function ReviewTree({
   );
 }
 
-// ── 分到下一層 ─────────────────────────────────────────────
-
-const CHILD_KEY: Partial<Record<PlanLevel, string>> = {
-  year: 'quarter',
-  quarter: 'month',
-  month: 'week',
-};
-
-export function BreakdownWizard({
-  parent,
-  items,
-  onCancel,
-  onDone,
-}: WizardShared & {
-  parent: PlanView;
-  onCancel: () => void;
-  onDone: (s: ToastState) => void;
-}) {
-  const slots = childSlots(parent.level, parent.period);
-  const child = CHILD_KEY[parent.level] ?? 'quarter';
-  const existing = items.filter((p) => p.mine && p.parentId === parent.id);
-  const [step, setStep] = useState(0);
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [helps, setHelps] = useState<Record<string, string[]>>({});
-  const { busy, error, run } = useAction();
-  const toCreate = slots.filter((s) => values[s.period]?.trim());
-  const create = async () => {
-    const created: string[] = [];
-    const ok = await run(async () => {
-      for (const s of toCreate) {
-        created.push(
-          await api.savePlan({
-            level: s.level,
-            period: s.period,
-            title: values[s.period]?.trim() ?? '',
-            parentId: parent.id,
-            krRef: null,
-            done: false,
-            progressOverride: null,
-            keyResults: [],
-            alignedGoalId: s.level === 'quarter' ? parent.alignedGoalId : null,
-            criteria: [],
-            helps: s.level === 'quarter' ? (helps[s.period] ?? []) : [],
-            visibility: parent.visibility,
-          }),
-        );
-      }
-      return true;
-    });
-    if (!ok) return;
-    onDone({
-      message: t('guide.breakdown.created', { n: created.length }),
-      undo: async () => {
-        for (const id of created) await api.deletePlan(id);
-      },
-    });
-  };
-  const steps = [t(`guide.breakdown.step.${child}` as MessageKey), t('guide.step.review')];
-  return (
-    <WizardFrame
-      back={step === 0 ? t('guide.backHome') : t('guide.prev')}
-      onBack={step === 0 ? onCancel : () => setStep(0)}
-      steps={steps}
-      current={step}
-      status={t('guide.breakdown.count', { n: toCreate.length })}
-      secondary={
-        step === 0
-          ? { label: t('common.cancel'), onClick: onCancel }
-          : { label: t('guide.prev'), onClick: () => setStep(0) }
-      }
-      primary={
-        step === 0 ? t('guide.nextTo', { step: steps[1] ?? '' }) : t('guide.breakdown.create')
-      }
-      busy={busy}
-      onSubmit={() => (step === 0 ? setStep(1) : void create())}
-    >
-      {step === 0 ? (
-        <>
-          <h2 className="text-2xl font-bold">
-            {t(`guide.breakdown.title.${child}` as MessageKey, { title: parent.title })}
-          </h2>
-          <p className="text-sm text-muted">{t('guide.breakdown.hint')}</p>
-          <SlotRows
-            slots={slots}
-            values={values}
-            onChange={(p, v) => setValues((x) => ({ ...x, [p]: v }))}
-            existing={existing}
-            criteria={parent.level === 'year' ? parent.criteria : []}
-            helps={helps}
-            onHelps={(p, ids) => setHelps((h) => ({ ...h, [p]: ids }))}
-          />
-        </>
-      ) : (
-        <>
-          <h2 className="text-2xl font-bold">{t('guide.review.title')}</h2>
-          <div className="flex items-center gap-3 rounded-card border border-line bg-primary-soft px-4 py-3">
-            <span className="flex-1 text-base font-bold">{parent.title}</span>
-          </div>
-          <div className="ml-5.5 flex flex-col gap-2 border-l-2 border-line pl-7">
-            {slots.map((s) => {
-              const text = values[s.period]?.trim();
-              const have = existing.filter((p) => p.period === s.period);
-              return (
-                <div
-                  key={s.period}
-                  className={`flex items-center gap-3 rounded-card border border-line px-4 py-3 ${text ? 'bg-surface' : 'border-dashed bg-bg'}`}
-                >
-                  <span className="w-20 text-xs font-bold text-level-quarter">{slotLabel(s)}</span>
-                  <span className={`flex-1 ${text ? 'font-semibold' : 'text-muted'}`}>
-                    {text ||
-                      (have.length
-                        ? have.map((p) => p.title).join('、')
-                        : t('guide.breakdown.empty'))}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-      <ErrorText message={error} />
-    </WizardFrame>
-  );
-}
-
-// ── 設定小組方向（負責人） ─────────────────────────────────
+// ── 設定小組方向 ───────────────────────────────────────────
 
 export function TeamGoalWizard({
   team,

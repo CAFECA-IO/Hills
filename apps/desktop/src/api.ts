@@ -327,6 +327,18 @@ export interface Criterion {
   text: string;
 }
 
+/** 回顧或調整的結果（D67，technical-design §16.10 v0.36）。 */
+export type ReviewOutcome = 'achieved' | 'partial' | 'missed' | 'dropped';
+
+export interface PlanReview {
+  outcome: ReviewOutcome;
+  percent: number;
+  note: string;
+  /** 延到下一期時新建的項目 */
+  carriedTo: string | null;
+  at: number;
+}
+
 export interface PlanView {
   id: string;
   owner: string;
@@ -345,6 +357,7 @@ export interface PlanView {
   criteria: Criterion[];
   /** 季目標幫助達成上層的哪些標準（criterion id） */
   helps: string[];
+  review: PlanReview | null;
   createdAt: number;
   updatedAt: number;
   /** 彙總後的進度 0–100 */
@@ -661,6 +674,7 @@ export interface PlanInput {
   alignedGoalId?: string | null;
   criteria?: Criterion[];
   helps?: string[];
+  review?: PlanReview | null;
   visibility: Visibility;
 }
 

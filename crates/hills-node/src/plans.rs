@@ -23,6 +23,8 @@ const MAX_UNIT: usize = 16;
 /// 「做到的標準」（D47）每則字數與數量上限
 const MAX_CRITERION: usize = 80;
 const MAX_CRITERIA: usize = 5;
+/// 回顧說明（D67，technical-design §16.10 v0.36）
+const MAX_REVIEW_NOTE: usize = 200;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -146,6 +148,52 @@ pub struct Criterion {
     pub text: String,
 }
 
+/// 回顧或調整的結果（D67，technical-design §16.10 v0.36）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReviewOutcome {
+    Achieved,
+    Partial,
+    Missed,
+    /// 不做了：保留紀錄，不列入上一層的進度
+    Dropped,
+}
+
+impl ReviewOutcome {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Achieved => "achieved",
+            Self::Partial => "partial",
+            Self::Missed => "missed",
+            Self::Dropped => "dropped",
+        }
+    }
+
+    fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "achieved" => Self::Achieved,
+            "partial" => Self::Partial,
+            "missed" => Self::Missed,
+            "dropped" => Self::Dropped,
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanReview {
+    pub outcome: ReviewOutcome,
+    pub percent: u8,
+    #[serde(default)]
+    pub note: String,
+    /// 延到下一期時新建的項目
+    #[serde(default)]
+    pub carried_to: Option<String>,
+    #[serde(default)]
+    pub at: Timestamp,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanItem {
@@ -167,6 +215,7 @@ pub struct PlanItem {
     pub criteria: Vec<Criterion>,
     /// 季目標幫助達成上層的哪些標準（criterion id）
     pub helps: Vec<String>,
+    pub review: Option<PlanReview>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
@@ -200,6 +249,8 @@ pub struct PlanInput {
     pub criteria: Vec<Criterion>,
     #[serde(default)]
     pub helps: Vec<String>,
+    #[serde(default)]
+    pub review: Option<PlanReview>,
     pub visibility: Visibility,
 }
 
@@ -323,11 +374,23 @@ pub fn read_items(doc: &AutoCommit, owner: &MemberId, vis: &Visibility) -> Vec<P
                 } else {
                     vec![]
                 },
+                review: read_review(doc, &o),
                 created_at: get_int(doc, &o, "createdAt").unwrap_or(0),
                 updated_at: get_int(doc, &o, "updatedAt").unwrap_or(0),
             })
         })
         .collect()
+}
+
+fn read_review(doc: &AutoCommit, item: &ObjId) -> Option<PlanReview> {
+    let r = get_obj(doc, item, "review")?;
+    Some(PlanReview {
+        outcome: ReviewOutcome::parse(&get_str(doc, &r, "outcome")?)?,
+        percent: get_int(doc, &r, "percent").unwrap_or(0).clamp(0, 100) as u8,
+        note: get_str(doc, &r, "note").unwrap_or_default(),
+        carried_to: get_str(doc, &r, "carriedTo"),
+        at: get_int(doc, &r, "at").unwrap_or(0),
+    })
 }
 
 fn validate(input: &PlanInput) -> Result<()> {
@@ -348,6 +411,14 @@ fn validate(input: &PlanInput) -> Result<()> {
     validate_criteria(&input.criteria)?;
     if input.helps.len() > MAX_CRITERIA {
         bail!("幫助達成的標準最多 {MAX_CRITERIA} 個");
+    }
+    if let Some(r) = &input.review {
+        if r.percent > 100 {
+            bail!("回顧的進度需為 0–100");
+        }
+        if r.note.chars().count() > MAX_REVIEW_NOTE {
+            bail!("回顧說明最多 {MAX_REVIEW_NOTE} 字");
+        }
     }
     Ok(())
 }
@@ -437,6 +508,21 @@ pub fn write_item(
     if input.level == PlanLevel::Quarter {
         for (i, h) in input.helps.iter().enumerate() {
             doc.insert(&list, i, h.as_str())?;
+        }
+    }
+    match &input.review {
+        Some(r) => {
+            let m = doc.put_object(&o, "review", ObjType::Map)?;
+            doc.put(&m, "outcome", r.outcome.as_str())?;
+            doc.put(&m, "percent", i64::from(r.percent))?;
+            put_opt_str(doc, &m, "note", Some(r.note.trim()))?;
+            put_opt_str(doc, &m, "carriedTo", r.carried_to.as_deref())?;
+            doc.put(&m, "at", if r.at > 0 { r.at } else { now })?;
+        }
+        None => {
+            if doc.get(&o, "review")?.is_some() {
+                doc.delete(&o, "review")?;
+            }
         }
     }
     doc.put(&o, "updatedAt", now)?;
@@ -569,6 +655,13 @@ pub fn rollup(items: &[PlanItem], tasks: &[(String, f64)]) -> Rollup {
     let mut children: HashMap<&str, Vec<&str>> = HashMap::new();
     let mut linked: HashMap<&str, Vec<&str>> = HashMap::new();
     for i in items {
+        // 不做了的項目保留紀錄，但不列入上一層（D67）
+        if i.review
+            .as_ref()
+            .is_some_and(|r| r.outcome == ReviewOutcome::Dropped)
+        {
+            continue;
+        }
         if let Some(p) = i.parent_id.as_deref()
             && by_id.contains_key(p)
         {
@@ -757,6 +850,15 @@ impl Node {
         if input.parent_id.as_deref() == Some(id.as_str()) {
             bail!("不能對齊自己");
         }
+        if let Some(c) = input
+            .review
+            .as_ref()
+            .and_then(|r| r.carried_to.as_deref())
+            .filter(|c| !c.is_empty())
+            && (c == id || self.find_mine(c)?.is_none())
+        {
+            bail!("找不到延到下一期的目標");
+        }
         let created_at = existing.as_ref().map_or(now, |e| e.created_at);
         let target = plans_doc(&me, &input.visibility);
         self.change(&target, |doc| {
@@ -817,6 +919,7 @@ mod tests {
             aligned_goal_id: None,
             criteria: vec![],
             helps: vec![],
+            review: None,
             visibility: Visibility::Org,
         }
     }
@@ -849,9 +952,76 @@ mod tests {
             aligned_goal_id: None,
             criteria: vec![],
             helps: vec![],
+            review: None,
             created_at: 0,
             updated_at: 0,
         }
+    }
+
+    #[test]
+    fn review_round_trip_and_dropped_rollup() {
+        use PlanLevel::*;
+        let mut doc = AutoCommit::new();
+        let mut n = 0;
+        let mut ids = || {
+            n += 1;
+            Ok(format!("k{n}"))
+        };
+        let mut m = input(Month, "2026-11");
+        m.done = true;
+        m.progress_override = Some(60);
+        m.review = Some(PlanReview {
+            outcome: ReviewOutcome::Partial,
+            percent: 60,
+            note: " 感測器交貨晚一週 ".into(),
+            carried_to: Some("m2".into()),
+            at: 0,
+        });
+        write_item(&mut doc, "m", &m, 1, 5, &mut ids).unwrap();
+        let got = read_items(&doc, &me(), &Visibility::Org);
+        let r = got[0].review.clone().unwrap();
+        assert_eq!(r.outcome, ReviewOutcome::Partial);
+        assert_eq!((r.percent, r.note.as_str()), (60, "感測器交貨晚一週"));
+        assert_eq!(r.carried_to.as_deref(), Some("m2"));
+        assert_eq!(r.at, 5, "沒給時間時用寫入時間");
+        // 拿掉 review
+        m.review = None;
+        write_item(&mut doc, "m", &m, 1, 6, &mut ids).unwrap();
+        assert!(
+            read_items(&doc, &me(), &Visibility::Org)[0]
+                .review
+                .is_none()
+        );
+        // 說明太長、百分比超過
+        m.review = Some(PlanReview {
+            outcome: ReviewOutcome::Missed,
+            percent: 101,
+            note: String::new(),
+            carried_to: None,
+            at: 0,
+        });
+        assert!(write_item(&mut doc, "m", &m, 1, 7, &mut ids).is_err());
+        m.review.as_mut().unwrap().percent = 0;
+        m.review.as_mut().unwrap().note = "字".repeat(201);
+        assert!(write_item(&mut doc, "m", &m, 1, 7, &mut ids).is_err());
+        // 不做了的子項目不列入上一層
+        let q = item("q", Quarter);
+        let mut a = item("a", Month);
+        a.parent_id = Some("q".into());
+        a.progress_override = Some(80);
+        let mut b = item("b", Month);
+        b.parent_id = Some("q".into());
+        b.progress_override = Some(10);
+        b.review = Some(PlanReview {
+            outcome: ReviewOutcome::Dropped,
+            percent: 10,
+            note: String::new(),
+            carried_to: None,
+            at: 1,
+        });
+        let r = rollup(&[q, a, b], &[]);
+        assert_eq!(r.items["q"], 80.0);
+        assert_eq!(r.items["b"], 10.0, "本身仍顯示自己的進度");
     }
 
     #[test]

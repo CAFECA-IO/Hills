@@ -77,7 +77,7 @@ export function Goals({ noAutoWeekly, scope, ...props }: GoalsPageProps) {
     </span>
   );
   if (scope !== 'team' && view === 'timeline')
-    return <GoalsRoadmap {...props} headExtra={toggle} />;
+    return <GoalsRoadmap {...props} headExtra={toggle} onPlan={() => setView('position')} />;
   if (scope !== 'team' && view === 'ogsm')
     return (
       <OgsmPage

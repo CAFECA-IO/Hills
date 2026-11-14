@@ -99,28 +99,42 @@ export function Tabs<T extends string>({
   );
 }
 
-/** 精靈的步驟指示（components.md v0.3「Stepper」）：只做顯示，不可點。 */
+/**
+ * 精靈的步驟指示（components.md v0.3「Stepper」）：只做顯示，不可點。
+ * `vertical`（v0.14，D67）：直排，已完成的步驟下方可顯示所選內容（`details`）。
+ */
 export function Stepper({
   label,
   steps,
   current,
+  vertical = false,
+  details,
   className = '',
 }: {
   label: string;
   steps: string[];
   current: number;
+  vertical?: boolean;
+  details?: (string | undefined)[];
   className?: string;
 }) {
   return (
-    <nav aria-label={label} className={`flex items-center gap-2.5 text-sm ${className}`}>
+    <nav
+      aria-label={label}
+      className={`flex text-sm ${vertical ? 'flex-col gap-1' : 'items-center gap-2.5'} ${className}`}
+    >
       {steps.map((s, i) => {
         const state = i < current ? 'done' : i === current ? 'on' : 'todo';
+        const detail = state === 'done' ? details?.[i] : undefined;
         return (
-          <span key={s} className="flex items-center gap-2.5">
-            {i > 0 && <span aria-hidden="true" className="h-0.5 w-8 bg-line" />}
+          <span
+            key={s}
+            className={`flex items-center gap-2.5 ${vertical ? `rounded-control px-2.5 py-2 ${state === 'on' ? 'bg-primary-soft' : ''}` : ''}`}
+          >
+            {i > 0 && !vertical && <span aria-hidden="true" className="h-0.5 w-8 bg-line" />}
             <span
               aria-hidden="true"
-              className={`inline-flex size-6 items-center justify-center rounded-full text-xs font-bold ${
+              className={`inline-flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
                 state === 'done'
                   ? 'bg-st-online text-on-primary'
                   : state === 'on'
@@ -130,11 +144,16 @@ export function Stepper({
             >
               {state === 'done' ? '✓' : i + 1}
             </span>
-            <span
-              aria-current={state === 'on' ? 'step' : undefined}
-              className={state === 'on' ? 'font-bold' : 'text-muted'}
-            >
-              {s}
+            <span className="flex min-w-0 flex-col">
+              <span
+                aria-current={state === 'on' ? 'step' : undefined}
+                className={
+                  state === 'on' ? 'font-bold text-primary' : state === 'done' ? '' : 'text-muted'
+                }
+              >
+                {s}
+              </span>
+              {detail && <span className="truncate text-xs text-muted">{detail}</span>}
             </span>
           </span>
         );

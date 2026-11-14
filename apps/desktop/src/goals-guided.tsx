@@ -19,10 +19,20 @@ import {
   type TaskInput,
   type TeamGoal,
 } from './api';
-import { chain, nextPrompt, openCount, type ChainRow, type Prompt } from './goals-guided-utils';
+import {
+  lastDay,
+  nextStep,
+  periodOptions,
+  reviewItems,
+  reviewWindow,
+  type NextStep,
+  type ReviewWindow,
+} from './goals-flow-utils';
+import { AdjustFlow, BreakdownFlow, PlanPeriodFlow, ReviewFlow, planPeriod } from './goals-flows';
+import { chain, openCount, type ChainRow } from './goals-guided-utils';
 import type { GoalsProps } from './goals-roadmap';
 import { periodsAt, weekRange, splitPeriod, type Periods } from './goals-utils';
-import { BreakdownWizard, GuidedEditor, PlanWizard, TeamGoalWizard } from './goals-wizard';
+import { GuidedEditor, PlanWizard, TeamGoalWizard } from './goals-wizard';
 import { useLoad } from './hooks';
 import { DEFAULT_RULES, assess, quarterElapsed, sideOf } from './drift-utils';
 import { DirectionCompass } from './compass';
@@ -41,6 +51,7 @@ import {
   ErrorText,
   IconButton,
   LinkButton,
+  Pressable,
   ProgressBar,
   SegmentedControl,
   Select,
@@ -79,7 +90,9 @@ export type GuidedView =
   | { kind: 'week' }
   | { kind: 'weekly' }
   | { kind: 'plan'; year: string }
-  | { kind: 'breakdown'; parentId: string }
+  | { kind: 'planPeriod'; level?: PlanLevel; period?: string }
+  | { kind: 'breakdown'; parentId: string | null }
+  | { kind: 'review'; window: ReviewWindow; list: PlanView[] }
   | { kind: 'teamGoal'; team: string; goal: TeamGoal | null };
 
 export interface ToastState {
@@ -150,6 +163,7 @@ export function GuidedGoals({
   const [view, setView] = useState<GuidedView>({ kind: 'home' });
   const [weeklyDismissed, setWeeklyDismissed] = useState(false);
   const [editing, setEditing] = useState<PlanView | null>(null);
+  const [adjusting, setAdjusting] = useState<PlanView | 'pick' | null>(null);
   const [toast, setToast] = useState<(ToastState & { key: number }) | null>(null);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -198,21 +212,44 @@ export function GuidedGoals({
       />
     );
   }
+  const flow = {
+    items,
+    tasks,
+    me: meId,
+    myTeams,
+    timezone,
+    periods,
+    onCancel: () => setView({ kind: 'home' }),
+    onDone: (s: ToastState) => {
+      notify(s);
+      home();
+    },
+  };
   if (view.kind === 'breakdown') {
-    const parent = items.find((i) => i.id === view.parentId);
-    if (parent) {
-      return (
-        <BreakdownWizard
-          {...shared}
-          parent={parent}
-          onCancel={() => setView({ kind: 'home' })}
-          onDone={(s) => {
-            notify(s);
-            home();
-          }}
-        />
-      );
-    }
+    return <BreakdownFlow {...flow} parent={items.find((i) => i.id === view.parentId) ?? null} />;
+  }
+  if (view.kind === 'planPeriod') {
+    return (
+      <PlanPeriodFlow
+        {...flow}
+        initial={view.level && view.period ? { level: view.level, period: view.period } : undefined}
+        onPlanYear={(year) => setView({ kind: 'plan', year })}
+        onBreakdown={(parentId) => {
+          plans.reload();
+          setView({ kind: 'breakdown', parentId });
+        }}
+      />
+    );
+  }
+  if (view.kind === 'review') {
+    return (
+      <ReviewFlow
+        {...flow}
+        window={view.window}
+        list={view.list}
+        onPlanNext={(level, period) => setView({ kind: 'planPeriod', level, period })}
+      />
+    );
   }
   if (view.kind === 'teamGoal') {
     return (
@@ -320,6 +357,9 @@ export function GuidedGoals({
           teamGoals={teamGoals}
           onPlanYear={(year) => setView({ kind: 'plan', year })}
           onBreakdown={(parentId) => setView({ kind: 'breakdown', parentId })}
+          onPlanPeriod={(level, period) => setView({ kind: 'planPeriod', level, period })}
+          onAdjust={() => setAdjusting('pick')}
+          onReview={(window, list) => setView({ kind: 'review', window, list })}
           onWeek={() => setView({ kind: 'week' })}
           onEdit={setEditing}
           onAll={onAdvanced}
@@ -345,6 +385,23 @@ export function GuidedGoals({
               onApplied={reload}
             />
           }
+        />
+      )}
+      {adjusting && (
+        <AdjustFlow
+          item={adjusting === 'pick' ? null : adjusting}
+          items={items}
+          tasks={tasks}
+          onClose={() => setAdjusting(null)}
+          onDone={(s) => {
+            setAdjusting(null);
+            notify(s);
+            reload();
+          }}
+          onEditText={(item) => {
+            setAdjusting(null);
+            setEditing(item);
+          }}
         />
       )}
       {editing && (
@@ -399,6 +456,9 @@ function Home({
   teamGoals,
   onPlanYear,
   onBreakdown,
+  onPlanPeriod,
+  onAdjust,
+  onReview,
   onWeek,
   onEdit,
   onAll,
@@ -420,14 +480,17 @@ function Home({
   directions: Direction[];
   teamGoals: TeamGoal[];
   onPlanYear: (year: string) => void;
-  onBreakdown: (parentId: string) => void;
+  onBreakdown: (parentId: string | null) => void;
+  onPlanPeriod: (level?: PlanLevel, period?: string) => void;
+  onAdjust: () => void;
+  onReview: (w: ReviewWindow, list: PlanView[]) => void;
   onWeek: () => void;
   onEdit: (item: PlanView) => void;
   onAll: () => void;
 }) {
   const [dismissed, setDismissed] = useState(readDismissed);
   const [picked, setPicked] = useState<Partial<Record<PlanLevel, string>>>({});
-  const prompt = dismissed === periods.day ? null : nextPrompt(periods, items);
+  const step = dismissed === periods.day ? null : nextStep(periods, items);
   const rows = chain(periods, items, directions, teamGoals, picked);
   const weekRow = rows.find((r) => r.kind === 'week');
   const weekTasks = tasks.filter(
@@ -447,19 +510,29 @@ function Home({
       <div className="flex min-h-0 flex-1 gap-3 wide:gap-4">
         <section className="flex min-w-0 flex-1 flex-col gap-3">
           {suggestion}
-          {prompt && (
-            <PromptCard
-              prompt={prompt}
-              thisYear={periods.year}
-              onGo={() =>
-                prompt.kind === 'planYear' ? onPlanYear(prompt.year) : onBreakdown(prompt.parent.id)
-              }
+          {step && (
+            <NextStepCard
+              step={step}
+              onGo={() => {
+                if (step.kind === 'planYear') onPlanYear(step.year);
+                else if (step.kind === 'plan') onPlanPeriod(step.level, step.period);
+                else if (step.kind === 'breakdown') onBreakdown(step.parent.id);
+                else onReview(step.window, step.items);
+              }}
               onLater={() => {
                 writeDismissed(periods.day);
                 setDismissed(periods.day);
               }}
             />
           )}
+          <FlowEntries
+            periods={periods}
+            items={items}
+            onPlan={() => onPlanPeriod()}
+            onBreakdown={() => onBreakdown(null)}
+            onAdjust={onAdjust}
+            onReview={onReview}
+          />
           <Card padding="none" className="flex min-h-0 flex-1 flex-col">
             <div className="flex items-baseline gap-2.5 px-5 pt-4 pb-1.5">
               <h2 className="text-base font-bold">{t('guide.chain.title')}</h2>
@@ -799,25 +872,22 @@ function SuggestionCard({
   );
 }
 
-function PromptCard({
-  prompt,
-  thisYear,
+function NextStepCard({
+  step,
   onGo,
   onLater,
 }: {
-  prompt: Prompt;
-  thisYear: string;
+  step: NextStep;
   onGo: () => void;
   onLater: () => void;
 }) {
-  const [title, body, go] = promptText(prompt, thisYear);
+  const [title, body, go] = stepText(step);
   return (
-    <Card className="flex items-center gap-5 bg-primary-soft shadow-none">
-      <svg width="48" height="48" viewBox="0 0 48 48" aria-hidden="true" className="shrink-0">
-        <path d="M4 40 L18 16 L26 28 L32 20 L44 40 Z" className="fill-hill-near" />
-        <circle cx="36" cy="12" r="5" className="fill-level-week" />
-      </svg>
+    <Card className="flex items-center gap-5 border-2 border-primary py-3 shadow-none">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <Badge tone="primary" className="self-start">
+          {t('flow.next.badge')}
+        </Badge>
         <span className="text-base font-bold">{title}</span>
         <span className="text-sm text-muted">{body}</span>
       </div>
@@ -829,28 +899,121 @@ function PromptCard({
   );
 }
 
-function promptText(p: Prompt, thisYear: string): [string, string, string] {
-  if (p.kind === 'planYear' && p.year === thisYear) {
+function stepText(s: NextStep): [string, string, string] {
+  if (s.kind === 'planYear')
     return [
-      t('guide.prompt.thisYear.title', { year: p.year }),
-      t('guide.prompt.thisYear.body'),
-      t('guide.planYear', { year: p.year }),
-    ];
-  }
-  if (p.kind === 'planYear') {
-    return [
-      t('guide.prompt.year.title', { year: p.year }),
+      t('guide.prompt.year.title', { year: s.year }),
       t('guide.prompt.year.body'),
-      t('guide.planYear', { year: p.year }),
+      t('guide.planYear', { year: s.year }),
+    ];
+  if (s.kind === 'plan') {
+    const p = planPeriod(s.level, s.period);
+    return [
+      t('flow.next.plan', { period: p }),
+      t('flow.next.planBody'),
+      t('flow.next.planGo', { period: p }),
     ];
   }
-  const level = p.parent.level;
-  const key = level === 'year' ? 'quarter' : level === 'quarter' ? 'month' : 'week';
+  if (s.kind === 'breakdown')
+    return [
+      t('flow.next.breakdown', { title: s.parent.title }),
+      t('flow.next.breakdownBody'),
+      t('flow.next.breakdownGo'),
+    ];
+  const p = planPeriod(s.window.level, s.window.period);
   return [
-    t(`guide.prompt.${key}.title` as MessageKey, { title: p.parent.title }),
-    t(`guide.prompt.${key}.body` as MessageKey, { title: p.parent.title }),
-    t('guide.prompt.go'),
+    t('flow.next.review', { period: p }),
+    t('flow.next.reviewBody', { n: s.items.length }),
+    t('flow.next.reviewGo'),
   ];
+}
+
+/** 四個引導流程的入口（ui-spec v0.46，G0）。 */
+function FlowEntries({
+  periods,
+  items,
+  onPlan,
+  onBreakdown,
+  onAdjust,
+  onReview,
+}: {
+  periods: Periods;
+  items: PlanView[];
+  onPlan: () => void;
+  onBreakdown: () => void;
+  onAdjust: () => void;
+  onReview: (w: ReviewWindow, list: PlanView[]) => void;
+}) {
+  const empty = periodOptions(periods, items).find((o) => o.empty);
+  const notBroken = items.filter(
+    (p) =>
+      p.mine &&
+      !p.review &&
+      (p.period === periods.month || p.period === periods.quarter) &&
+      !items.some((c) => c.parentId === p.id),
+  ).length;
+  const w = reviewWindow(periods);
+  const toReview = w ? reviewItems(w, items) : [];
+  const monthEnd = lastDay('month', periods.month);
+  // 回顧從月底前 3 天開放（月最後 4 天）
+  const [, m, d] = monthEnd.split('-').map(Number) as [number, number, number];
+  const opens = `${m}/${d - 3}`;
+  const entries = [
+    {
+      key: 'plan',
+      onClick: onPlan,
+      status: empty
+        ? t('flow.entry.planEmpty', { period: planPeriod(empty.level, empty.period) })
+        : t('flow.entry.planOk'),
+      hot: Boolean(empty),
+    },
+    {
+      key: 'breakdown',
+      onClick: onBreakdown,
+      status: notBroken
+        ? t('flow.entry.breakdownN', { n: notBroken })
+        : t('flow.entry.breakdownOk'),
+      hot: notBroken > 0,
+    },
+    { key: 'adjust', onClick: onAdjust, status: t('flow.entry.adjustHint'), hot: false },
+    {
+      key: 'review',
+      onClick: () => (w && toReview.length ? onReview(w, toReview) : undefined),
+      status:
+        w && toReview.length
+          ? t('flow.entry.reviewOpen', {
+              period: planPeriod(w.level, w.period),
+              n: toReview.length,
+            })
+          : t('flow.entry.reviewOpens', { period: planPeriod('month', periods.month), day: opens }),
+      hot: Boolean(w && toReview.length),
+      disabled: !(w && toReview.length),
+    },
+  ];
+  return (
+    <div className="grid grid-cols-4 gap-3">
+      {entries.map((e, i) => (
+        <Pressable
+          key={e.key}
+          disabled={e.disabled}
+          onClick={e.onClick}
+          className="flex flex-col gap-1 rounded-card border border-line bg-surface px-4 py-3 transition-colors duration-(--hills-motion) hover:border-primary"
+        >
+          <span className="flex items-center gap-2">
+            <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-soft text-xs font-bold text-primary">
+              {i + 1}
+            </span>
+            <span className="text-sm font-bold">{t(`flow.entry.${e.key}` as MessageKey)}</span>
+          </span>
+          <span
+            className={`truncate text-xs ${e.hot ? 'font-semibold text-warning' : 'text-muted'}`}
+          >
+            {e.status}
+          </span>
+        </Pressable>
+      ))}
+    </div>
+  );
 }
 
 /** 一件任務的勾選列：勾選即標示完成（整筆更新任務狀態）。 */

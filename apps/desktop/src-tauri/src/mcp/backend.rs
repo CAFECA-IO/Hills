@@ -460,9 +460,13 @@ impl McpBackend for RealBackend {
                     })
                     .take(limit)
                     .collect();
-                Ok(
-                    json!({ "items": hits, "topics": snap["topics"], "categories": snap["categories"] }),
-                )
+                let content = crate::docai::content_hits(&self.app, &q, limit.min(20)).await;
+                Ok(json!({
+                    "items": hits,
+                    "topics": snap["topics"],
+                    "categories": snap["categories"],
+                    "contentHits": content,
+                }))
             }
             _ => Err("unknown tool".into()),
         }

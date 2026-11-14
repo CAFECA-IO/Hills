@@ -3,8 +3,10 @@
  */
 import { useState } from 'react';
 import { AttachmentCard } from './attachments';
-import { api, type FileEntry, type FileSource, type MemberView } from './api';
+import { api, type DocHit, type FileEntry, type FileSource, type MemberView } from './api';
 import { convTitle } from './chat-utils';
+import { enqueue, pageLabel, reindex, useContentHits, useDocAi } from './docai';
+import { indexStateOf, isPdf, mergeContentHits, snippetAround } from './docai-utils';
 import {
   DEFAULT_FILTER,
   FILE_TYPES,
@@ -90,8 +92,26 @@ export function Files({ members, conv = null, fileKey = null }: Props) {
   const [selected, setSelected] = useState<string | null>(fileKey);
   const [now] = useState(() => Date.now());
   const all = files.data ?? [];
-  const list = filterFiles(all, filter, me);
-  const counts = scopeCounts(all, me, filter);
+  const doc = useDocAi();
+  const hits = useContentHits(filter.query, doc.status?.ready ?? false);
+  const merged = mergeContentHits(
+    filterFiles(all, filter, me),
+    filterFiles(all, { ...filter, query: '' }, me),
+    hits,
+  );
+  const list = merged.list;
+  const named = new Set(filterFiles(all, filter, me).map((x) => x.key));
+  // 件數也算進只有內容符合的檔案（與清單一致）
+  const counts = Object.fromEntries(
+    SCOPES.map((sc) => [
+      sc,
+      mergeContentHits(
+        filterFiles(all, { ...filter, scope: sc }, me),
+        filterFiles(all, { ...filter, scope: sc, query: '' }, me),
+        hits,
+      ).list.length,
+    ]),
+  ) as ReturnType<typeof scopeCounts>;
   const filtered = isFiltered(filter);
   const clearAll = () => setFilter({ ...DEFAULT_FILTER, scope: filter.scope });
   const current = all.find((x) => x.key === selected) ?? null;
@@ -263,6 +283,9 @@ export function Files({ members, conv = null, fileKey = null }: Props) {
                         {x.sharedBy === me ? t('fpage.me') : nameOf(x.sharedBy)} ·{' '}
                         {formatTime(x.sharedAt)}
                       </span>
+                      {!named.has(x.key) && merged.hits[x.key] && (
+                        <ContentMatch hit={merged.hits[x.key]![0]!} query={filter.query} />
+                      )}
                     </span>
                     <span className="hidden min-w-0 flex-1 flex-col wide:flex">
                       <span className="flex min-w-0 items-center gap-1 text-xs font-semibold">
@@ -291,7 +314,14 @@ export function Files({ members, conv = null, fileKey = null }: Props) {
       </Card>
 
       {current && (
-        <Detail f={current} me={me} nameOf={nameOf} members={members} srcLine={srcLine} />
+        <Detail
+          f={current}
+          me={me}
+          nameOf={nameOf}
+          members={members}
+          srcLine={srcLine}
+          hits={merged.hits[current.key] ?? []}
+        />
       )}
     </div>
   );
@@ -331,12 +361,14 @@ function Detail({
   nameOf,
   members,
   srcLine,
+  hits,
 }: {
   f: FileEntry;
   me: string;
   nameOf: (id: string | null) => string;
   members: MemberView[];
   srcLine: (s: FileSource) => { kind: FileSource['kind']; title: string; sub: string };
+  hits: DocHit[];
 }) {
   const { error, attempt } = useAction();
   const att = parseAttachments([f.attachment])[0];
@@ -376,6 +408,7 @@ function Detail({
         )
       )}
       <ErrorText message={error} />
+      {isPdf(f) && <IndexRow f={f} hits={hits} />}
       <h3 className="text-sm font-bold">{t('fpage.sources', { n: f.sources.length })}</h3>
       <ol className="ml-1.5 flex flex-col gap-3 border-l-2 border-line">
         {f.sources.map((s, i) => {
@@ -408,5 +441,77 @@ function Detail({
       </ol>
       <p className="text-xs text-muted">{t('fpage.merged')}</p>
     </Card>
+  );
+}
+
+function ContentMatch({ hit, query }: { hit: DocHit; query: string }) {
+  return (
+    <span className="flex min-w-0 items-center gap-1.5 text-xs">
+      <Badge tone="primary">{t('docai.contentMatch', { page: pageLabel(hit) })}</Badge>
+      <span className="truncate text-muted">{snippetAround(hit.snippet, query)}</span>
+    </span>
+  );
+}
+
+/** 詳情的「內容索引」列（ui-spec v0.49）：只在文件理解就緒時出現。 */
+function IndexRow({ f, hits }: { f: FileEntry; hits: DocHit[] }) {
+  const { status, running, queued } = useDocAi();
+  if (!status?.ready) return null;
+  const st = indexStateOf(f.key, status, running, queued);
+  return (
+    <section className="flex flex-col gap-1.5 rounded-control bg-bg p-2.5">
+      <div className="flex items-center gap-2">
+        <h3 className="flex-1 text-sm font-bold">{t('docai.index')}</h3>
+        {st.kind === 'running' && <Badge>{t('docai.index.running')}</Badge>}
+        {st.kind === 'queued' && <Badge>{t('docai.index.queued')}</Badge>}
+        {st.kind === 'done' && st.status === 'ready' && (
+          <>
+            <Badge tone="solid">{t('docai.index.ready', { n: st.chunks })}</Badge>
+            <LinkButton className="text-xs" onClick={() => void reindex(f)}>
+              {t('docai.index.redo')}
+            </LinkButton>
+          </>
+        )}
+      </div>
+      {st.kind === 'done' && st.status !== 'ready' && (
+        <div className="flex items-center gap-2">
+          <span className="min-w-0 flex-1">
+            <ErrorText message={t(`docai.reason.${st.reason ?? 'error'}`)} />
+          </span>
+          <Button size="sm" variant="secondary" onClick={() => void reindex(f)}>
+            {t('docai.retry')}
+          </Button>
+        </div>
+      )}
+      {st.kind === 'none' && (
+        <>
+          <p className="text-xs text-muted">{t('docai.index.hint')}</p>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="self-start"
+            onClick={() => enqueue(f, true)}
+          >
+            {t('docai.index.build')}
+          </Button>
+        </>
+      )}
+      {hits.length > 0 && (
+        <div className="flex flex-col gap-1.5 pt-1">
+          <span className="text-xs font-bold text-muted">{t('docai.matches')}</span>
+          <ul className="flex flex-col gap-1.5">
+            {hits.slice(0, 3).map((h, i) => (
+              <li key={i} className="flex flex-col gap-0.5 text-xs">
+                <span className="font-semibold">
+                  {pageLabel(h)}
+                  {h.heading.length > 0 && ` · ${h.heading.join(' › ')}`}
+                </span>
+                <span className="text-muted">{h.snippet}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }

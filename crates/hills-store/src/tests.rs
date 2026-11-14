@@ -170,5 +170,8 @@ fn extra_data_and_secret_files() {
     // 密文檔不含明文，也不會被當成文件列出
     let raw = fs::read(tmp.path().join("docs/keyring.enc")).unwrap();
     assert!(!raw.windows(4).any(|w| w == b"KEYS"));
+    s.remove_secret_file("keyring").unwrap();
+    assert!(s.read_secret_file("keyring").unwrap().is_none());
+    s.remove_secret_file("keyring").unwrap();
     assert_eq!(s.doc_ids().unwrap(), vec!["org".to_string()]);
 }

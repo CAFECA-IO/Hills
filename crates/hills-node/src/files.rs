@@ -317,6 +317,24 @@ impl Node {
         Ok(None)
     }
 
+    /// 文件索引（§16.20，D68）的本機加密檔：名稱必須以 `docai-` 開頭。
+    pub fn docai_read(&self, name: &str) -> Result<Option<Vec<u8>>> {
+        check_docai_name(name)?;
+        Ok(self.inner.store.read_secret_file(name)?.map(|z| z.to_vec()))
+    }
+
+    pub fn docai_write(&self, name: &str, data: &[u8]) -> Result<()> {
+        check_docai_name(name)?;
+        self.inner.store.write_secret_file(name, data)?;
+        Ok(())
+    }
+
+    pub fn docai_remove(&self, name: &str) -> Result<()> {
+        check_docai_name(name)?;
+        self.inner.store.remove_secret_file(name)?;
+        Ok(())
+    }
+
     /// 「檔案」頁（§16.19）：本人看得到的所有附件。
     pub fn list_files(&self) -> Result<Vec<FileEntry>> {
         let me = self.member_id();
@@ -345,6 +363,17 @@ impl Node {
         found.extend(from_reports(&reports));
         found.extend(from_kb(&kb));
         Ok(build_index(found, &self.read_downloads()))
+    }
+}
+
+fn check_docai_name(name: &str) -> Result<()> {
+    if name.starts_with("docai-")
+        && name.len() <= 64
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        Ok(())
+    } else {
+        Err(anyhow!("文件索引檔名不正確"))
     }
 }
 
@@ -399,6 +428,14 @@ mod tests {
         assert_eq!(idx[0].kind, "folder");
         assert_eq!(idx[0].file_count, Some(3));
         assert_eq!(idx[0].size, 99);
+    }
+
+    #[test]
+    fn docai_names_are_restricted() {
+        assert!(check_docai_name("docai-index").is_ok());
+        assert!(check_docai_name("docai-0123abcd").is_ok());
+        assert!(check_docai_name("downloads").is_err());
+        assert!(check_docai_name("docai-../x").is_err());
     }
 
     #[test]

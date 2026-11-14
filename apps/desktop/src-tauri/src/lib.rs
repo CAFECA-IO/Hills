@@ -2,6 +2,7 @@
 //! （development-guidelines §4.2；前端不接觸金鑰）。
 
 mod commands;
+mod docai;
 mod files;
 mod keychain;
 mod mcp;
@@ -25,12 +26,21 @@ pub fn run() {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             app.manage(commands::AppState::new(dir.clone()));
+            app.manage(docai::DocAi::new(dir.join("docai")));
             app.manage(mcp::McpRuntime::new(app.handle().clone(), dir));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_version,
             commands::idle_seconds,
+            docai::docai_status,
+            docai::docai_enable,
+            docai::docai_disable,
+            docai::docai_index_bytes,
+            docai::docai_index_downloaded,
+            docai::docai_forget,
+            docai::docai_rebuild,
+            docai::docai_search,
             mcp::mcp_settings,
             mcp::set_mcp_enabled,
             mcp::regenerate_mcp_token,

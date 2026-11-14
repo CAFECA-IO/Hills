@@ -1,0 +1,30 @@
+[package]
+name = "hills-docai"
+description = "本機文件理解：PDF 解析成 Markdown、切片、向量化與檢索。見 technical-design §16.20（D68）。"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+blake3.workspace = true
+data-encoding.workspace = true
+fastembed = { version = "=7.6.1", default-features = false, features = ["ort-download-binaries-rustls-tls"] }
+flate2 = "1"
+pdfium-render = { version = "0.8.37", default-features = false, features = ["thread_safe", "pdfium_latest"] }
+postcard.workspace = true
+reqwest.workspace = true
+rustls.workspace = true
+serde.workspace = true
+sha2.workspace = true
+tar = "0.4"
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

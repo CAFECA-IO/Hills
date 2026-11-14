@@ -29,6 +29,7 @@ hills-net = { path = "crates/hills-net" }
 hills-domain = { path = "crates/hills-domain" }
 hills-node = { path = "crates/hills-node" }
 hills-cafeca = { path = "crates/hills-cafeca" }
+hills-docai = { path = "crates/hills-docai" }
 
 # 通用
 anyhow = "1"

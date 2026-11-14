@@ -2275,6 +2275,124 @@ const fileHandlers: Record<string, (args: Record<string, unknown>) => unknown> =
 };
 Object.assign(handlers, fileHandlers);
 
+// ── 文件理解（technical-design §16.20，D68）：?docai=1 開啟並已就緒 ──
+const docaiOn = new URLSearchParams(window.location.search).get('docai') === '1';
+const docai = {
+  enabled: docaiOn,
+  model: 'e5-small',
+  comps: [
+    { id: 'pdfium', size: 2_781_265, done: docaiOn ? 2_781_265 : 0, ready: docaiOn },
+    { id: 'e5-small', size: 135_392_183, done: docaiOn ? 135_392_183 : 0, ready: docaiOn },
+  ],
+  files: (docaiOn
+    ? {
+        'F-q4': { name: '2026Q4 季度報告初稿.pdf', chunks: 18, at: Date.now(), status: 'ready' },
+      }
+    : {}) as Record<
+    string,
+    { name: string; chunks: number; at: number; status: string; reason?: string }
+  >,
+};
+const DOC_CHUNKS = [
+  {
+    fileKey: 'F-q4',
+    name: '2026Q4 季度報告初稿.pdf',
+    pageFrom: 3,
+    pageTo: 3,
+    heading: ['2. 營收', '2.1 各產品線'],
+    snippet:
+      '第四季營收較上季成長 12%，主要來自訂閱方案；硬體銷售持平，預估明年第一季仍受庫存調整影響。',
+  },
+  {
+    fileKey: 'F-q4',
+    name: '2026Q4 季度報告初稿.pdf',
+    pageFrom: 7,
+    pageTo: 8,
+    heading: ['4. 下季計畫'],
+    snippet: '下季優先完成行動版與文件理解功能，並把請假與加班規則整理進知識庫，方便新人查詢。',
+  },
+];
+const docaiReady = () => docai.enabled && docai.comps.every((c) => c.ready);
+Object.assign(handlers, {
+  docai_status: () => ({
+    supported: true,
+    enabled: docai.enabled,
+    model: docai.model,
+    ready: docaiReady(),
+    components: docai.comps.map((c) => ({
+      id: c.id === 'e5-small' ? docai.model : c.id,
+      size: c.size,
+      state: c.ready ? 'ready' : c.done > 0 ? 'downloading' : 'missing',
+      done: c.done,
+      total: c.size,
+      error: null,
+    })),
+    files: docaiReady()
+      ? Object.fromEntries(Object.entries(docai.files).map(([k, v]) => [k, { reason: null, ...v }]))
+      : {},
+    totalChunks: docaiReady() ? Object.values(docai.files).reduce((n, f) => n + f.chunks, 0) : 0,
+  }),
+  docai_enable: (a: Record<string, unknown>) => {
+    if (docai.model !== a.model) {
+      docai.files = {};
+      docai.comps[1] = {
+        id: 'e5-small',
+        size: a.model === 'bge-m3' ? 587_000_000 : 135_392_183,
+        done: 0,
+        ready: false,
+      };
+    }
+    docai.enabled = true;
+    docai.model = String(a.model);
+    const tick = setInterval(() => {
+      let busy = false;
+      for (const c of docai.comps) {
+        if (c.ready) continue;
+        busy = true;
+        c.done = Math.min(c.size, c.done + c.size / 8);
+        if (c.done >= c.size) c.ready = true;
+        break;
+      }
+      emit('docai://progress', 'x');
+      if (!busy) clearInterval(tick);
+    }, 400);
+  },
+  docai_disable: (a: Record<string, unknown>) => {
+    docai.enabled = false;
+    if (a.purge) {
+      docai.files = {};
+      docai.comps.forEach((c) => {
+        c.done = 0;
+        c.ready = false;
+      });
+    }
+  },
+  docai_index_downloaded: (a: Record<string, unknown>) => {
+    docai.files[String(a.key)] = {
+      name: String(a.name),
+      chunks: 12,
+      at: Date.now(),
+      status: 'ready',
+    };
+    return { chunks: 12, status: 'ready', reason: null };
+  },
+  docai_forget: (a: Record<string, unknown>) => {
+    delete docai.files[String(a.key)];
+  },
+  docai_rebuild: () => {
+    docai.files = {};
+  },
+  docai_search: (a: Record<string, unknown>) => {
+    const q = String(a.query).trim();
+    if (!docaiReady() || q.length < 2) return [];
+    return DOC_CHUNKS.filter((c) => docai.files[c.fileKey]).map((c, i) => ({
+      ...c,
+      score:
+        c.snippet.includes(q) || c.heading.join(' ').includes(q) ? 0.9 - i * 0.01 : 0.5 - i * 0.01,
+    }));
+  },
+});
+
 export const mockBackend = {
   invoke: async <T>(
     cmd: string,
@@ -2297,6 +2415,21 @@ export const mockBackend = {
     if (args instanceof Uint8Array) {
       const h = options?.headers ?? {};
       if (cmd === 'put_shard') shards.set(`${h['x-node']}/${h['x-id']}`, args.slice());
+      if (cmd === 'docai_index_bytes') {
+        const key = h['x-key'] ?? '';
+        const big = Number(h['x-size'] ?? 0) > 50 * 1024 * 1024;
+        const r = big
+          ? { chunks: 0, status: 'skipped', reason: 'tooLarge' }
+          : { chunks: 0, status: 'failed', reason: 'unreadable' };
+        docai.files[key] = {
+          name: decodeURIComponent(h['x-name'] ?? ''),
+          chunks: 0,
+          at: Date.now(),
+          status: r.status,
+          reason: r.reason,
+        };
+        return r as T;
+      }
       if (cmd === 'write_partial') {
         const key = `${h['x-token']}/${decodeURIComponent(h['x-path'] ?? '')}`;
         writes.set(key, (writes.get(key) ?? 0) + args.length);

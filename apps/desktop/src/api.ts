@@ -441,6 +441,58 @@ export interface TimerRunning {
   resume: WorkRef | null;
 }
 
+// ── 文件理解（technical-design §16.20 v0.37，D68）──
+
+export type DocAiModel = 'e5-small' | 'bge-m3';
+export type DocFileStatus = 'ready' | 'failed' | 'skipped';
+/** 失敗或略過的原因代碼 */
+export type DocReason = 'tooLarge' | 'noText' | 'unreadable' | 'error';
+
+export interface DocFileState {
+  name: string;
+  chunks: number;
+  at: number;
+  status: DocFileStatus;
+  reason: DocReason | null;
+}
+
+export interface DocComponent {
+  id: string;
+  size: number;
+  state: 'missing' | 'downloading' | 'ready' | 'failed';
+  done: number;
+  total: number;
+  error: string | null;
+}
+
+export interface DocAiStatus {
+  /** 這個平台有 PDF 引擎 */
+  supported: boolean;
+  enabled: boolean;
+  model: DocAiModel;
+  /** 開啟且元件都已下載 */
+  ready: boolean;
+  components: DocComponent[];
+  files: Record<string, DocFileState>;
+  totalChunks: number;
+}
+
+export interface DocHit {
+  fileKey: string;
+  name: string;
+  pageFrom: number;
+  pageTo: number;
+  heading: string[];
+  snippet: string;
+  score: number;
+}
+
+export interface Indexed {
+  chunks: number;
+  status: DocFileStatus;
+  reason: DocReason | null;
+}
+
 // ── 檔案（technical-design §16.19 v0.35，D64）──
 
 export type FileSource =
@@ -939,6 +991,7 @@ export interface ConvRow {
 
 export const EVENTS = {
   node: 'hills://node',
+  docai: 'docai://progress',
   /** 本機 MCP：有新的待確認變更或設定改變（technical-design §18.4） */
   mcp: 'hills://mcp',
 } as const;
@@ -1282,6 +1335,23 @@ export const api = {
     call<void>('save_upload_jobs', { jobs }),
   uploadJobs: () => call<StoredUploadJob[]>('upload_jobs'),
   appVersion: () => call<{ version: string; commit: string }>('app_version'),
+  // 文件理解（technical-design §16.20，D68）
+  docaiStatus: () => call<DocAiStatus>('docai_status'),
+  docaiEnable: (model: DocAiModel) => call<void>('docai_enable', { model }),
+  docaiDisable: (purge: boolean) => call<void>('docai_disable', { purge }),
+  /** `size` 超過上限時不必送內容（Rust 端記為「檔案太大」） */
+  docaiIndexBytes: (key: string, name: string, data: Uint8Array, size?: number) =>
+    callRaw<Indexed>('docai_index_bytes', data, {
+      'x-key': key,
+      'x-name': encodeURIComponent(name),
+      'x-size': String(size ?? data.length),
+    }),
+  docaiIndexDownloaded: (key: string, name: string) =>
+    call<Indexed>('docai_index_downloaded', { key, name }),
+  docaiForget: (key: string) => call<void>('docai_forget', { key }),
+  docaiRebuild: () => call<void>('docai_rebuild'),
+  docaiSearch: (query: string, limit?: number) =>
+    call<DocHit[]>('docai_search', { query, limit: limit ?? null }),
   /** 系統閒置秒數；不支援的平台為 null（ui-spec v0.48） */
   idleSeconds: () => call<number | null>('idle_seconds'),
   syncStatus: () => call<SyncStatus | null>('sync_status'),

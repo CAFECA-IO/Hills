@@ -1,7 +1,8 @@
-/** 設定 › AI 協助（ui-spec「設定」v0.37；D48）。 */
+/** 設定 › AI 協助（ui-spec「設定」v0.37；D48；文件理解 v0.49，D68）。 */
 import { useEffect } from 'react';
 import type { AppInfo } from '../api';
 import { McpOrgCard, McpPersonalCard } from '../mcp-settings';
+import { DocAiCard } from '../settings-docai';
 import { writeFlag } from './model';
 
 export function AiGroup({ info }: { info: AppInfo }) {
@@ -13,6 +14,7 @@ export function AiGroup({ info }: { info: AppInfo }) {
     <div id="settings-mcp" className="flex flex-col gap-4">
       {info.isAdmin && <McpOrgCard />}
       <McpPersonalCard />
+      <DocAiCard />
     </div>
   );
 }

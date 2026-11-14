@@ -20,6 +20,7 @@ import {
   type DocFormat,
 } from './doc-spec';
 import { Moon } from './figures';
+import { KbPdfHits } from './kb-pdf-hits';
 import { useLoad, useSize } from './hooks';
 import { formatTime, t, type MessageKey } from './i18n';
 import {
@@ -167,6 +168,13 @@ export function Knowledge({ members, isAdmin, timezone, onOpenConv, openItem = n
         ))}
         <ErrorText message={kb.error} />
       </div>
+      <KbPdfHits
+        q={q}
+        onOpenItem={(k) => {
+          setReading(k);
+          setSel(k);
+        }}
+      />
       {view === 'sky' ? (
         <div className="flex min-h-0 flex-1 gap-3">
           <Starfield

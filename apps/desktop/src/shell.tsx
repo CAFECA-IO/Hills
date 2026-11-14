@@ -23,6 +23,7 @@ import { useNavigation } from './nav';
 import { readWorkTab, Work, type WorkSub, type WorkTab } from './work';
 import { useWeeklyReportReminder } from './reports';
 import { useScrumReminder } from './scrum';
+import { useDocIndexer } from './docai';
 import { useIdleAway, useLoad, useSyncStatus } from './hooks';
 import { formatClock, formatDate, t, type MessageKey } from './i18n';
 import {
@@ -155,6 +156,7 @@ export function Shell({ info }: { info: AppInfo }) {
   // 同事的非工作時段（D57）：以對方的時區與工作時段計算，每 30 秒隨 now 更新
   const overview = withOffHours(rawOverview, profiles.data, now);
   const me = overview.data?.members.find((m) => m.isMe);
+  useDocIndexer();
   useIdleAway(() => (me ? { state: me.presence ?? 'Online', note: me.note } : null));
   const convs = useLoad(api.conversations, ['convs', 'message', 'doc']);
   const unread = (convs.data ?? []).reduce((n, c) => n + c.unread, 0);

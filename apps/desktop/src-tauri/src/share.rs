@@ -25,14 +25,14 @@ fn parse_id(hex: &str) -> CmdResult<[u8; 32]> {
         .ok_or_else(|| "分片 ID 格式錯誤".to_string())
 }
 
-fn header<'a>(req: &'a Request<'_>, name: &str) -> CmdResult<&'a str> {
+pub(crate) fn header<'a>(req: &'a Request<'_>, name: &str) -> CmdResult<&'a str> {
     req.headers()
         .get(name)
         .and_then(|v| v.to_str().ok())
         .ok_or_else(|| format!("缺少 {name}"))
 }
 
-fn raw_body<'a>(req: &'a Request<'_>) -> CmdResult<&'a [u8]> {
+pub(crate) fn raw_body<'a>(req: &'a Request<'_>) -> CmdResult<&'a [u8]> {
     match req.body() {
         InvokeBody::Raw(b) => Ok(b),
         InvokeBody::Json(_) => Err("需要二進位內容".into()),
@@ -40,7 +40,7 @@ fn raw_body<'a>(req: &'a Request<'_>) -> CmdResult<&'a [u8]> {
 }
 
 /// `encodeURIComponent` 的反向（標頭只能放 ASCII）。
-fn percent_decode(s: &str) -> CmdResult<String> {
+pub(crate) fn percent_decode(s: &str) -> CmdResult<String> {
     let b = s.as_bytes();
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;

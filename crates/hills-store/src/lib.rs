@@ -110,6 +110,18 @@ impl DocStore {
         atomic_write(&self.dir.join(format!("{name}.enc")), &sealed)
     }
 
+    /// 刪除本機加密檔（不存在時忽略）。
+    pub fn remove_secret_file(&self, name: &str) -> Result<(), StoreError> {
+        if name.is_empty() || name.contains(['/', '\\']) {
+            return Err(StoreError::BadDocId);
+        }
+        match fs::remove_file(self.dir.join(format!("{name}.enc"))) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     pub fn read_secret_file(&self, name: &str) -> Result<Option<Zeroizing<Vec<u8>>>, StoreError> {
         let bytes = match fs::read(self.dir.join(format!("{name}.enc"))) {
             Ok(b) => b,

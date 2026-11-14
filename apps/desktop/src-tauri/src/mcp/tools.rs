@@ -154,7 +154,7 @@ pub fn all() -> Vec<ToolDef> {
         ToolDef {
             name: "search_knowledge",
             kind: Kind::Read,
-            description: "Search the organization knowledge base by keyword in titles, bodies and tags.",
+            description: "Search the organization knowledge base by keyword in titles, bodies and tags. When document understanding is on, `contentHits` also lists matching passages inside PDFs (file, pages, heading, snippet, sources).",
             schema: obj(
                 json!({
                     "query": { "type": "string" },

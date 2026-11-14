@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.36 草案 · 2026-11-14 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.37 草案 · 2026-11-15 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -14,7 +14,8 @@
 │                                  ├ hills-sync      文件同步、驗證層          │
 │                                  ├ hills-net       iroh endpoint、ALPN、gossip │
 │                                  ├ hills-domain    假勤 / 計劃 / Scrum 規則  │
-│                                  └ hills-node      app 核心：組合以上元件（§16）│
+│                                  ├ hills-node      app 核心：組合以上元件（§16）│
+│                                  └ hills-docai     本機文件理解（§16.20）     │
 └────────────────────────────────────────────────────────────────────────────┘
             │  iroh（QUIC + TLS 1.3，端對端加密；直連優先，失敗走 relay）
             ▼
@@ -35,6 +36,7 @@ crates/
   hills-identity/  hills-crypto/  hills-store/
   hills-sync/      hills-net/     hills-domain/
   hills-node/      # app 核心：組織生命週期、同步引擎（§16）
+  hills-docai/     # 本機文件理解：PDF 解析、切片、向量、檢索（§16.20）
 apps/
   desktop/         # Tauri 2 app（src-tauri + React 前端）
   mailbox/         # hills-mailbox 服務
@@ -1234,6 +1236,96 @@ FileSource =
 - **前往出處**：介面依 `FileSource` 開啟對話並捲到 `messageId`、開啟任務詳情、或開啟知識；原訊息所在 epoch 已讀不到時顯示「已無法前往」。
 - 介面的 `list_files` 一併回傳第一筆出處的原 `Attachment`（含金鑰，供下載，同對話中的附件卡）；MCP 的 `list_files`（§18.3）不回傳 `Attachment` 與任何金鑰。
 
+### 16.20 文件索引（v0.37，D68）
+
+PDF 的內容在**成員自己的裝置**上解析、切片、向量化與檢索。索引不同步、不上傳；伺服器、儲存節點與其他成員都看不到。程式在 `crates/hills-docai`（不依賴 Tauri，可單獨測試），桌機 app 只負責取得檔案內容與排程。
+
+**元件與下載**（設定開啟「文件理解」時下載，固定版本，下載後檢查 SHA-256 與大小，存在 app 資料夾 `docai/`；不進 repo、不隨安裝檔打包）：
+
+| 元件 | 來源 | 授權 | 大小 |
+|---|---|---|---|
+| PDF 引擎 pdfium（動態函式庫） | bblanchon/pdfium-binaries `chromium/7543`（mac-arm64 / mac-x64 / win-x64 / win-arm64 / linux-x64） | BSD-3 / Apache-2.0 | 約 3 MB |
+| 向量模型 multilingual-e5-small（預設） | Xenova/multilingual-e5-small，`onnx/model_quantized.onnx` + tokenizer，固定 commit | MIT | 約 135 MB，384 維 |
+| 向量模型 bge-m3（可選） | Xenova/bge-m3，`onnx/model_quantized.onnx` + tokenizer，固定 commit | MIT | 約 590 MB，1024 維 |
+
+ONNX Runtime 由 `ort`（經 `fastembed`）在建置時靜態連結。Rust 綁定：`pdfium-render`（MIT / Apache-2.0）、`fastembed`（Apache-2.0）。下載支援續傳（`.part` + Range）；雜湊不符時刪除重下。
+
+**取得內容**：
+- 前端以既有的下載管線（§15）把檔案解密到記憶體，以二進位請求交給 `docai_index_bytes`。已下載的檔案改由 Rust 讀本機下載紀錄中的路徑（§16.19，`docai_index_downloaded`）。**不在磁碟留下明文副本。**
+- 單檔上限 50 MB、500 頁；超過時標為「略過：檔案太大」。
+
+**解析**（`parse`）：
+- pdfium 逐頁讀字元（文字、字級、粗體、位置），依 pdfium 的字元順序（內容串流順序，多欄排版通常已是先左欄再右欄）在換行處切成行。
+- 相鄰的行在行距不超過行高的 1.6 倍、字級相近時合併成段落。中日韓文字之間直接相接，其他文字之間以空格相接；行尾的連字號在下一行以小寫字母開頭時去掉。
+- 字級 ≥ 本文件本文字級（中位數）× 1.2、且短於 80 字的行視為標題。依字級排名分成 `#`／`##`／`###`。
+- 每頁開頭寫 `<!-- p:N -->`。
+- 文字少於 20 字但有圖像物件的頁面，標記 `needsOcr`，交給第二階段處理。
+
+```
+Block = Heading{level, text, page} | Para{text, page}
+      | Formula{latex, display, page} | Table{markdown, page} | Figure{caption, page}   // 後三種由第二階段產生
+```
+
+**切片**（`chunk`，純函式）：
+- 長度以「單位」計算：中日韓字 1.5 單位，其他字元 1 單位。每段上限 900 單位，約等於 600 個中文字或 900 個英文字元，維持在 e5 的 512 token 上限內。
+- 依標題分段。標題路徑（例如「第 3 章 › 3.2 方法」）放在每段開頭，一起向量化。
+- 段落超過上限時，在句號、問號、驚嘆號、分號或換行處切開。
+- `Formula`、`Table`、`Figure` 不切開。單一區塊超過上限時自成一段。
+- 相鄰兩段重疊約 15%（135 單位）：下一段開頭接上上一段最後的句子。重疊不跨標題。
+- 每段記錄 `{ fileKey, pageFrom, pageTo, heading: [string], text }`。
+
+**向量化**（`embed`）：
+- 介面 `Embedder { id, dim, embed_passages, embed_query }`。
+- e5 系列在文件段落前加 `passage: `、查詢前加 `query: `，使用 mean pooling。
+- bge-m3 不加前綴，使用 CLS pooling。
+- 向量做 L2 正規化。
+- 測試使用假的向量器：依字元 n-gram 雜湊產生向量。
+
+**儲存與檢索**（`index`）：
+- 每個檔案一個加密檔 `docai-<blake3(fileKey) 前 16 位>`，內容為 `{ fileKey, name, model, chunks: [{ text, pageFrom, pageTo, heading, vec }] }`。
+- 另有清單檔 `docai-index`：`{ model, dim, files: { fileKey → { name, chunks, at, status } } }`，`status` 為 `ready`、`failed{reason}` 或 `skipped{reason}`。
+- 兩種檔案都用 hills-store 的本機加密檔（`write_secret_file`，§9 靜態加密，裝置金鑰）。
+- 啟動後第一次查詢時解密載入記憶體。
+- 查詢以暴力法計算 cosine（內積），取前 `k` 名。同一檔案最多回傳 3 段。
+- 換模型時清除全部索引並重建。
+- `reset_local_data` 刪除 app 資料夾時，索引與模型一併刪除。
+
+**排程**（前端 `useDocIndexer`，只在功能開啟且元件就緒時執行）：
+- 每次 `list_files`（§16.19）結果變動時比對清單，一次處理一個檔案。
+- 知識庫的 PDF 自動排入。
+- 結案報告與對話的 PDF 在本機下載完成後排入，或在「檔案」詳情按「建立索引」。
+- 檔案不在 `list_files` 的結果中時（本人已看不到），刪除它的索引。
+
+**指令**：
+
+| 指令 | 參數 | 回傳 |
+|---|---|---|
+| `docai_status` | — | `{ enabled, model, components: [{ id, label, size, state: missing\|downloading{done,total}\|ready\|failed }], files: { fileKey → { chunks, at, status } } }` |
+| `docai_enable` | `model` | 開啟並開始下載缺少的元件，進度透過 `docai://progress` 事件回報 |
+| `docai_disable` | `purge` | 關閉功能；`purge` 時一併刪除索引與模型 |
+| `docai_index_bytes` | 二進位內容，標頭 `x-key`、`x-name` | `{ chunks }` |
+| `docai_index_downloaded` | `key`、`name` | 同上 |
+| `docai_forget` | `key` | 刪除該檔索引 |
+| `docai_search` | `query`、`limit?`（≤ 20） | `[{ fileKey, name, pageFrom, pageTo, heading, snippet, score }]` |
+| `docai_rebuild` | — | 清除全部索引，再由排程重建 |
+
+- `snippet` 為該段文字的前 160 字。
+- 前端用 `list_files` 補上出處（`FileSource`），並過濾掉本人已看不到的檔案。
+
+**隱私**：
+- 內容只在本機記憶體與加密檔中。
+- 日誌只記檔案代碼、段數與耗時，不記內容。
+- 模型與引擎的下載只送出固定的 URL，不帶任何組織或檔案資訊。
+
+**第二階段**（同一 crate，模型為選用下載）：
+- `oar-ocr`（Apache-2.0，與 `fastembed` 共用 `ort`）的版面偵測（PP-DocLayout）把頁面分成文字、標題、表格、圖、公式。
+- 公式區塊用 PP-FormulaNet 轉成 LaTeX（行內公式 `$…$`，獨立公式 `$$…$$`）。
+- 圖片區塊用 SmolVLM-256M（Apache-2.0）產生一句說明（`> 圖（第 N 頁）：…`）。
+- 沒有文字層的頁面用 PP-OCR。
+- 表格轉成 Markdown 表格。
+
+細節在實作時補進本節。
+
 ### 16.9 部署（M0）
 
 - `deploy/docker-compose.yml`：`relay`（iroh-relay，自帶 LetsEncrypt；TCP 80 / 443、UDP 7842）與 `mailbox`（固定 UDP 埠、`HILLS_RELAY` 指向自架 relay）；tsa、storage 隨 M1 加入。
@@ -1408,7 +1500,7 @@ kind = `recover`，流程與加入相同（產生**新的** IK / EK / DK、`Appl
 | `get_report` | `kind`（daily / weekly）、`period` | 我的與小組的報表 |
 | `list_conversations` | — | 對話列表 |
 | `read_messages` | `conv`、`limit?`（≤ 50） | 最近的訊息 |
-| `search_knowledge` | `query`、`limit?` | 標題與內文包含關鍵字的知識 |
+| `search_knowledge` | `query`、`limit?` | 標題與內文包含關鍵字的知識；v0.37（D68）：開啟文件理解時另回 `contentHits`（PDF 內容命中：檔名、頁碼、標題路徑、片段、出處，§16.20） |
 | `list_teams` | — | v0.28（D51）：小組（id、名稱、成員、負責人、封存時間、本人能否管理） |
 | `list_knowledge_tree` | — | v0.28（D51）：知識庫分類與主題（含 `resolved`：合併後的最終項目），不含內文 |
 

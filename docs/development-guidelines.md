@@ -1,6 +1,6 @@
 # Hills 開發規範
 
-> 版本：v0.2 · 2026-11-08 · 適用對象：所有人類開發者與 AI Agent
+> 版本：v0.3 · 2026-11-15 · 適用對象：所有人類開發者與 AI Agent
 > AI Agent 另需遵守 [AGENTS.md](../AGENTS.md)。本文件與規劃文件衝突時，以規劃文件為準（見 [docs/README.md](./README.md) 的文件優先順序）。
 
 ## 1. 文件優先（Docs-first）
@@ -16,7 +16,7 @@
 ```
 AGENTS.md  CLAUDE.md  README.md  LICENSE
 docs/        規劃與設計文件（見 docs/README.md）
-crates/      Rust 函式庫（hills-proto / identity / crypto / store / sync / net / domain）
+crates/      Rust 函式庫（hills-proto / identity / crypto / store / sync / net / domain / node / docai）
 apps/        desktop（Tauri）、mailbox、tsa、storage，以及後續服務
 packages/    前端共用 TypeScript 套件（swarm：SwarmStorage 管線）
 poc/         PoC 工具（net-echo、automerge-sync）
@@ -26,6 +26,11 @@ scripts/     開發與維運腳本
 ```
 
 新增頂層目錄或新 crate 前，先更新 technical-design §1。
+
+**二進位檔與模型不進 repo**（D68，technical-design §16.20）：
+- pdfium 動態函式庫與向量模型，在使用者開啟「文件理解」時才下載。來源 URL、SHA-256 與大小固定寫在 `crates/hills-docai/src/models.rs`；更換版本時同時更新這三項，並確認授權。
+- ONNX Runtime 由 `ort` 在建置時下載並靜態連結，因此第一次建置需要網路。
+- 需要 pdfium 或模型的測試標為 `#[ignore]`，並以環境變數 `HILLS_DOCAI_DIR` 指向已下載的元件，手動執行：`cargo test -p hills-docai -- --ignored`。
 
 ## 3. 分支、Commit 與 PR
 

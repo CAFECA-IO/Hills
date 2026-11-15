@@ -2211,4 +2211,8 @@ export const en: Record<MessageKey, string> = {
   'mcp.askHint':
     'It can also ask the knowledge base (turn on Ask the knowledge base on this computer first).',
   'docai.kbBuilding': 'Indexing ({done} / {total})',
+  'ask.step.indexing': 'Updating the knowledge index ({n} items)…',
+  'ask.step.loading': 'Loading the language model (the first time can take a minute)…',
+  'ask.elapsed': '{s} seconds so far',
+  'ask.elapsed.long': '{s} seconds and no answer yet. You can stop and try again.',
 };

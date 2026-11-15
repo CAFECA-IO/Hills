@@ -39,15 +39,16 @@ struct Job {
 /// llama.cpp 的模型（一個行程一個）。
 pub struct LlamaLlm {
     tx: Mutex<Sender<Job>>,
+    loaded: Arc<AtomicBool>,
 }
 
 fn backend() -> Result<&'static LlamaBackend> {
     static B: OnceLock<std::result::Result<LlamaBackend, String>> = OnceLock::new();
     B.get_or_init(|| {
         LlamaBackend::init()
-            .map(|mut b| {
-                b.void_logs();
-                b
+            .inspect(|_| {
+                // llama.cpp 的訊息轉到 tracing（桌機只顯示 warn 以上）
+                llama_cpp_2::send_logs_to_tracing(llama_cpp_2::LogOptions::default());
             })
             .map_err(|e| e.to_string())
     })
@@ -63,27 +64,41 @@ impl LlamaLlm {
     /// 啟動執行緒（模型在第一次使用時載入）。
     pub fn spawn(model_path: PathBuf) -> Result<Self> {
         let (tx, rx) = channel::<Job>();
+        let loaded = Arc::new(AtomicBool::new(false));
+        let flag = loaded.clone();
         std::thread::Builder::new()
             .name("hills-docai-llm".into())
-            .spawn(move || worker(&model_path, &rx))?;
-        Ok(Self { tx: Mutex::new(tx) })
+            .spawn(move || worker(&model_path, &rx, &flag))?;
+        Ok(Self {
+            tx: Mutex::new(tx),
+            loaded,
+        })
+    }
+
+    /// 模型是否已載入（未載入時下一次提問要先載入，約數秒到數十秒）。
+    pub fn is_loaded(&self) -> bool {
+        self.loaded.load(Ordering::Relaxed)
     }
 }
 
-fn worker(path: &PathBuf, rx: &Receiver<Job>) {
+fn worker(path: &PathBuf, rx: &Receiver<Job>, loaded: &AtomicBool) {
     let mut model: Option<LlamaModel> = None;
     loop {
         let job = match rx.recv_timeout(IDLE) {
             Ok(j) => j,
             Err(RecvTimeoutError::Timeout) => {
                 model = None;
+                loaded.store(false, Ordering::Relaxed);
                 continue;
             }
             Err(RecvTimeoutError::Disconnected) => return,
         };
         if model.is_none() {
             model = match load(path) {
-                Ok(m) => Some(m),
+                Ok(m) => {
+                    loaded.store(true, Ordering::Relaxed);
+                    Some(m)
+                }
                 Err(e) => {
                     let _ = job.reply.send(Event::Done(Err(e)));
                     continue;
@@ -243,6 +258,22 @@ mod tests {
         let path = crate::models::llm_path(std::path::Path::new(&dir));
         let llm = LlamaLlm::spawn(path).unwrap();
         let cancel = AtomicBool::new(false);
+        let t = std::time::Instant::now();
+        let mut n = 0;
+        let plain = llm
+            .complete(
+                &Completion {
+                    prompt: crate::kbask::gemma_prompt("", &[], "用一句話打招呼"),
+                    grammar: None,
+                    max_tokens: 24,
+                    temperature: 0.0,
+                },
+                &mut |_| n += 1,
+                &cancel,
+            )
+            .unwrap();
+        eprintln!("plain {:?} pieces={n}: {plain}", t.elapsed());
+        let t = std::time::Instant::now();
         let intent = crate::kbask::understand(
             &llm,
             &crate::kbask::AskInput {
@@ -252,6 +283,78 @@ mod tests {
             &cancel,
         )
         .unwrap();
+        eprintln!("intent {:?}: {intent:?}", t.elapsed());
+        for g in [None, Some(crate::kbask::INTENT_GRAMMAR)] {
+            let t = std::time::Instant::now();
+            let mut n = 0;
+            let out = llm
+                .complete(
+                    &Completion {
+                        prompt: crate::kbask::gemma_prompt(
+                            "只輸出 JSON：{\"q\":[...]}",
+                            &[],
+                            "relay 斷線",
+                        ),
+                        grammar: g,
+                        max_tokens: 40,
+                        temperature: 0.0,
+                    },
+                    &mut |_| n += 1,
+                    &cancel,
+                )
+                .unwrap();
+            eprintln!(
+                "grammar={} {:?} pieces={n}: {out}",
+                g.is_some(),
+                t.elapsed()
+            );
+        }
         assert!(!intent.queries.is_empty());
+    }
+
+    /// 完整流程（假向量器 + 真模型）：`--ignored --nocapture real_model_full`
+    #[test]
+    #[ignore]
+    fn real_model_full_flow() {
+        use crate::embed::{Embedder, FakeEmbedder};
+        use crate::hybrid::{Candidate, SourceKind};
+        use crate::index::Passage;
+        let dir = std::env::var("HILLS_DOCAI_DIR").expect("HILLS_DOCAI_DIR");
+        let llm = LlamaLlm::spawn(crate::models::llm_path(std::path::Path::new(&dir))).unwrap();
+        let mut emb = FakeEmbedder::default();
+        let chunks = [crate::chunk::Chunk {
+            page_from: 0,
+            page_to: 0,
+            heading: vec!["工程".into(), "mailbox 補同步".into()],
+            text: "relay 斷線時，同事傳來的訊息會先存在信箱節點（mailbox），重新連上後 app 會自動補同步，不會遺失。".into(),
+        }];
+        let texts: Vec<String> = chunks.iter().map(crate::chunk::Chunk::embed_text).collect();
+        let vecs = emb.embed_passages(&texts).unwrap();
+        let cands = [Candidate {
+            kind: SourceKind::Item,
+            passage: Passage {
+                key: "k1",
+                name: "mailbox 補同步",
+                chunk: &chunks[0],
+                vec: &vecs[0],
+            },
+        }];
+        let t = std::time::Instant::now();
+        let a = crate::kbask::ask(
+            &llm,
+            &mut |i| crate::kbask::search_with(&mut emb, &cands, i),
+            &crate::kbask::AskInput {
+                question: "relay 斷線的時候訊息會不見嗎？".into(),
+                history: Vec::new(),
+            },
+            crate::kbask::Hooks {
+                on_step: &mut |s| eprintln!("{:?} {s:?}", t.elapsed()),
+                on_token: &mut |_| {},
+            },
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        eprintln!("{:?} answer: {} {:?}", t.elapsed(), a.answer, a.citations);
+        assert!(!a.citations.is_empty());
     }
 }

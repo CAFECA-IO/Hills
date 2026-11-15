@@ -2478,6 +2478,7 @@ Object.assign(handlers, {
     const fire = (ms: number, ev: string, p: object) =>
       setTimeout(() => !ask.cancelled.has(askId) && emit(ev, { askId, ...p }), ms);
     const base = { understood: intent, citations: [], uncited: [], notFound: false, answer: '' };
+    if (askId === 1) fire(150, 'kbask://step', { step: 'loading' });
     fire(500, 'kbask://step', { step: 'understood', intent });
     if (kind === 'people') {
       fire(800, 'kbask://done', { answer: base });

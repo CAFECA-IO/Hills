@@ -150,8 +150,19 @@ pub struct Intent {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "step", rename_all = "camelCase")]
 pub enum Step {
-    Understood { intent: Intent },
-    Found { items: usize, pdfs: usize },
+    /// 提問前更新知識索引（新增或修改的知識）
+    Indexing {
+        items: usize,
+    },
+    /// 載入語言模型（第一次提問或閒置卸載後）
+    Loading,
+    Understood {
+        intent: Intent,
+    },
+    Found {
+        items: usize,
+        pdfs: usize,
+    },
     Answering,
 }
 
@@ -192,10 +203,10 @@ pub struct AskInput {
 
 pub const INTENT_GRAMMAR: &str = r#"root ::= "{" ws "\"intent\":" ws intent "," ws "\"queries\":" ws strs "," ws "\"keywords\":" ws strs ws "}"
 intent ::= "\"kb\"" | "\"howto\"" | "\"people\"" | "\"chat\""
-strs ::= "[" ws ( str ( "," ws str ){0,4} )? ws "]"
-str ::= "\"" char{1,80} "\""
+strs ::= "[" ws ( str ( "," ws str )* )? ws "]"
+str ::= "\"" char+ "\""
 char ::= [^"\\\x7F\x00-\x1F] | "\\" ["\\/bfnrt]
-ws ::= [ \t\n]{0,2}
+ws ::= [ \t\n]?
 "#;
 
 const INTENT_SYSTEM: &str = "你是 Hills 知識庫的查詢助理。判斷使用者這一句的意圖，並改寫成搜尋查詢，只輸出 JSON。
@@ -481,9 +492,9 @@ pub fn ask(
 // ── 建議問題 ───────────────────────────────────────
 
 pub const QUESTIONS_GRAMMAR: &str = r#"root ::= "[" ws str "," ws str "," ws str ws "]"
-str ::= "\"" char{4,40} "\""
+str ::= "\"" char+ "\""
 char ::= [^"\\\x7F\x00-\x1F] | "\\" ["\\/bfnrt]
-ws ::= [ \t\n]{0,2}
+ws ::= [ \t\n]?
 "#;
 
 const SUGGEST_SYSTEM: &str = "根據以下最近新增的知識標題，寫出 3 個同事可能會問的簡短問題，每個不超過 30 字，用繁體中文，只輸出 JSON 陣列。";

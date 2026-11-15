@@ -18,7 +18,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::commands::{AppState, CmdResult, e};
 use crate::docai::{
-    ComponentStatus, DocAi, component_status, ensure_engine, kb_paths, lock, node_of,
+    ComponentStatus, DocAi, component_status, ensure_engine, kb_paths, kb_pending, lock, node_of,
     start_download, sync_kb,
 };
 
@@ -40,6 +40,8 @@ pub struct KbAsk {
     seq: AtomicU64,
     /// （知識數, 最新更新時間）→ 建議問題
     suggestions: Mutex<Suggestions>,
+    /// 產生建議問題中：使用者提問時先停掉，讓模型處理問題
+    suggesting: Mutex<Option<Arc<AtomicBool>>>,
 }
 
 /// 這台電腦的實體記憶體（位元組）；取不到時回傳 `None`。
@@ -215,6 +217,16 @@ fn scope_of(snap: &KbSnapshot, scope: Option<&str>) -> Scope {
     }
 }
 
+fn step_name(s: &Step) -> &'static str {
+    match s {
+        Step::Indexing { .. } => "indexing",
+        Step::Loading => "loading",
+        Step::Understood { .. } => "understood",
+        Step::Found { .. } => "found",
+        Step::Answering => "answering",
+    }
+}
+
 /// 整個流程（前端與 MCP 共用）。在阻塞執行緒呼叫。
 fn ask_now(
     app: &AppHandle,
@@ -235,10 +247,28 @@ fn ask_now(
     if !ready(&ai) {
         return Err("元件尚未下載完成".into());
     }
+    let started = std::time::Instant::now();
+    let Hooks { on_step, on_token } = hooks;
+    // 每一步記下耗時（不記內容），方便判斷卡在哪裡
+    let mut step = |s: &Step| {
+        tracing::info!(
+            step = step_name(s),
+            ms = started.elapsed().as_millis() as u64,
+            "問知識庫"
+        );
+        on_step(s);
+    };
     let snap = node.kb().map_err(e)?;
-    sync_kb(&ai, node, &snap)?;
+    let pending = kb_pending(&ai, node, &snap)?;
+    if pending > 0 {
+        step(&Step::Indexing { items: pending });
+        sync_kb(&ai, node, &snap)?;
+    }
     ensure_engine(&ai, node)?;
     let llm = llm_of(&ai, &ask)?;
+    if !llm.is_loaded() {
+        step(&Step::Loading);
+    }
     let visible: HashSet<String> = node
         .list_files()
         .map_err(e)?
@@ -271,8 +301,27 @@ fn ask_now(
         }
         kbask::search_with(&mut *en.embedder, &cands, intent)
     };
-    let started = std::time::Instant::now();
-    let answer = kbask::ask(&*llm, &mut search, input, hooks, cancel).map_err(e)?;
+    let res = kbask::ask(
+        &*llm,
+        &mut search,
+        input,
+        Hooks {
+            on_step: &mut step,
+            on_token,
+        },
+        cancel,
+    );
+    let answer = match res {
+        Ok(a) => a,
+        Err(err) => {
+            tracing::warn!(ms = started.elapsed().as_millis() as u64, error = %err, "問知識庫失敗");
+            // 模型執行緒結束（例如載入失敗後崩潰）：下次重新建立
+            if matches!(err, hills_docai::DocAiError::Llm(_)) {
+                lock(&ask.llm).take();
+            }
+            return Err(err.to_string());
+        }
+    };
     tracing::info!(
         ms = started.elapsed().as_millis() as u64,
         cited = answer.citations.len(),
@@ -318,6 +367,9 @@ fn begin(ask: &KbAsk) -> (u64, Arc<AtomicBool>) {
     let flag = Arc::new(AtomicBool::new(false));
     if let Some((_, old)) = lock(&ask.current).replace((id, flag.clone())) {
         old.store(true, Ordering::Relaxed);
+    }
+    if let Some(s) = lock(&ask.suggesting).take() {
+        s.store(true, Ordering::Relaxed);
     }
     (id, flag)
 }
@@ -451,7 +503,22 @@ pub async fn kbask_suggest(app: AppHandle, state: State<'_, AppState>) -> CmdRes
         recent.sort_by_key(|i| std::cmp::Reverse(i.created_at));
         let titles: Vec<String> = recent.iter().take(20).map(|i| i.title.clone()).collect();
         let llm = llm_of(&ai, &ask)?;
-        let q = kbask::suggest(&*llm, &titles, &AtomicBool::new(false)).map_err(e)?;
+        let flag = Arc::new(AtomicBool::new(false));
+        *lock(&ask.suggesting) = Some(flag.clone());
+        let started = std::time::Instant::now();
+        let res = kbask::suggest(&*llm, &titles, &flag);
+        lock(&ask.suggesting).take();
+        tracing::info!(
+            ms = started.elapsed().as_millis() as u64,
+            ok = res.is_ok(),
+            "建議問題"
+        );
+        // 被提問中斷時不快取，下次再產生
+        let q = match res {
+            Ok(q) => q,
+            Err(hills_docai::DocAiError::Cancelled) => return Ok(Vec::new()),
+            Err(x) => return Err(x.to_string()),
+        };
         *lock(&ask.suggestions) = Some((fp, q.clone()));
         Ok(q)
     })

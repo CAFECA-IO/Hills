@@ -33,6 +33,10 @@ export interface AskMessage {
   text: string;
   answer: AskAnswer | null;
   error: string | null;
+  /** 理解問題之前的準備：更新知識索引或載入語言模型 */
+  prep: { kind: 'indexing'; items: number } | { kind: 'loading' } | null;
+  /** 送出時間（顯示已經過幾秒） */
+  startedAt: number;
 }
 
 // ── 狀態（設定與知識庫共用） ─────────────────────────────
@@ -80,6 +84,8 @@ export function historyOf(msgs: AskMessage[]): AskTurn[] {
 export function applyEvent(
   m: AskMessage,
   ev:
+    | { type: 'step'; step: 'indexing'; items: number }
+    | { type: 'step'; step: 'loading' }
     | { type: 'step'; step: 'understood'; intent: AskIntent }
     | { type: 'step'; step: 'found'; items: number; pdfs: number }
     | { type: 'step'; step: 'answering' }
@@ -89,7 +95,10 @@ export function applyEvent(
 ): AskMessage {
   switch (ev.type) {
     case 'step':
-      if (ev.step === 'understood') return { ...m, intent: ev.intent, phase: 'searching' };
+      if (ev.step === 'indexing') return { ...m, prep: { kind: 'indexing', items: ev.items } };
+      if (ev.step === 'loading') return { ...m, prep: { kind: 'loading' } };
+      if (ev.step === 'understood')
+        return { ...m, intent: ev.intent, phase: 'searching', prep: null };
       if (ev.step === 'found')
         return { ...m, found: { items: ev.items, pdfs: ev.pdfs }, phase: 'searching' };
       return { ...m, phase: 'answering' };
@@ -118,6 +127,8 @@ const newMessage = (question: string, scope: AskScope | null): AskMessage => ({
   text: '',
   answer: null,
   error: null,
+  prep: null,
+  startedAt: Date.now(),
 });
 
 /** 一段問答對話。 */

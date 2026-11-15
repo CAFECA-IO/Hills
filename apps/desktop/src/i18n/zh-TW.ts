@@ -2150,6 +2150,10 @@ export const zhTW = {
   'docai.comp.gemma-4-e4b-it': '語言模型 Gemma 4 E4B',
   'docai.summaryKb': '已建立索引：知識 {items} 則 · 檔案 {files} 個 · 共 {chunks} 段',
   'mcp.askHint': '可以問知識庫（需先在這台電腦開啟「問知識庫」）。',
+  'ask.step.indexing': '更新知識索引（{n} 則）…',
+  'ask.step.loading': '載入語言模型（第一次約需數十秒）…',
+  'ask.elapsed': '已經 {s} 秒',
+  'ask.elapsed.long': '已經 {s} 秒，還沒有回應。可以按「停止」後再試一次。',
 } as const;
 
 export type MessageKey = keyof typeof zhTW;

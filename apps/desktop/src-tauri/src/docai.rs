@@ -609,6 +609,21 @@ pub(crate) fn sync_kb(ai: &DocAi, node: &Node, snap: &KbSnapshot) -> CmdResult<u
     Ok(changed)
 }
 
+/// 需要（重新）建立索引的知識則數。
+pub(crate) fn kb_pending(ai: &DocAi, node: &Node, snap: &KbSnapshot) -> CmdResult<usize> {
+    ensure_engine(ai, node)?;
+    let g = lock(&ai.engine);
+    let en = g.as_ref().ok_or("文件理解尚未就緒")?;
+    Ok(snap
+        .items
+        .iter()
+        .filter(|it| {
+            let at = u64::try_from(it.updated_at).unwrap_or(0);
+            en.kb.files().get(&it.key).is_none_or(|f| f.at != at)
+        })
+        .count())
+}
+
 /// 前端在知識列表變動時呼叫（文件理解未開啟時不做事）。
 #[tauri::command]
 pub async fn docai_index_kb(state: State<'_, AppState>, ai: State<'_, DocAi>) -> CmdResult<usize> {

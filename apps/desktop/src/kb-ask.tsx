@@ -264,7 +264,12 @@ function Exchange({
       params: { q: m.intent.queries[0] ?? m.question },
       done: true,
     });
-  else if (busy && !m.intent) steps.push({ key: 'ask.step.understanding', done: false });
+  else if (busy && !m.intent) {
+    if (m.prep?.kind === 'indexing')
+      steps.push({ key: 'ask.step.indexing', params: { n: m.prep.items }, done: false });
+    else if (m.prep?.kind === 'loading') steps.push({ key: 'ask.step.loading', done: false });
+    else steps.push({ key: 'ask.step.understanding', done: false });
+  }
   if (m.found)
     steps.push({
       key: 'ask.step.found',
@@ -285,19 +290,22 @@ function Exchange({
         </span>
       )}
       {busy && (
-        <ol aria-live="polite" className="flex flex-col gap-1.5 text-xs">
-          {steps.map((s) => (
-            <li key={s.key} className="flex items-center gap-2">
-              <span
-                aria-hidden="true"
-                className={`flex size-4 items-center justify-center rounded-full text-2xs ${s.done ? 'bg-st-online text-on-primary' : 'border-2 border-primary'}`}
-              >
-                {s.done ? '✓' : ''}
-              </span>
-              <span className={s.done ? '' : 'font-semibold'}>{t(s.key, s.params)}</span>
-            </li>
-          ))}
-        </ol>
+        <>
+          <ol aria-live="polite" className="flex flex-col gap-1.5 text-xs">
+            {steps.map((s) => (
+              <li key={s.key} className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className={`flex size-4 items-center justify-center rounded-full text-2xs ${s.done ? 'bg-st-online text-on-primary' : 'border-2 border-primary'}`}
+                >
+                  {s.done ? '✓' : ''}
+                </span>
+                <span className={s.done ? '' : 'font-semibold'}>{t(s.key, s.params)}</span>
+              </li>
+            ))}
+          </ol>
+          <Elapsed since={m.startedAt} />
+        </>
       )}
       {!busy && m.intent && kb && m.phase === 'done' && (
         <span className="flex items-center gap-1.5 text-xs text-muted">
@@ -418,6 +426,20 @@ function Exchange({
         </div>
       )}
     </div>
+  );
+}
+
+/** 已經過幾秒（15 秒後才顯示；超過 2 分鐘時提示可以停止重試）。 */
+function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const s = Math.floor((now - since) / 1000);
+  if (s < 15) return null;
+  return (
+    <p className="text-xs text-muted">{t(s >= 120 ? 'ask.elapsed.long' : 'ask.elapsed', { s })}</p>
   );
 }
 

@@ -526,6 +526,8 @@ export interface AskAnswer {
 }
 
 export type AskStep =
+  | { step: 'indexing'; items: number }
+  | { step: 'loading' }
   | { step: 'understood'; intent: AskIntent }
   | { step: 'found'; items: number; pdfs: number }
   | { step: 'answering' };

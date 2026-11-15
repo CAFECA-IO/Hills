@@ -12,6 +12,8 @@ const msg = (p: Partial<AskMessage> = {}): AskMessage => ({
   text: '',
   answer: null,
   error: null,
+  prep: null,
+  startedAt: 0,
   ...p,
 });
 
@@ -32,6 +34,7 @@ describe('問知識庫狀態（D70）', () => {
       intent: { intent: 'kb', queries: ['x'], keywords: [] },
     });
     expect(m.phase).toBe('searching');
+    expect(applyEvent(msg(), { type: 'step', step: 'loading' }).prep).toEqual({ kind: 'loading' });
     m = applyEvent(m, { type: 'step', step: 'found', items: 2, pdfs: 1 });
     expect(m.found).toEqual({ items: 2, pdfs: 1 });
     m = applyEvent(m, { type: 'token', text: '不會' });

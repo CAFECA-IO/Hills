@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.42 草案 · 2026-11-15 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.42a 草案 · 2026-11-15 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -1423,11 +1423,11 @@ Block = Heading{level, text, page} | Para{text, page}
 
 **流程**（前端為主，一次處理一個檔案，可取消）：
 
-1. `pick_folder`（既有，§15）取得檔案清單與讀取權杖。
+1. `pick_folder`（既有，§15）取得檔案清單與讀取權杖；v0.42a 也可用 `pick_files` 選擇檔案，此時 `root` 固定為「匯入的檔案」、`path` 為檔名，主題為「一般」。
 2. 篩選 `.md` `.markdown` `.html` `.htm` `.pdf`，略過隱藏檔與隱藏資料夾（`.` 開頭）；最多 500 個。
 3. `read_stripe` 讀出全檔（PDF 不讀內容，只算雜湊）；WebCrypto 計算 SHA-256。
 4. 比對：本人 `import` 來源中 `root` 與 `path` 相同者 → 雜湊相同「沒有變更」、不同「更新」；沒有 → 「新增」。資料夾中已不存在的匯入知識只列在摘要。
-5. 分類、主題：依名稱找既有的（合併後的最終項目），沒有的以 `kb_create_category` / `kb_create_topic` 建立。主題 = 第一層子資料夾，根目錄的檔案 = 「一般」。
+5. 分類（= `root`，匯入前不能改）、主題：依名稱找既有的（合併後的最終項目），沒有的以 `kb_create_category` / `kb_create_topic` 建立。主題 = 第一層子資料夾，根目錄的檔案 = 「一般」。
 6. 轉換：
    - Markdown 原樣。
    - HTML 以 DOMParser 轉 Markdown：`h1`–`h6`、`p`、`ul` / `ol` / `li`、`table` → GFM 表格、`a`（只留 http / https）、`br`、`pre` / `code`、`strong` / `em`；略過 `script`、`style`、`nav`、`noscript`、`svg`、`canvas`。
@@ -1436,6 +1436,8 @@ Block = Heading{level, text, page} | Para{text, page}
    - 超過 64 KB（UTF-8）時在段落邊界截斷，加上「> [!NOTE] 內容較長，以上為節錄，全文見附件。」
 7. 附件：HTML 與 PDF 一律上傳；Markdown 只在截斷時上傳（§15 加密分片，與分享檔案相同）。
 8. `kb_save`（新增或以既有 key 更新）。失敗的檔案列在摘要，可重試。
+
+v0.42a：比對完成後只顯示摘要，使用者按「匯入」或「取消」，不逐檔選擇；「沒有變更」與「太大」的檔案一律略過。
 
 **索引**（§16.20）：知識的附件中，`.pdf` 走 pdfium；`.html` / `.htm` / `.md` 以 `kbtext` 轉文字後切片，同樣不落地、只存本機加密索引；「檔案」與問知識庫中稱為「附件片段」。
 

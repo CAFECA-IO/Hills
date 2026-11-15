@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.38 草案 · 2026-11-15 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.39 草案 · 2026-11-15 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -856,6 +856,7 @@ team/<teamId> = {                                         // v0.11（D40）
 
   - 讀取時 `head`、`outfit` 以 8 取餘數、色號以 6 取餘數，不丟棄整筆。
   - 色值是 token `--hills-hair-<n>`、`--hills-skin-<n>`、`--hills-shirt-<n>`，不存在文件裡。驗證層不變（`profile:<memberId>` 只有本人可寫）。
+  - **還沒設定外觀的成員**（v0.39；沒有 `profile:<memberId>` 或其中沒有 `look`）：後端回傳 `look = null`，前端由成員 ID 算出預設外觀，每台電腦看到的都一樣，不寫入文件。算法：`h` = 成員 ID 字串的 FNV-1a 32 位元雜湊；`head = (h >> 20) mod 8`、`outfit = (h >> 24) mod 8`、`hair = h mod 4`、`shirt = (h >> 8) mod 6`、`skin = (h >> 16) mod 4`，`kind` 依 `head` 照寫入規則填。髮色與膚色只取前 4 色（自然色；灰、藍髮與最深兩種膚色留給成員自選）。成員第一次在「設定 › 我是誰」按「儲存」才寫入。
 - **任務與週目標**（v0.19，D46）：`planItemId` 指向一個週目標（`level = week`）；寫入時檢查該目標存在於本人可讀的計劃中且為週層級。目標可能是私人或另一個小組的，看不到的讀者顯示「私人項目」。**任務進度** = 已完成步驟數 / 步驟數 × 100；沒有步驟時完成 = 100、未完成 = 0（§16.10 彙總）。
 - **分派與回應**（v0.26，D50）：
   - `write_task` 發現負責人改變時寫入 `assignedBy`（寫入者）與 `assignedAt`；沒有負責人時刪除兩者。

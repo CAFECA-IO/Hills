@@ -29,6 +29,8 @@ interface Prepared extends ImportFile {
   title: string;
   truncated: boolean;
   tooLarge: boolean;
+  /** 讀取或轉換失敗的原因 */
+  error?: string;
 }
 
 type Phase =
@@ -43,13 +45,38 @@ interface Outcome {
   failed: { path: string; error: string }[];
 }
 
+/** 單次讀取的逾時：讀不到時這個檔案算失敗，不讓整個比對停住。 */
+const READ_TIMEOUT_MS = 60_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(t('kbImport.readTimeout'))), ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e: unknown) => {
+        clearTimeout(timer);
+        reject(e instanceof Error ? e : new Error(String(e)));
+      },
+    );
+  });
+}
+
+/** 讓畫面有機會更新（每個檔案之間）。 */
+const yieldToUi = () => new Promise<void>((r) => setTimeout(r, 0));
+
 /** 讀出整個檔案（`read_stripe` 每次 8 MB）。 */
 async function readAll(token: string, size: number): Promise<Uint8Array> {
   const out = new Uint8Array(size);
   const step = 8 * 1024 * 1024;
   for (let o = 0; o < size; o += step) {
-    const part = await api.readStripe(token, o, Math.min(step, size - o));
-    out.set(part, o);
+    const part = await withTimeout(
+      api.readStripe(token, o, Math.min(step, size - o)),
+      READ_TIMEOUT_MS,
+    );
+    out.set(part.subarray(0, Math.min(part.length, size - o)), o);
   }
   return out;
 }
@@ -119,41 +146,53 @@ export function KbImport({
   const [error, setError] = useState<string | null>(null);
   const cancel = useRef(false);
 
-  // 讀檔、計算雜湊與轉換（只在這台電腦）
+  // 讀檔、計算雜湊與轉換（只在這台電腦）。
+  // 只跑一次：開發模式的 StrictMode 會重跑 effect，重跑時不再開第二輪（否則兩輪同時讀同一批檔案，
+  // 第一輪的結果被丟掉、畫面停在第一輪的進度）。卸載後不再更新狀態。
+  const started = useRef(false);
+  const mounted = useRef(true);
   useEffect(() => {
-    let live = true;
-    void (async () => {
-      const out: Prepared[] = [];
-      const note = t('kbImport.truncatedNote');
-      for (const f of files) {
-        if (!live) return;
-        try {
-          out.push(await prepare(f, existing, note));
-        } catch (e) {
-          out.push({
-            ...f,
-            sha256: '',
-            status: 'new',
-            body: null,
-            title: f.path,
-            truncated: false,
-            tooLarge: true,
-          });
-          setError(String(e));
+    mounted.current = true;
+    if (!started.current) {
+      started.current = true;
+      void (async () => {
+        const out: Prepared[] = [];
+        const note = t('kbImport.truncatedNote');
+        let firstError: string | null = null;
+        for (const f of files) {
+          if (!mounted.current) return;
+          await yieldToUi();
+          try {
+            out.push(await prepare(f, existing, note));
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            out.push({
+              ...f,
+              sha256: '',
+              status: 'new',
+              body: null,
+              title: f.path,
+              truncated: false,
+              tooLarge: false,
+              error: msg,
+            });
+            firstError ??= t('kbImport.failed', { path: f.path, error: msg });
+          }
+          if (mounted.current) setPhase({ kind: 'checking', done: out.length });
         }
-        setPhase({ kind: 'checking', done: out.length });
-      }
-      if (!live) return;
-      setPrepared(out);
-      setPhase({ kind: 'review' });
-    })();
+        if (!mounted.current) return;
+        if (firstError) setError(firstError);
+        setPrepared(out);
+        setPhase({ kind: 'review' });
+      })();
+    }
     return () => {
-      live = false;
+      mounted.current = false;
     };
   }, [files, existing]);
 
   // 要匯入的：新增與更新（沒有變更、太大的一律略過）
-  const chosen = prepared.filter((p) => !p.tooLarge && p.status !== 'same');
+  const chosen = prepared.filter((p) => !p.tooLarge && !p.error && p.status !== 'same');
   const count = (f: (p: Prepared) => boolean) => prepared.filter(f).length;
   const topics = [...new Set(chosen.map((p) => p.topic))];
 
@@ -219,14 +258,17 @@ export function KbImport({
   };
 
   const statusText = (p: Prepared) =>
-    p.tooLarge
-      ? t('kbImport.status.tooLarge')
-      : `${t(`kbImport.status.${p.status}`)}${p.truncated ? ` · ${t('kbImport.status.truncated')}` : ''}`;
-  const added = count((p) => !p.tooLarge && p.status === 'new');
-  const updated = count((p) => !p.tooLarge && p.status === 'changed');
-  const same = count((p) => !p.tooLarge && p.status === 'same');
+    p.error
+      ? t('kbImport.status.unreadable')
+      : p.tooLarge
+        ? t('kbImport.status.tooLarge')
+        : `${t(`kbImport.status.${p.status}`)}${p.truncated ? ` · ${t('kbImport.status.truncated')}` : ''}`;
+  const added = count((p) => !p.tooLarge && !p.error && p.status === 'new');
+  const updated = count((p) => !p.tooLarge && !p.error && p.status === 'changed');
+  const same = count((p) => !p.tooLarge && !p.error && p.status === 'same');
   const truncated = chosen.filter((p) => p.truncated).length;
   const tooLarge = count((p) => p.tooLarge);
+  const unreadable = count((p) => !!p.error);
 
   return (
     <Dialog
@@ -308,6 +350,7 @@ export function KbImport({
             {truncated > 0 && <li>{t('kbImport.truncatedN', { n: truncated })}</li>}
             {skipped > 0 && <li>{t('kbImport.skipped', { n: skipped })}</li>}
             {tooLarge > 0 && <li>{t('kbImport.tooLargeN', { n: tooLarge })}</li>}
+            {unreadable > 0 && <li>{t('kbImport.unreadableN', { n: unreadable })}</li>}
             {overLimit > 0 && <li>{t('kbImport.overLimit', { n: overLimit })}</li>}
             {missing.length > 0 && <li>{t('kbImport.missing', { n: missing.length })}</li>}
           </ul>

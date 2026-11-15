@@ -144,7 +144,7 @@ v0.13（D66）：外觀自繪（design-system §5.2）——原生 input 設 `ap
 | `label` | string | 群組名稱（`role="radiogroup"` 的 `aria-label`） |
 | `options` | `{ value, title, description?, icon?, disabled? }[]` | `disabled` 的卡不能選，說明寫原因 |
 | `value`、`onChange` | 受控 |
-| `columns` | number | 預設依選項數自動（最多 3 欄） |
+| `columns` | number | 預設依選項數自動（最多 3 欄）；可指定 1–4（服裝款式用 4 欄，D69）  |
 
 沒有說明的卡改為圖示在上、名稱在下置中（窄欄的三選一，例如雙欄匯出對話框的格式；此時把選取項的說明放在群組下方）。
 

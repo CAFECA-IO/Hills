@@ -413,8 +413,13 @@ fn index_now(
     let vault = NodeVault(node.clone());
     let at = u64::try_from(hills_node::now_ms()).unwrap_or(0);
     let started = std::time::Instant::now();
+    // v0.42（D71）：知識的 HTML / Markdown 附件不經 pdfium
     let parsed = match bytes {
-        Some(b) => en.pdf.parse(b.to_vec()),
+        Some(b) => match hills_docai::text_file_chunks(name, b) {
+            Some(chunks) if chunks.is_empty() => Err(DocAiError::NoText),
+            Some(chunks) => Ok(chunks),
+            None => en.pdf.parse(b.to_vec()),
+        },
         None => Err(DocAiError::TooLarge),
     };
     let result = parsed.and_then(|chunks| {

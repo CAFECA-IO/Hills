@@ -19,7 +19,7 @@ pub use embed::{Embedder, FakeEmbedder, FastEmbedder};
 pub use hybrid::{Candidate, Found, SourceKind};
 pub use index::{FileState, FileStatus, Hit, Index, KB_NAMES, Passage, Vault};
 pub use kbask::{Answer, AskInput, Citation, FakeLlm, Hooks, Intent, IntentKind, Llm, Step, Turn};
-pub use kbtext::{KbDoc, kb_chunks};
+pub use kbtext::{KbDoc, kb_chunks, text_file_chunks};
 pub use models::{Component, ModelSpec, model_spec};
 
 /// 單檔上限（technical-design §16.20）。

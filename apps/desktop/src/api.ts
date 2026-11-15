@@ -394,7 +394,9 @@ export type KbSource =
   | { kind: 'manual' }
   | { kind: 'message'; convId: string; messageKey: string }
   | { kind: 'file'; convId: string; attachment: unknown }
-  | { kind: 'task'; teamId: string; taskId: string };
+  | { kind: 'task'; teamId: string; taskId: string }
+  /** v0.42（D71）：匯入資料夾 */
+  | { kind: 'import'; root: string; path: string; sha256: string; attachment?: unknown };
 
 export interface KbItem {
   /** `<作者>:<ULID>` */

@@ -1323,7 +1323,16 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
       tags: input.tags,
       topicId: input.topicId,
       refs: input.refs,
-      source: old?.source ?? input.source ?? { kind: 'manual' },
+      // 匯入（D71）：作者再次匯入時換成新的來源
+      source:
+        old &&
+        !(
+          old.source.kind === 'import' &&
+          input.source?.kind === 'import' &&
+          old.author === state.me
+        )
+          ? old.source
+          : (input.source ?? { kind: 'manual' }),
       createdAt: old?.createdAt ?? Date.now(),
       updatedAt: Date.now(),
       updatedBy: state.me,
@@ -2170,10 +2179,46 @@ const addFake = (name: string, size: number) => {
   return { token, name, size, mtime: Date.now() - 86400_000 };
 };
 const shards = new Map<string, Uint8Array>();
+// 知識庫匯入（D71）：?import=1 時「匯入資料夾」選到示範資料夾
+const fakeTexts = new Map<string, Uint8Array>();
+const page = (title: string, rows: number) =>
+  `<!doctype html><html><head><title>${title}</title><script>render()</script></head><body><nav>首頁</nav><h1>${title}</h1><p>這是 <strong>${title}</strong> 的說明。</p><table><tr><th>代碼</th><th>名稱</th><th>單位</th></tr>${Array.from({ length: rows }, (_, i) => `<tr><td>FIT-${i}</td><td>進流流量計 ${i} 號（每五分鐘回傳一筆）</td><td>m³/h</td></tr>`).join('')}</table></body></html>`;
+function importFolder() {
+  const files: [string, string][] = [
+    ['index.html', page('污水廠知識圖譜', 3)],
+    ['00_本體/本體.html', page('本體', 5)],
+    ['01_共用知識/資料標準/儀控訊號.html', page('儀控訊號', 1200)],
+    ['01_共用知識/異常事件/處置措施.html', page('處置措施', 20)],
+    ['01_共用知識/SOP/SOP.html', page('SOP', 8)],
+    ['04_工具/AquaMind需求規格.md', '# 需求規格\n\n## 範圍\n\n- 水質監測\n- 異常通報\n'],
+    ['05_需求規格/規格.pdf', '%PDF-1.7 示範'],
+  ];
+  const enc = new TextEncoder();
+  const entries = files.map(([path, text]) => {
+    const token = `t${++fileSeq}`;
+    const bytes = enc.encode(text);
+    fakeTexts.set(token, bytes);
+    return { kind: 'file' as const, path, token, size: bytes.length, mtime: null };
+  });
+  const other = ['assets/style.css', '04_工具/來源資料/總表.xlsx', '03_匯出/graph.json'].map(
+    (path) => {
+      const f = addFake(path, 4000);
+      return { kind: 'file' as const, path, token: f.token, size: f.size, mtime: null };
+    },
+  );
+  return {
+    root: '06_污水廠知識圖譜',
+    entries: [...entries, ...other],
+    skipped: [{ path: '.DS_Store', reason: 'system' }],
+    totalSize: entries.reduce((n, e) => n + e.size, 0),
+    fileCount: entries.length + other.length,
+  };
+}
 const writes = new Map<string, number>();
 const fileHandlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   pick_files: () => [addFake('季度報告.pdf', 3 * MB + 12345), addFake('會議紀錄.md', 2048)],
   pick_folder: () => {
+    if (new URLSearchParams(window.location.search).get('import') === '1') return importFolder();
     const a = addFake('hero@2x.png', 2 * MB);
     const b = addFake('logo.svg', 40_000);
     const c = addFake('說明.txt', 1200);
@@ -2191,6 +2236,8 @@ const fileHandlers: Record<string, (args: Record<string, unknown>) => unknown> =
     };
   },
   read_stripe: (a) => {
+    const text = fakeTexts.get(String(a.token));
+    if (text) return text.slice(Number(a.offset), Number(a.offset) + Number(a.len));
     const f = fakeFiles.get(String(a.token));
     if (!f) throw new Error('檔案未經選擇');
     const off = Number(a.offset);

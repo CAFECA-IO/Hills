@@ -253,8 +253,17 @@ pub fn from_reports<'a>(reports: &'a [(String, String, String, TaskReport)]) -> 
 pub fn from_kb(items: &[KbItem]) -> Vec<Found<'_>> {
     items
         .iter()
-        .filter_map(|i| match &i.source {
-            KbSource::File { attachment, .. } => Some(Found {
+        .filter_map(|i| {
+            let attachment = match &i.source {
+                KbSource::File { attachment, .. } => attachment,
+                // v0.42（D71）：匯入資料夾的原檔
+                KbSource::Import {
+                    attachment: Some(attachment),
+                    ..
+                } => attachment,
+                _ => return None,
+            };
+            Some(Found {
                 source: FileSource::Kb {
                     kb_key: i.key.clone(),
                     title: i.title.clone(),
@@ -262,8 +271,7 @@ pub fn from_kb(items: &[KbItem]) -> Vec<Found<'_>> {
                     at: i.created_at,
                 },
                 attachment,
-            }),
-            _ => None,
+            })
         })
         .collect()
 }

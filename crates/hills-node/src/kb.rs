@@ -103,6 +103,51 @@ pub enum KbSource {
         #[serde(rename = "taskId")]
         task_id: String,
     },
+    /// v0.42（D71）：匯入資料夾；`root` = 資料夾名稱，`path` = 相對路徑，`sha256` = 原檔雜湊
+    Import {
+        root: String,
+        path: String,
+        sha256: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        attachment: Option<serde_json::Value>,
+    },
+}
+
+/// 匯入來源的檢查（§16.22）。
+fn check_import(root: &str, path: &str, sha256: &str) -> Result<()> {
+    let r = root.trim().chars().count();
+    if r == 0 || r > 100 {
+        bail!("匯入的資料夾名稱需為 1–100 字");
+    }
+    let p = path.chars().count();
+    if p == 0
+        || p > 500
+        || path.starts_with('/')
+        || path.split('/').any(|s| s == ".." || s.is_empty())
+    {
+        bail!("匯入的相對路徑不正確");
+    }
+    if sha256.len() != 64
+        || !sha256
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        bail!("匯入的檔案雜湊不正確");
+    }
+    Ok(())
+}
+
+/// 存檔時的來源：新增用輸入的來源；更新時保留原來源，例外是作者以匯入更新自己匯入的知識（§16.22）。
+fn next_source(existing: Option<&KbItem>, input: Option<&KbSource>, me: MemberId) -> KbSource {
+    match existing {
+        None => input.cloned().unwrap_or(KbSource::Manual),
+        Some(e) => match (&e.source, input) {
+            (KbSource::Import { .. }, Some(s @ KbSource::Import { .. })) if e.author == me => {
+                s.clone()
+            }
+            _ => e.source.clone(),
+        },
+    }
 }
 
 /// 文件中的 JSON 內容。
@@ -331,6 +376,20 @@ fn validate(input: &KbInput) -> Result<()> {
     {
         bail!("附件資料過大");
     }
+    if let Some(KbSource::Import {
+        root,
+        path,
+        sha256,
+        attachment,
+    }) = &input.source
+    {
+        check_import(root, path, sha256)?;
+        if let Some(a) = attachment
+            && serde_json::to_string(a)?.len() > MAX_ATTACHMENTS_JSON
+        {
+            bail!("附件資料過大");
+        }
+    }
     Ok(())
 }
 
@@ -477,10 +536,7 @@ impl Node {
             tags: input.tags.iter().map(|t| t.trim().to_owned()).collect(),
             topic_id: input.topic_id.clone(),
             refs,
-            source: match &existing {
-                Some(e) => e.source.clone(),
-                None => input.source.clone().unwrap_or(KbSource::Manual),
-            },
+            source: next_source(existing.as_ref(), input.source.as_ref(), me),
             created_at: existing.as_ref().map_or(now, |e| e.created_at),
             updated_at: now,
             updated_by: me.to_string(),
@@ -670,5 +726,61 @@ mod tests {
         let mut bad = base;
         bad.body = "x".repeat(MAX_BODY + 1);
         assert!(validate(&bad).is_err());
+    }
+
+    fn import(path: &str) -> KbSource {
+        KbSource::Import {
+            root: "06_知識".into(),
+            path: path.into(),
+            sha256: "a".repeat(64),
+            attachment: None,
+        }
+    }
+
+    #[test]
+    fn import_source_rules() {
+        assert!(check_import("06", "01/a.html", &"0".repeat(64)).is_ok());
+        assert!(check_import("06", "../a.html", &"0".repeat(64)).is_err());
+        assert!(check_import("06", "/a.html", &"0".repeat(64)).is_err());
+        assert!(check_import("06", "a//b.md", &"0".repeat(64)).is_err());
+        assert!(check_import("", "a.md", &"0".repeat(64)).is_err());
+        assert!(check_import("06", "a.md", &"A".repeat(64)).is_err());
+        assert!(check_import("06", "a.md", "abc").is_err());
+
+        let me = MemberId([1; 16]);
+        let other = MemberId([2; 16]);
+        let item = |author: MemberId, source: KbSource| KbItem {
+            key: format!("{author}:01"),
+            author,
+            title: "t".into(),
+            body: String::new(),
+            format: DocFormat::Markdown,
+            spec: None,
+            tags: vec![],
+            topic_id: "x".into(),
+            refs: vec![],
+            source,
+            created_at: 0,
+            updated_at: 0,
+            updated_by: String::new(),
+        };
+        let mut newer = import("a.md");
+        if let KbSource::Import { sha256, .. } = &mut newer {
+            *sha256 = "b".repeat(64);
+        }
+        // 新增：用輸入的來源
+        assert_eq!(next_source(None, Some(&newer), me), newer);
+        // 作者再次匯入：來源換成新的雜湊
+        let mine = item(me, import("a.md"));
+        assert_eq!(next_source(Some(&mine), Some(&newer), me), newer);
+        // 管理者或他人：保留原來源
+        let theirs = item(other, import("a.md"));
+        assert_eq!(next_source(Some(&theirs), Some(&newer), me), import("a.md"));
+        // 手動建立的知識不會被匯入改掉來源
+        let manual = item(me, KbSource::Manual);
+        assert_eq!(
+            next_source(Some(&manual), Some(&newer), me),
+            KbSource::Manual
+        );
     }
 }

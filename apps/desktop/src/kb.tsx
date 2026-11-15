@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   api,
   type ConvRow,
+  type FolderPick,
   type KbCategory,
   type KbInput,
   type KbItem,
@@ -20,6 +21,8 @@ import {
   type DocFormat,
 } from './doc-spec';
 import { Moon } from './figures';
+import { KbImport } from './kb-import';
+import { navigate } from './nav';
 import { AskPanel } from './kb-ask';
 import { YearSection } from './kb-year';
 import { useKbAsk, type AskScope } from './kbask';
@@ -78,6 +81,12 @@ const REL_DASH: Record<RelationKind, string | undefined> = {
 };
 const relName = (k: RelationKind) => t(`kb.rel.${k}` as MessageKey);
 
+/** 匯入來源附件的檔案代碼（= manifest.fileId，§16.19）。 */
+function importedFileKey(att: unknown): string | null {
+  const id = (att as { manifest?: { fileId?: unknown } } | undefined)?.manifest?.fileId;
+  return typeof id === 'string' ? id : null;
+}
+
 const ASK_OPEN_KEY = 'hills.kb.askOpen';
 function readAskOpen(): boolean {
   try {
@@ -105,6 +114,8 @@ export function Knowledge({ members, isAdmin, timezone, onOpenConv, openItem = n
   const [sel, setSel] = useState<string | null>(null);
   const [week, setWeek] = useState<string | null>(null);
   const [editing, setEditing] = useState<KbInput | null>(null);
+  const [importPick, setImportPick] = useState<FolderPick | null>(null);
+  const [pickError, setPickError] = useState<string | null>(null);
   const [reading, setReading] = useState<string | null>(openItem);
   const [now] = useState(() => Date.now());
   const ask = useKbAsk();
@@ -178,6 +189,20 @@ export function Knowledge({ members, isAdmin, timezone, onOpenConv, openItem = n
                 label: t(`kb.view.${k}` as MessageKey),
               }))}
             />
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                setPickError(null);
+                try {
+                  const p = await api.pickFolder();
+                  if (p) setImportPick(p);
+                } catch (err) {
+                  setPickError(String(err));
+                }
+              }}
+            >
+              {t('kbImport.open')}
+            </Button>
             <Button onClick={() => setEditing(blank())}>{t('kb.new')}</Button>
           </>
         }
@@ -201,7 +226,7 @@ export function Knowledge({ members, isAdmin, timezone, onOpenConv, openItem = n
             {c.name}
           </Chip>
         ))}
-        <ErrorText message={kb.error} />
+        <ErrorText message={kb.error ?? pickError} />
       </div>
       <KbPdfHits
         q={q}
@@ -290,6 +315,15 @@ export function Knowledge({ members, isAdmin, timezone, onOpenConv, openItem = n
           </div>
         )}
       </div>
+      {importPick && (
+        <KbImport
+          pick={importPick}
+          data={data}
+          me={me}
+          onClose={() => setImportPick(null)}
+          onImported={() => kb.reload()}
+        />
+      )}
       {editing && (
         <KbEditor
           initial={editing}
@@ -1278,7 +1312,20 @@ function KbReader({
           <p className="text-sm text-muted">{t('kb.noBody')}</p>
         )}
         <div className="text-xs text-muted">
-          {t(`kb.source.${src.kind}` as MessageKey)}
+          {src.kind === 'import'
+            ? t('kb.source.import', { path: `${src.root}/${src.path}` })
+            : t(`kb.source.${src.kind}` as MessageKey)}
+          {src.kind === 'import' && importedFileKey(src.attachment) && (
+            <LinkButton
+              className="ml-2 underline"
+              onClick={() => {
+                onClose();
+                navigate({ page: 'files', fileKey: importedFileKey(src.attachment)! });
+              }}
+            >
+              {t('kb.source.importFile')}
+            </LinkButton>
+          )}
           {convId &&
             (inConv ? (
               <LinkButton

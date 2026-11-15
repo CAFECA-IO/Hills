@@ -535,6 +535,33 @@ async function finish(
   };
 }
 
+/**
+ * 知識庫匯入（D71，technical-design §16.22）：直接上傳一個已選擇的檔案並回傳附件。
+ * 不建立分享工作、不送訊息；中斷時由匯入流程整個檔案重來。
+ */
+export async function uploadPickedFile(
+  token: string,
+  name: string,
+  size: number,
+  mtime: number | null,
+  nodes: number[],
+): Promise<Attachment> {
+  if (nodes.length === 0) throw new Error('noNodes');
+  const { rawKey, fileNonce } = generateFileSecrets();
+  const job = { resumed: false, doneBytes: 0 } as UploadJob;
+  const manifest = await encodeAndUpload(
+    job,
+    { size, read: (o, l) => api.readStripe(token, o, l) },
+    { fileId: ulid(), rawKey, fileNonce },
+    name,
+    mtime,
+    nodes,
+    { paused: false, canceled: false },
+    false,
+  );
+  return { type: 'file', manifest, fileKey: toBase64(rawKey) };
+}
+
 // ── 下載 ────────────────────────────────────────────────────
 
 const fetchShard = (ref: { id: string; node: number }) =>

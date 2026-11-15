@@ -41,6 +41,21 @@ pub fn kb_chunks(doc: &KbDoc) -> Vec<Chunk> {
     chunks
 }
 
+/// 知識的 HTML / Markdown 附件（technical-design §16.20 v0.42，D71）：依副檔名轉文字後切片。
+/// 不是這兩種格式時回傳 `None`。
+pub fn text_file_chunks(name: &str, bytes: &[u8]) -> Option<Vec<Chunk>> {
+    let lower = name.to_lowercase();
+    let text = String::from_utf8_lossy(bytes);
+    let plain = if lower.ends_with(".html") || lower.ends_with(".htm") {
+        html_to_text(&text)
+    } else if lower.ends_with(".md") || lower.ends_with(".markdown") {
+        markdown_to_text(&text)
+    } else {
+        return None;
+    };
+    Some(chunk_blocks(&text_blocks(&plain), &Options::default()))
+}
+
 /// 以 `#`／`##`／`###` 開頭的行為標題，空行分段。
 fn text_blocks(text: &str) -> Vec<Block> {
     let mut out = Vec::new();
@@ -281,6 +296,16 @@ mod tests {
         assert_eq!(c.len(), 1);
         assert_eq!(c[0].heading, ["部署", "自架服務", "relay 部署", "步驟"]);
         assert_eq!(c[0].text, "先開 UDP 7842。");
+    }
+
+    #[test]
+    fn attachment_text_files() {
+        let c =
+            text_file_chunks("規格.HTML", "<h2>流量</h2><p>每 5 分鐘一筆</p>".as_bytes()).unwrap();
+        assert_eq!(c[0].heading, ["流量"]);
+        assert_eq!(c[0].text, "每 5 分鐘一筆");
+        assert!(text_file_chunks("a.md", b"# A\n\nb").is_some());
+        assert!(text_file_chunks("a.pdf", b"%PDF").is_none());
     }
 
     #[test]

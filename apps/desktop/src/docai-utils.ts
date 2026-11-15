@@ -11,6 +11,11 @@ export function isPdf(f: Pick<FileEntry, 'kind' | 'name' | 'mime'>): boolean {
   return f.kind === 'file' && (f.mime === 'application/pdf' || extOf(f.name) === 'pdf');
 }
 
+/** 知識附件中可轉文字索引的 HTML / Markdown（technical-design §16.20 v0.42）。 */
+export function isKbText(f: Pick<FileEntry, 'kind' | 'name'>): boolean {
+  return f.kind === 'file' && ['html', 'htm', 'md', 'markdown'].includes(extOf(f.name));
+}
+
 /**
  * 自動排入的檔案：還沒有索引狀態的 PDF；知識庫的檔案一律排入，
  * 結案報告與對話的檔案在本機下載後才排入（其餘由使用者按「建立索引」）。
@@ -19,9 +24,10 @@ export function autoQueue(files: FileEntry[], status: DocAiStatus): FileEntry[] 
   if (!status.ready) return [];
   return files.filter(
     (f) =>
-      isPdf(f) &&
       !status.files[f.key] &&
-      (f.downloaded !== null || f.sources.some((s) => s.kind === 'kb')),
+      ((isPdf(f) && (f.downloaded !== null || f.sources.some((s) => s.kind === 'kb'))) ||
+        // v0.42（D71）：知識的 HTML / Markdown 附件也建立索引
+        (isKbText(f) && f.sources.some((s) => s.kind === 'kb'))),
   );
 }
 

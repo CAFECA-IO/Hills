@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.41 草案 · 2026-11-15 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.42 草案 · 2026-11-15 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -938,6 +938,7 @@ source = { kind: "manual" }
        | { kind: "message", convId, messageKey }
        | { kind: "file", convId, attachment /* §14.2 Attachment，含 fileKey */ }
        | { kind: "task", teamId, taskId }
+       | { kind: "import", root, path, sha256, attachment? }   // v0.42（D71）：匯入資料夾
 ```
 
 - **寫入規則**：
@@ -1350,6 +1351,8 @@ Block = Heading{level, text, page} | Para{text, page}
 
 細節在實作時補進本節。
 
+**知識的 HTML / Markdown 附件**（v0.42，D71）：知識附件除了 PDF，`.html` / `.htm` / `.md` 也建立索引——不經 pdfium，以 `kbtext::html_to_text` / `markdown_to_text` 轉文字後切片，出處、頁碼為 0，其餘規則同上。
+
 **知識條目**（v0.40，D70）：知識庫的條目本身也建立語意索引，與 PDF 共用向量模型與切片規則。
 
 - 索引檔 `docai-kb`（本機加密，規則同上）：`{ model, items: { itemKey → { updatedAt, chunks: [{ text, heading, vec }] } } }`。`itemKey` 為 §16.11 的 `<作者 memberId>:<ULID>`。
@@ -1409,6 +1412,32 @@ Block = Heading{level, text, page} | Para{text, page}
 - **MCP**（v0.41）：以工具 `ask_knowledge` 開放給成員自己的 AI 代理（§18.3，D48）。前提是 MCP 已開啟、這台電腦已開啟問知識庫。流程與介面相同，但不串流，一次回傳 `{ understood, answer, citations, notFound }`；對話歷史由呼叫端以 `history` 帶入，不保存。回答與片段會交給成員自己的 AI 代理，與 `search_knowledge` 相同層級。
 
 **測試**：流程以假的語言模型（依提示回傳固定 JSON 與文字）測試意圖分流、門檻、出處檢查與取消；需要真模型的測試標 `#[ignore]`，以 `HILLS_DOCAI_DIR` 指向元件。
+
+### 16.22 匯入資料夾（v0.42，D71）
+
+**來源** `{ kind: "import", root, path, sha256, attachment? }`（§16.11）：
+
+- `root` = 資料夾名稱（1–100 字），`path` = 相對路徑（`/` 分隔，1–500 字，不含 `..` 與開頭的 `/`），`sha256` = 原檔 SHA-256（64 位小寫 hex），`attachment` = 原檔附件（§14.2，JSON 上限同 `file`）。
+- **更新例外**：作者以 `import` 來源更新自己以 `import` 匯入的知識時，`source` 一併替換（新的雜湊與附件）；其他情況照舊保留原來源。他人（含管理者）以 `import` 更新時不替換來源。
+- §16.19 的知識附件也包含 `import` 來源的附件，出處是該則知識。
+
+**流程**（前端為主，一次處理一個檔案，可取消）：
+
+1. `pick_folder`（既有，§15）取得檔案清單與讀取權杖。
+2. 篩選 `.md` `.markdown` `.html` `.htm` `.pdf`，略過隱藏檔與隱藏資料夾（`.` 開頭）；最多 500 個。
+3. `read_stripe` 讀出全檔（PDF 不讀內容，只算雜湊）；WebCrypto 計算 SHA-256。
+4. 比對：本人 `import` 來源中 `root` 與 `path` 相同者 → 雜湊相同「沒有變更」、不同「更新」；沒有 → 「新增」。資料夾中已不存在的匯入知識只列在摘要。
+5. 分類、主題：依名稱找既有的（合併後的最終項目），沒有的以 `kb_create_category` / `kb_create_topic` 建立。主題 = 第一層子資料夾，根目錄的檔案 = 「一般」。
+6. 轉換：
+   - Markdown 原樣。
+   - HTML 以 DOMParser 轉 Markdown：`h1`–`h6`、`p`、`ul` / `ol` / `li`、`table` → GFM 表格、`a`（只留 http / https）、`br`、`pre` / `code`、`strong` / `em`；略過 `script`、`style`、`nav`、`noscript`、`svg`、`canvas`。
+   - 標題取 `<title>` 或第一個 `h1`，沒有時用檔名（去副檔名）。
+   - PDF 內文：「PDF 文件：{檔名}。全文見附件。」
+   - 超過 64 KB（UTF-8）時在段落邊界截斷，加上「> [!NOTE] 內容較長，以上為節錄，全文見附件。」
+7. 附件：HTML 與 PDF 一律上傳；Markdown 只在截斷時上傳（§15 加密分片，與分享檔案相同）。
+8. `kb_save`（新增或以既有 key 更新）。失敗的檔案列在摘要，可重試。
+
+**索引**（§16.20）：知識的附件中，`.pdf` 走 pdfium；`.html` / `.htm` / `.md` 以 `kbtext` 轉文字後切片，同樣不落地、只存本機加密索引；「檔案」與問知識庫中稱為「附件片段」。
 
 ### 16.9 部署（M0）
 

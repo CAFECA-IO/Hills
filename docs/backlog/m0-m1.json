@@ -938,6 +938,16 @@
         "area:core"
       ],
       "body": "## 目標\n\n成員在知識庫用平常說話的方式提問，由這台電腦上的語言模型根據知識庫回答並附出處；知識庫底部改為一年貢獻格。全程不上傳、不經 AI Gateway。\n\n## 工作項目\n\n- [ ] hills-docai：知識條目語意索引 `docai-kb`（切片、排程、刪除與重建）\n- [ ] hills-docai：BM25 + 語意的混合檢索（RRF）、範圍限定\n- [ ] hills-docai `kbask`：Gemma 4 E4B（llama.cpp，`llama-cpp-2`）下載與載入 / 卸載、意圖 JSON（GBNF）、相關度門檻、作答串流、出處檢查、取消；假模型測試\n- [ ] 桌機指令與事件 `kbask_*`、`kbask://*`\n- [ ] `ui/`：`ActivityGrid`、`CitationMark`、`SourceCard`、`ChatComposer`；token `--hills-activity-*`、`--hills-cite*`\n- [ ] 知識庫頁面：右側問知識庫面板（五種狀態）、預覽卡「問這則知識」、星空引用標示、這一年格子\n- [ ] 設定 › AI 協助：「問知識庫」卡；文件理解卡加知識索引數\n- [ ] mock、i18n\n\n## 驗收條件\n\n- 問題在知識庫有答案時，回答的每個出處編號都能對到參考卡，點選後開啟正確的知識或 PDF 頁\n- 知識庫沒有的主題回「沒有找到」，不自行編造\n- 關閉網路時問答仍可使用；抓包確認問答過程沒有任何對外連線\n- Apple Silicon 16 GB 的 Mac 上，第一個字在 5 秒內出現（模型已載入）\n- 新增或修改一則知識後，1 分鐘內可被問到\n- 只用鍵盤可以完成提問、看出處、選取一週\n\n## 參考\n\nfeature-plan D70（修改 D9、D42、D68）；technical-design §16.20–16.21 v0.40；ui-spec「知識庫」「設定」v0.51；design-system v0.13；components v0.16；development-guidelines v0.4；設計畫布「Hills 知識庫 · 星空問答」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M1] 知識庫匯入資料夾（D71）",
+      "milestone": "M1 計劃、Scrum、對話與檔案（MVP）",
+      "labels": [
+        "type:feature",
+        "area:ui",
+        "area:core"
+      ],
+      "body": "## 目標\n\n一次把資料夾裡的 .md / .html / .pdf 匯入成全組織知識，分類與主題依資料夾，匯入後可搜尋、可問知識庫。\n\n## 工作項目\n\n- [ ] 知識來源 `import`（root、path、sha256、attachment）與更新例外；驗證與測試\n- [ ] 「檔案」列出匯入的附件\n- [ ] 文件索引擴充到知識的 HTML / Markdown 附件\n- [ ] 前端：篩選、比對、HTML → Markdown、截斷、附件上傳、kb_save\n- [ ] 知識庫：「匯入資料夾」按鈕、對話框、進度與摘要；閱讀畫面顯示匯入來源\n- [ ] mock、i18n\n\n## 驗收條件\n\n- 匯入「06」類型的資料夾：每個 HTML / MD / PDF 一則知識，分類 = 資料夾、主題 = 第一層子資料夾\n- 超過 64 KB 的 HTML 截斷並附原檔；問知識庫能回答截斷部分的內容\n- 再次匯入只更新內容有變的檔案，不產生重複\n- 送出前看得到「會公開給全組織」的提示\n\n## 參考\n\nfeature-plan D71（修改 D42、D68）；technical-design §16.11、§16.19、§16.20、§16.22 v0.42；ui-spec「知識庫」v0.52\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
     }
   ]
 }

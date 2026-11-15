@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.40 草案 · 2026-11-15 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.41 草案 · 2026-11-15 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -1406,7 +1406,7 @@ Block = Heading{level, text, page} | Para{text, page}
 
 - 問題、片段、回答只在記憶體；不寫入磁碟、不同步。
 - 日誌只記耗時、段數與 token 數，不記內容。
-- 不提供 MCP 工具：成員自己的 AI Agent 已有自己的模型，可用 `search_knowledge`（§18.3）。
+- **MCP**（v0.41）：以工具 `ask_knowledge` 開放給成員自己的 AI 代理（§18.3，D48）。前提是 MCP 已開啟、這台電腦已開啟問知識庫。流程與介面相同，但不串流，一次回傳 `{ understood, answer, citations, notFound }`；對話歷史由呼叫端以 `history` 帶入，不保存。回答與片段會交給成員自己的 AI 代理，與 `search_knowledge` 相同層級。
 
 **測試**：流程以假的語言模型（依提示回傳固定 JSON 與文字）測試意圖分流、門檻、出處檢查與取消；需要真模型的測試標 `#[ignore]`，以 `HILLS_DOCAI_DIR` 指向元件。
 
@@ -1585,6 +1585,7 @@ kind = `recover`，流程與加入相同（產生**新的** IK / EK / DK、`Appl
 | `list_conversations` | — | 對話列表 |
 | `read_messages` | `conv`、`limit?`（≤ 50） | 最近的訊息 |
 | `search_knowledge` | `query`、`limit?` | 標題與內文包含關鍵字的知識；v0.37（D68）：開啟文件理解時另回 `contentHits`（PDF 內容命中：檔名、頁碼、標題路徑、片段、出處，§16.20） |
+| `ask_knowledge` | `question`、`history?`（最多 3 輪 `{question, answer}`）、`scope?`（分類 id 或知識 key） | v0.41（D70）：以本機語言模型根據知識庫回答（§16.21），回傳 `understood`（意圖與改寫的查詢）、`answer`（含 `[n]`）、`citations`（`n`、`kind`、`key`、`title`、`page?`、`heading`）、`notFound`。讀取類，不需確認。這台電腦未開啟問知識庫時回錯誤「問知識庫尚未在這台電腦開啟」；同一時間只處理一個問題，逾時 120 秒 |
 | `list_teams` | — | v0.28（D51）：小組（id、名稱、成員、負責人、封存時間、本人能否管理） |
 | `list_knowledge_tree` | — | v0.28（D51）：知識庫分類與主題（含 `resolved`：合併後的最終項目），不含內文 |
 

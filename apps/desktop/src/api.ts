@@ -24,12 +24,18 @@ export const PRESENCE_STATES: readonly PresenceState[] = [
 export type LocationCode = string;
 
 export interface Look {
-  /** 角色種類 0–6（男性、女性、貓、狗、大象、羊、老虎；D56）；舊資料沒有時視為 0 */
+  /** 只為相容舊版而保留：0（髮型 0–3）或 1（髮型 4–7）；technical-design §16.8 */
   kind: number;
-  /** 部位 1 色號 0–5（頭髮 / 毛色 / 皮膚 / 羊毛） */
+  /** 髮色 0–5 */
   hair: number;
+  /** 衣服顏色 0–5 */
   shirt: number;
+  /** 膚色 0–5 */
   skin: number;
+  /** 髮型 0–7（含臉與體型；D69）。後端讀取時已補上，舊資料才會沒有 */
+  head?: number;
+  /** 服裝款式 0–7（D69） */
+  outfit?: number;
 }
 
 export interface AppInfo {

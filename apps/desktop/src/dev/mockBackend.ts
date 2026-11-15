@@ -76,7 +76,14 @@ const state = {
 };
 
 const now0 = Date.now();
-const look = (hair: number, shirt: number, skin: number, kind = 0) => ({ kind, hair, shirt, skin });
+const look = (hair: number, shirt: number, skin: number, head = 0, outfit = head) => ({
+  kind: head < 4 ? 0 : 1,
+  hair,
+  shirt,
+  skin,
+  head,
+  outfit,
+});
 const person = (
   id: string,
   name: string,

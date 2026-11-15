@@ -1,7 +1,7 @@
-/** 設定 › 我是誰（ui-spec「設定」v0.37，D56、D57）：角色舞台與配色、名稱與時區、狀態、CAFECA 帳戶。 */
+/** 設定 › 我是誰（ui-spec「設定」v0.50，D56、D57、D69）：髮型舞台、服裝與配色、名稱與時區、狀態、CAFECA 帳戶。 */
 import { useState } from 'react';
 import { api, type Look, type MemberProfile, type MemberView, type Overview } from '../api';
-import { CHARACTER_KINDS, CharacterArt, kindOf } from '../characters';
+import { CharacterArt, HEAD_COUNT, OUTFIT_COUNT, headOf, outfitOf } from '../characters';
 import { useLoad } from '../hooks';
 import { t } from '../i18n';
 import { deviceTimezone, emptyProfile, isValidTimezone, timezoneOptions } from '../profile-utils';
@@ -13,28 +13,40 @@ import {
   ErrorText,
   Field,
   GlassPanel,
+  OptionTile,
   Select,
   SwatchGroup,
   useAction,
 } from '../ui';
-import { PART_LABELS } from './model';
+import { OUTFIT_LABELS } from './model';
 
 const scope = (s: 'device' | 'me' | 'org') => ({
   scope: s,
   label: t(`settings.scope.${s}`),
 });
 
+/** 三列配色（ui-spec「設定」v0.50）：髮色、膚色、衣服顏色。 */
+const PARTS = [
+  { key: 'hair', token: 'hair', label: 'look.part.hair' },
+  { key: 'skin', token: 'skin', label: 'look.part.skin' },
+  { key: 'shirt', token: 'shirt', label: 'look.part.shirt' },
+] as const;
+
 export function MeGroup({ me, overview }: { me: MemberView; overview: Overview }) {
   const [look, setLook] = useState<Look>(lookOf(me));
   const [saved, setSaved] = useState(false);
   const { busy, error, attempt } = useAction();
-  const kind = kindOf(look);
-  const parts = PART_LABELS[kind];
-  const keys = ['hair', 'shirt', 'skin'] as const;
-  const tokens = [`look-${kind}-a`, 'shirt', `look-${kind}-c`];
+  const head = headOf(look);
+  const outfit = outfitOf(look);
+  const change = (patch: Partial<Look>) => {
+    const next = { ...look, head, outfit, ...patch };
+    setLook({ ...next, kind: headOf(next) < 4 ? 0 : 1 });
+    setSaved(false);
+  };
   const dirty =
     !me.look ||
-    look.kind !== (me.look.kind ?? 0) ||
+    head !== headOf(me.look) ||
+    outfit !== outfitOf(me.look) ||
     look.hair !== me.look.hair ||
     look.shirt !== me.look.shirt ||
     look.skin !== me.look.skin;
@@ -42,38 +54,49 @@ export function MeGroup({ me, overview }: { me: MemberView; overview: Overview }
     <div className="flex min-h-0 flex-1 gap-5">
       <div className="flex w-80 shrink-0 flex-col items-center justify-end pb-2">
         <CharacterStage
-          count={CHARACTER_KINDS.length}
-          index={look.kind}
-          onChange={(i) => {
-            setLook({ ...look, kind: i });
-            setSaved(false);
-          }}
-          label={t('character.current', { kind: t(`character.kind.${kind}`) })}
-          prevLabel={t('character.prev')}
-          nextLabel={t('character.next')}
+          count={HEAD_COUNT}
+          index={head}
+          onChange={(i) => change({ head: i })}
+          label={t('look.stage', { n: head + 1, total: HEAD_COUNT })}
+          prevLabel={t('look.stage.prev')}
+          nextLabel={t('look.stage.next')}
         >
           <svg width={180} height={330} viewBox="0 0 100 240" aria-hidden="true">
-            <CharacterArt look={look} animate />
+            <CharacterArt look={{ ...look, head, outfit }} animate sketch />
           </svg>
         </CharacterStage>
       </div>
       <div className="scroll-panel flex min-h-0 flex-1 flex-col gap-4 pr-1">
         <GlassPanel id="settings-look" title={t('look.title')} scope={scope('me')}>
           <div className="flex flex-col gap-3">
-            {keys.map((k, i) => (
+            <OptionTile
+              label={t('look.outfit')}
+              columns={4}
+              value={String(outfit)}
+              onChange={(v) => change({ outfit: Number(v) })}
+              options={Array.from({ length: OUTFIT_COUNT }, (_, n) => ({
+                value: String(n),
+                title: (
+                  <span className="flex flex-col items-center gap-1">
+                    <svg width={52} height={62} viewBox="14 80 72 86" aria-hidden="true">
+                      <CharacterArt look={{ ...look, head, outfit: n }} pose="rest" />
+                    </svg>
+                    {t(OUTFIT_LABELS[n]!)}
+                  </span>
+                ),
+              }))}
+            />
+            {PARTS.map(({ key, token, label }) => (
               <SwatchGroup
-                key={k}
-                label={t(parts[i])}
+                key={key}
+                label={t(label)}
                 colors={Array.from(
                   { length: LOOK_PALETTE },
-                  (_, n) => `var(--hills-${tokens[i]}-${n})`,
+                  (_, n) => `var(--hills-${token}-${n})`,
                 )}
-                value={look[k]}
-                onChange={(n) => {
-                  setLook({ ...look, [k]: n });
-                  setSaved(false);
-                }}
-                optionLabel={(n) => t('look.swatch', { part: t(parts[i]), n: n + 1 })}
+                value={look[key]}
+                onChange={(n) => change({ [key]: n })}
+                optionLabel={(n) => t('look.swatch', { part: t(label), n: n + 1 })}
               />
             ))}
             <div className="flex items-center gap-3">

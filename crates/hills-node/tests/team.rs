@@ -79,10 +79,12 @@ async fn tasks_profiles_offices_and_presence_sync() {
 
     // 角色外觀
     let look = Look {
-        kind: 3,
+        kind: 1,
         hair: 2,
         shirt: 5,
         skin: 1,
+        head: Some(5),
+        outfit: Some(3),
     };
     alice.set_profile(look).await.unwrap();
     assert!(

@@ -60,7 +60,7 @@ export interface TileOption<T extends string> {
   disabled?: boolean;
 }
 
-const COLS = ['grid-cols-1', 'grid-cols-1', 'grid-cols-2', 'grid-cols-3'];
+const COLS = ['grid-cols-1', 'grid-cols-1', 'grid-cols-2', 'grid-cols-3', 'grid-cols-4'];
 
 /**
  * 單選小卡：圖示、標題、一行說明。WAI-ARIA radiogroup：只有選取的卡可 Tab 聚焦，
@@ -78,7 +78,7 @@ export function OptionTile<T extends string>({
   options: TileOption<T>[];
   value: T;
   onChange: (v: T) => void;
-  columns?: 1 | 2 | 3;
+  columns?: 1 | 2 | 3 | 4;
   className?: string;
 }) {
   const cols = columns ?? (Math.min(3, options.length) as 1 | 2 | 3);

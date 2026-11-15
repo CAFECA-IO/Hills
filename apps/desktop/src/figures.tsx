@@ -9,6 +9,8 @@ import {
   Character,
   CharacterArt,
   CharacterHead,
+  HEAD_Y,
+  HOLD_Y,
   type Pose,
   SCENE_HEAD_Y,
   SCENE_SCALE,
@@ -301,7 +303,7 @@ const POSE: Record<St, Pose> = {
   Offline: 'rest',
 };
 /** 場景座標中雙手的高度（端碗位置）。 */
-const HAND_Y = (105 - 226) * SCENE_SCALE;
+const HAND_Y = (HOLD_Y - 226) * SCENE_SCALE;
 
 export function Cloud({ x, y, scale = 1 }: { x: number; y: number; scale?: number }) {
   return (
@@ -545,7 +547,9 @@ export function Avatar({
       <g opacity={st === 'Offline' ? 0.55 : 1}>
         <circle cx={50} cy={41} r={r} fill={v(`avatar-${idHash(member.id) % AVATAR_TONES}`)} />
         <g clipPath={`url(#${clip})`}>
-          <CharacterArt look={lookOf(member)} pose="rest" />
+          <g transform={`translate(50 45) scale(0.64) translate(-50 ${-HEAD_Y})`}>
+            <CharacterArt look={lookOf(member)} pose="rest" sketch={size >= 64} />
+          </g>
         </g>
       </g>
       {me && <circle cx={50} cy={41} r={29} fill="none" stroke={v('primary')} strokeWidth={2.6} />}

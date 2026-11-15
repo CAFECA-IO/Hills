@@ -4,10 +4,11 @@
  */
 import type { Look, MemberView, OfficeView, PresenceState, Task, TaskStep } from './api';
 
-/** 外觀色盤大小（team.rs LOOK_PALETTE、tokens.css --hills-look-*-0…5，D56）。 */
+/** 外觀色盤大小（team.rs LOOK_PALETTE；tokens.css --hills-hair / skin / shirt-0…5，D69）。 */
 export const LOOK_PALETTE = 6;
-/** 角色種類數（team.rs LOOK_KINDS；characters.tsx CHARACTER_KINDS）。 */
-export const LOOK_KINDS = 7;
+/** 髮型與服裝款式的數量（team.rs LOOK_HEADS、LOOK_OUTFITS）。 */
+export const LOOK_HEADS = 8;
+export const LOOK_OUTFITS = 8;
 
 /** 由成員 ID 算出的穩定雜湊（FNV-1a），用於預設外觀與頭像底色。 */
 export function idHash(id: string): number {
@@ -25,11 +26,14 @@ export const AVATAR_TONES = 7;
 /** 尚未設定外觀的成員：由 ID 決定（每個人看到的都一樣）。 */
 export function defaultLook(id: string): Look {
   const h = idHash(id);
+  const head = (h >>> 20) % LOOK_HEADS;
   return {
-    kind: 0,
-    hair: h % LOOK_PALETTE,
+    kind: head < 4 ? 0 : 1,
+    hair: h % 4,
     shirt: (h >>> 8) % LOOK_PALETTE,
     skin: (h >>> 16) % 4,
+    head,
+    outfit: (h >>> 24) % LOOK_OUTFITS,
   };
 }
 

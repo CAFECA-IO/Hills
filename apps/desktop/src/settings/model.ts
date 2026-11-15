@@ -226,13 +226,14 @@ export function writeGroup(g: Group): void {
   }
 }
 
-/** 角色三個部位的名稱（technical-design §16.8 v0.31 表格）。 */
-export const PART_LABELS: Record<string, [MessageKey, MessageKey, MessageKey]> = {
-  man: ['look.part.hair', 'look.part.shirt', 'look.part.skin'],
-  woman: ['look.part.hair', 'look.part.shirt', 'look.part.skin'],
-  cat: ['look.part.fur', 'look.part.shirt', 'look.part.pattern'],
-  dog: ['look.part.fur', 'look.part.shirt', 'look.part.ears'],
-  elephant: ['look.part.hide', 'look.part.shirt', 'look.part.earInner'],
-  sheep: ['look.part.wool', 'look.part.shirt', 'look.part.face'],
-  tiger: ['look.part.fur', 'look.part.shirt', 'look.part.stripes'],
-};
+/** 服裝款式的名稱，依款式編號排列（technical-design §16.8 v0.38，D69）。 */
+export const OUTFIT_LABELS: MessageKey[] = [
+  'look.outfit.0',
+  'look.outfit.1',
+  'look.outfit.2',
+  'look.outfit.3',
+  'look.outfit.4',
+  'look.outfit.5',
+  'look.outfit.6',
+  'look.outfit.7',
+];

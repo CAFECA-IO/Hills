@@ -115,6 +115,9 @@ describe('helpers', () => {
     const l = defaultLook('xyz');
     expect(l.hair).toBeLessThan(8);
     expect(l.skin).toBeLessThan(4);
+    expect(l.head).toBeLessThan(8);
+    expect(l.outfit).toBeLessThan(8);
+    expect(l.kind).toBe(l.head! < 4 ? 0 : 1);
   });
 
   it('defers notifications only in meeting, lunch or focus before until', () => {

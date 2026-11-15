@@ -34,6 +34,9 @@ const MAX_TITLE: usize = 200;
 pub const LOOK_PALETTE: u8 = 6;
 /// 角色種類數：男性、女性、貓、狗、大象、羊、老虎（D56）
 pub const LOOK_KINDS: u8 = 7;
+/// 髮型與服裝款式的數量（technical-design §16.8 v0.38，D69）。
+pub const LOOK_HEADS: u8 = 8;
+pub const LOOK_OUTFITS: u8 = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -232,32 +235,75 @@ pub struct StepInput {
     pub estimate: Option<u32>,
 }
 
-/// 角色外觀：角色種類與三個部位的色號（technical-design §16.8 v0.31，D56）。
-/// 舊資料沒有 `kind`，視為 0（男性）。
+/// 角色外觀（technical-design §16.8 v0.38，D69）：髮型、服裝款式與三個色號。
+/// `kind` 只為相容舊版保留；舊資料沒有 `head`、`outfit`，讀取時由 [`Look::resolved`] 對應。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct Look {
     #[serde(default)]
     pub kind: u8,
+    /// 髮色
     pub hair: u8,
+    /// 衣服顏色
     pub shirt: u8,
+    /// 膚色
     pub skin: u8,
+    /// 髮型 0–7（含臉型、鬍子與體型）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub head: Option<u8>,
+    /// 服裝款式 0–7
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outfit: Option<u8>,
 }
 
 impl Look {
+    /// 寫入前的檢查：新版一律帶髮型與款式。
     pub fn is_valid(&self) -> bool {
-        self.kind < LOOK_KINDS
+        self.head.is_some_and(|h| h < LOOK_HEADS)
+            && self.outfit.is_some_and(|o| o < LOOK_OUTFITS)
             && self.hair < LOOK_PALETTE
             && self.shirt < LOOK_PALETTE
             && self.skin < LOOK_PALETTE
     }
 
-    /// 讀取時的相容換算：色號以色盤大小取餘數，未知的角色視為男性。
-    pub fn normalized(self) -> Look {
+    /// 寫入用：`kind` 依髮型寫 0 或 1，讓還沒更新的同事看到相近的舊角色。
+    pub fn for_write(self) -> Look {
         Look {
-            kind: if self.kind < LOOK_KINDS { self.kind } else { 0 },
-            hair: self.hair % LOOK_PALETTE,
-            shirt: self.shirt % LOOK_PALETTE,
-            skin: self.skin % LOOK_PALETTE,
+            kind: u8::from(self.head.unwrap_or(0) >= 4),
+            ..self
+        }
+    }
+
+    /// 讀取時的相容換算（D69）：有髮型的資料只取餘數；舊資料依角色種類自動對應——
+    /// 男性 → 髮型 0、款式 0；女性 → 4、4（顏色沿用）；動物 → 依成員 ID 固定分配、髮色與膚色用第一色。
+    pub fn resolved(self, member: &MemberId) -> Look {
+        let shirt = self.shirt % LOOK_PALETTE;
+        if let Some(head) = self.head {
+            let head = head % LOOK_HEADS;
+            return Look {
+                kind: u8::from(head >= 4),
+                hair: self.hair % LOOK_PALETTE,
+                shirt,
+                skin: self.skin % LOOK_PALETTE,
+                head: Some(head),
+                outfit: Some(self.outfit.unwrap_or(head) % LOOK_OUTFITS),
+            };
+        }
+        let (head, hair, skin) = match self.kind {
+            1 => (4, self.hair % LOOK_PALETTE, self.skin % LOOK_PALETTE),
+            2..LOOK_KINDS => {
+                let h = blake3::hash(member.to_string().as_bytes()).as_bytes()[0] % LOOK_HEADS;
+                (h, 0, 0)
+            }
+            // 0 與超出範圍的值都視為男性
+            _ => (0, self.hair % LOOK_PALETTE, self.skin % LOOK_PALETTE),
+        };
+        Look {
+            kind: u8::from(head >= 4),
+            hair,
+            shirt,
+            skin,
+            head: Some(head),
+            outfit: Some(head),
         }
     }
 }
@@ -650,7 +696,7 @@ pub fn read_profiles(doc: &AutoCommit) -> BTreeMap<MemberId, Look> {
             let m = MemberId::parse(k.strip_prefix(PROFILE_PREFIX)?).ok()?;
             let raw = get_str(doc, &ROOT, &k)?;
             let look: Look = serde_json::from_str(&raw).ok()?;
-            Some((m, look.normalized()))
+            Some((m, look.resolved(&m)))
         })
         .collect()
 }
@@ -922,6 +968,7 @@ impl Node {
             bail!("尚未加入任何小組");
         }
         for team in teams {
+            let look = look.for_write();
             self.change(&team_doc(&team), |doc| put_profile(doc, &me, &look))
                 .await?;
         }
@@ -1341,18 +1388,16 @@ mod tests {
     #[test]
     fn profiles() {
         let mut doc = AutoCommit::new();
-        put_profile(
-            &mut doc,
-            &A,
-            &Look {
-                kind: 2,
-                hair: 1,
-                shirt: 2,
-                skin: 3,
-            },
-        )
-        .unwrap();
-        // 舊資料：沒有 kind、色號 0–7（v0.31 起以 6 取餘數）
+        let new = Look {
+            kind: 0,
+            hair: 1,
+            shirt: 2,
+            skin: 3,
+            head: Some(6),
+            outfit: Some(1),
+        };
+        put_profile(&mut doc, &A, &new.for_write()).unwrap();
+        // 舊資料：沒有 kind、head、outfit，色號 0–7（以 6 取餘數）→ 視為男性
         doc.put(
             ROOT,
             format!("profile:{B}").as_str(),
@@ -1361,24 +1406,63 @@ mod tests {
         .unwrap();
         let p = read_profiles(&doc);
         assert_eq!(p.len(), 2);
-        assert_eq!(p[&A].kind, 2);
-        assert_eq!(p[&A].skin, 3);
+        // 新資料：照寫入的髮型與款式；kind 依髮型為 1
+        assert_eq!(p[&A], Look { kind: 1, ..new });
         assert_eq!(
             p[&B],
             Look {
                 kind: 0,
                 hair: 1,
                 shirt: 0,
-                skin: 0
+                skin: 0,
+                head: Some(0),
+                outfit: Some(0),
             }
         );
-        let bad = Look {
-            kind: 9,
-            hair: 0,
-            shirt: 0,
-            skin: 0,
+    }
+
+    #[test]
+    fn old_looks_map_to_new_ones() {
+        let old = |kind| Look {
+            kind,
+            hair: 3,
+            shirt: 4,
+            skin: 2,
+            head: None,
+            outfit: None,
         };
-        assert!(!bad.is_valid());
-        assert_eq!(bad.normalized().kind, 0);
+        // 男性、女性：固定髮型與款式，顏色沿用
+        let man = old(0).resolved(&A);
+        assert_eq!(
+            (man.head, man.outfit, man.hair, man.skin, man.shirt),
+            (Some(0), Some(0), 3, 2, 4)
+        );
+        let woman = old(1).resolved(&A);
+        assert_eq!(
+            (woman.head, woman.outfit, woman.kind),
+            (Some(4), Some(4), 1)
+        );
+        // 動物：依成員固定分配，髮色與膚色用第一色，衣服顏色沿用
+        for kind in 2..LOOK_KINDS {
+            let a = old(kind).resolved(&A);
+            assert_eq!(a, old(kind).resolved(&A), "同一位成員每次相同");
+            assert!(a.head.is_some_and(|h| h < LOOK_HEADS));
+            assert_eq!(a.outfit, a.head);
+            assert_eq!((a.hair, a.skin, a.shirt), (0, 0, 4));
+            assert!(a.is_valid());
+        }
+        // 超出範圍的角色種類視為男性；超出範圍的髮型取餘數
+        assert_eq!(old(9).resolved(&A).head, Some(0));
+        let wild = Look {
+            head: Some(13),
+            outfit: Some(9),
+            ..old(0)
+        };
+        let w = wild.resolved(&A);
+        assert_eq!((w.head, w.outfit), (Some(5), Some(1)));
+        // 寫入檢查：一定要有髮型與款式
+        assert!(!old(0).is_valid());
+        assert!(!wild.is_valid());
+        assert!(w.is_valid());
     }
 }

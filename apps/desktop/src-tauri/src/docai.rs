@@ -569,32 +569,38 @@ pub(crate) fn kb_paths(snap: &KbSnapshot) -> HashMap<String, (String, Vec<String
 pub(crate) fn sync_kb(ai: &DocAi, node: &Node, snap: &KbSnapshot) -> CmdResult<usize> {
     ensure_engine(ai, node)?;
     let paths = kb_paths(snap);
-    let mut g = lock(&ai.engine);
-    let en = g.as_mut().ok_or("文件理解尚未就緒")?;
     let vault = NodeVault(node.clone());
     let live: std::collections::HashSet<&str> = snap.items.iter().map(|i| i.key.as_str()).collect();
-    let gone: Vec<String> = en
-        .kb
-        .files()
-        .keys()
-        .filter(|k| !live.contains(k.as_str()))
-        .cloned()
-        .collect();
-    for k in gone {
-        en.kb.forget(&vault, &k).map_err(e)?;
-    }
+    let started = std::time::Instant::now();
     let mut changed = 0;
+    // 每則各自取鎖：建立索引時，搜尋與提問不必等全部做完
+    {
+        let mut g = lock(&ai.engine);
+        let en = g.as_mut().ok_or("文件理解尚未就緒")?;
+        let gone: Vec<String> = en
+            .kb
+            .files()
+            .keys()
+            .filter(|k| !live.contains(k.as_str()))
+            .cloned()
+            .collect();
+        for k in gone {
+            en.kb.forget(&vault, &k).map_err(e)?;
+        }
+    }
     for it in &snap.items {
         let at = u64::try_from(it.updated_at).unwrap_or(0);
-        if en.kb.files().get(&it.key).is_some_and(|f| f.at == at) {
-            continue;
-        }
         let doc = KbDoc {
             title: it.title.clone(),
             path: paths.get(&it.key).map(|p| p.1.clone()).unwrap_or_default(),
             body: it.body.clone(),
             html: it.format == hills_node::doc_spec::DocFormat::Html,
         };
+        let mut g = lock(&ai.engine);
+        let en = g.as_mut().ok_or("文件理解尚未就緒")?;
+        if en.kb.files().get(&it.key).is_some_and(|f| f.at == at) {
+            continue;
+        }
         let chunks = kb_chunks(&doc);
         let texts: Vec<String> = chunks.iter().map(|c| c.embed_text()).collect();
         let vecs = en.embedder.embed_passages(&texts).map_err(e)?;
@@ -604,7 +610,11 @@ pub(crate) fn sync_kb(ai: &DocAi, node: &Node, snap: &KbSnapshot) -> CmdResult<u
         changed += 1;
     }
     if changed > 0 {
-        tracing::info!(items = changed, "知識索引更新");
+        tracing::info!(
+            items = changed,
+            ms = started.elapsed().as_millis() as u64,
+            "知識索引更新"
+        );
     }
     Ok(changed)
 }

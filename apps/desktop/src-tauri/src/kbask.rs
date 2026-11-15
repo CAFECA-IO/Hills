@@ -94,6 +94,13 @@ pub struct KbAskStatus {
     memory_low: bool,
 }
 
+/// 問知識庫是否開啟。先複製設定再判斷：`Settings` 的鎖不能在呼叫 `ready()` 等
+/// 也會取這個鎖的函式時持有（std 的 Mutex 不可重入，會卡住自己）。
+fn ask_on(ai: &DocAi) -> bool {
+    let s = lock(&ai.settings).clone();
+    s.ask && s.enabled
+}
+
 fn ready(ai: &DocAi) -> bool {
     ai.all_ready() && models::is_ready(&ai.dir, &GEMMA_4_E4B)
 }
@@ -238,11 +245,8 @@ fn ask_now(
 ) -> CmdResult<Answer> {
     let ai = app.state::<DocAi>();
     let ask = app.state::<KbAsk>();
-    {
-        let s = lock(&ai.settings);
-        if !(s.ask && s.enabled) {
-            return Err("問知識庫尚未在這台電腦開啟".into());
-        }
+    if !ask_on(&ai) {
+        return Err("問知識庫尚未在這台電腦開啟".into());
     }
     if !ready(&ai) {
         return Err("元件尚未下載完成".into());
@@ -475,11 +479,8 @@ pub async fn kbask_suggest(app: AppHandle, state: State<'_, AppState>) -> CmdRes
     tauri::async_runtime::spawn_blocking(move || {
         let ai = app.state::<DocAi>();
         let ask = app.state::<KbAsk>();
-        {
-            let s = lock(&ai.settings);
-            if !(s.ask && s.enabled) || !ready(&ai) {
-                return Ok(Vec::new());
-            }
+        if !ask_on(&ai) || !ready(&ai) {
+            return Ok(Vec::new());
         }
         let snap = node.kb().map_err(e)?;
         let fp = (
@@ -590,6 +591,22 @@ mod tests {
         assert!(lock(&ask.current).is_some());
         finish(&ask, b);
         assert!(lock(&ask.current).is_none());
+    }
+
+    /// 回歸：判斷開啟與就緒時不能卡在 Settings 的鎖（11/15 Mac 上提問沒有回應）。
+    #[test]
+    fn checks_do_not_deadlock() {
+        let dir = tempfile::tempdir().unwrap();
+        let ai = Arc::new(DocAi::new(dir.path().join("docai")));
+        lock(&ai.settings).ask = true;
+        lock(&ai.settings).enabled = true;
+        let (tx, rx) = std::sync::mpsc::channel();
+        let a = ai.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(ask_on(&a) && ready(&a));
+        });
+        let r = rx.recv_timeout(std::time::Duration::from_secs(5));
+        assert_eq!(r, Ok(false), "ask_on / ready 卡住或結果不對");
     }
 
     #[test]

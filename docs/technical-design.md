@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.42a 草案 · 2026-11-15 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.42b 草案 · 2026-11-16 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -1374,6 +1374,7 @@ Block = Heading{level, text, page} | Para{text, page}
 | 文件理解元件 | §16.20（未下載時一併下載） | 同 §16.20 | 同 §16.20 |
 
 - 執行：llama.cpp，經 Rust 綁定 `llama-cpp-2`（MIT / Apache-2.0）。macOS 用 Metal；Windows 先用 CPU，Vulkan 列為之後。
+- macOS 最低版本 13.3（D72，v0.42b）：`tauri.conf.json` 的 `bundle.macOS.minimumSystemVersion`，打包時成為 `MACOSX_DEPLOYMENT_TARGET`，llama.cpp 以此編譯。
 - 關閉思考模式；context 8K token。
 - 第一次提問時載入模型，閒置 10 分鐘卸載。
 - 記憶體低於 12 GB 的裝置，設定頁顯示「這台電腦記憶體不足，可能很慢」，仍可開啟。

@@ -13,14 +13,25 @@ blake3.workspace = true
 data-encoding.workspace = true
 fastembed = { version = "=7.6.1", default-features = false, features = ["ort-download-binaries-rustls-tls"] }
 flate2 = "1"
+getrandom.workspace = true
 pdfium-render = { version = "0.8.37", default-features = false, features = ["thread_safe", "pdfium_latest"] }
 postcard.workspace = true
 reqwest.workspace = true
 rustls.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 sha2.workspace = true
 tar = "0.4"
 thiserror.workspace = true
+llama-cpp-2 = { version = "=0.1.161", default-features = false, optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+llama-cpp-2 = { version = "=0.1.161", default-features = false, optional = true, features = ["metal"] }
+
+[features]
+default = ["llama"]
+# 本機語言模型（llama.cpp，technical-design §16.21）。關閉時只有問答流程與假模型，不編譯 llama.cpp。
+llama = ["dep:llama-cpp-2"]
 
 [dev-dependencies]
 tempfile.workspace = true

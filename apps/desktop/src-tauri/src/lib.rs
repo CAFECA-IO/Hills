@@ -4,6 +4,7 @@
 mod commands;
 mod docai;
 mod files;
+mod kbask;
 mod keychain;
 mod mcp;
 mod share;
@@ -27,6 +28,7 @@ pub fn run() {
             std::fs::create_dir_all(&dir)?;
             app.manage(commands::AppState::new(dir.clone()));
             app.manage(docai::DocAi::new(dir.join("docai")));
+            app.manage(kbask::KbAsk::default());
             app.manage(mcp::McpRuntime::new(app.handle().clone(), dir));
             Ok(())
         })
@@ -41,6 +43,13 @@ pub fn run() {
             docai::docai_forget,
             docai::docai_rebuild,
             docai::docai_search,
+            docai::docai_index_kb,
+            kbask::kbask_status,
+            kbask::kbask_enable,
+            kbask::kbask_disable,
+            kbask::kbask_ask,
+            kbask::kbask_cancel,
+            kbask::kbask_suggest,
             mcp::mcp_settings,
             mcp::set_mcp_enabled,
             mcp::regenerate_mcp_token,

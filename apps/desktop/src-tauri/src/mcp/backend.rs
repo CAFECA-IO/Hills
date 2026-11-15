@@ -468,6 +468,18 @@ impl McpBackend for RealBackend {
                     "contentHits": content,
                 }))
             }
+            "ask_knowledge" => {
+                let question = need(&args, "question")?.to_owned();
+                let history: Vec<hills_docai::Turn> = args
+                    .get("history")
+                    .cloned()
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(|x| format!("history: {x}"))?
+                    .unwrap_or_default();
+                let scope = args.get("scope").and_then(Value::as_str).map(str::to_owned);
+                crate::kbask::ask_for_mcp(&self.app, question, history, scope).await
+            }
             _ => Err("unknown tool".into()),
         }
     }

@@ -136,6 +136,23 @@ pub const BGE_M3: ModelSpec = ModelSpec {
     },
 };
 
+/// 問知識庫的語言模型：Gemma 4 E4B instruction，GGUF Q4_K_M（Apache-2.0；technical-design §16.21，D70）。
+pub const GEMMA_4_E4B: Component = Component {
+    id: "gemma-4-e4b-it",
+    pdfium_archive: false,
+    files: &[FileSpec {
+        name: "model.gguf",
+        url: "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/bfc15c382204943c3a8fff0c750b94ae2364d7a3/gemma-4-E4B-it-Q4_K_M.gguf",
+        sha256: "85a896a047553e842f25297ee5b031d64ff30147d9c4af17b1e4b394cd1fab87",
+        size: 4_977_171_584,
+    }],
+};
+
+/// 語言模型檔案的位置。
+pub fn llm_path(root: &Path) -> PathBuf {
+    component_dir(root, &GEMMA_4_E4B).join("model.gguf")
+}
+
 pub fn model_spec(id: &str) -> Option<&'static ModelSpec> {
     [&E5_SMALL, &BGE_M3].into_iter().find(|m| m.id == id)
 }

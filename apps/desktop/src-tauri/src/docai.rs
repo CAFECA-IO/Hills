@@ -9,10 +9,11 @@ use std::sync::{Arc, Mutex};
 
 use hills_docai::models::{self, Component};
 use hills_docai::{
-    DocAiError, Embedder, FastEmbedder, FileState, FileStatus, Hit, Index, PdfWorker, Vault,
-    model_spec,
+    DocAiError, Embedder, FastEmbedder, FileState, FileStatus, Hit, Index, KB_NAMES, KbDoc,
+    PdfWorker, Vault, kb_chunks, model_spec,
 };
 use hills_node::Node;
+use hills_node::kb::KbSnapshot;
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Request;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -23,9 +24,12 @@ use crate::share::{header, percent_decode, raw_body};
 pub const PROGRESS_EVENT: &str = "docai://progress";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct Settings {
-    enabled: bool,
-    model: String,
+pub(crate) struct Settings {
+    pub(crate) enabled: bool,
+    pub(crate) model: String,
+    /// 問知識庫（D70，technical-design §16.21）
+    #[serde(default)]
+    pub(crate) ask: bool,
 }
 
 impl Default for Settings {
@@ -33,6 +37,7 @@ impl Default for Settings {
         Self {
             enabled: false,
             model: models::E5_SMALL.id.into(),
+            ask: false,
         }
     }
 }
@@ -47,20 +52,23 @@ struct Progress {
     running: bool,
 }
 
-struct Engine {
+pub(crate) struct Engine {
     pdf: PdfWorker,
-    embedder: Box<dyn Embedder>,
-    index: Index,
+    pub(crate) embedder: Box<dyn Embedder>,
+    /// PDF 段落
+    pub(crate) index: Index,
+    /// 知識條目段落（v0.40，D70）
+    pub(crate) kb: Index,
 }
 
 pub struct DocAi {
-    dir: PathBuf,
-    settings: Mutex<Settings>,
+    pub(crate) dir: PathBuf,
+    pub(crate) settings: Mutex<Settings>,
     progress: Mutex<HashMap<&'static str, Progress>>,
-    engine: Arc<Mutex<Option<Engine>>>,
+    pub(crate) engine: Arc<Mutex<Option<Engine>>>,
 }
 
-struct NodeVault(Node);
+pub(crate) struct NodeVault(pub(crate) Node);
 
 impl Vault for NodeVault {
     fn read(&self, name: &str) -> hills_docai::Result<Option<Vec<u8>>> {
@@ -80,7 +88,7 @@ impl Vault for NodeVault {
     }
 }
 
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+pub(crate) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|p| p.into_inner())
 }
 
@@ -98,7 +106,7 @@ impl DocAi {
         }
     }
 
-    fn save_settings(&self, s: &Settings) -> CmdResult<()> {
+    pub(crate) fn save_settings(&self, s: &Settings) -> CmdResult<()> {
         std::fs::create_dir_all(&self.dir).map_err(e)?;
         std::fs::write(
             self.dir.join("settings.json"),
@@ -107,7 +115,7 @@ impl DocAi {
         .map_err(e)
     }
 
-    fn components(&self) -> Vec<Component> {
+    pub(crate) fn components(&self) -> Vec<Component> {
         let model = lock(&self.settings).model.clone();
         let mut out = Vec::new();
         if let Some(p) = models::pdfium_component() {
@@ -119,7 +127,7 @@ impl DocAi {
         out
     }
 
-    fn all_ready(&self) -> bool {
+    pub(crate) fn all_ready(&self) -> bool {
         models::pdfium_component().is_some()
             && self
                 .components()
@@ -129,7 +137,7 @@ impl DocAi {
 }
 
 /// 啟用中且元件就緒時載入引擎（第一次呼叫較慢：載入模型、解密索引）。
-fn ensure_engine(ai: &DocAi, node: &Node) -> CmdResult<()> {
+pub(crate) fn ensure_engine(ai: &DocAi, node: &Node) -> CmdResult<()> {
     let mut g = lock(&ai.engine);
     let settings = lock(&ai.settings).clone();
     if !settings.enabled {
@@ -147,16 +155,19 @@ fn ensure_engine(ai: &DocAi, node: &Node) -> CmdResult<()> {
     let spec = model_spec(&settings.model).ok_or("未知的模型")?;
     let pdf = PdfWorker::spawn(&ai.dir).map_err(e)?;
     let embedder = FastEmbedder::load(&ai.dir, spec).map_err(e)?;
-    let index = Index::open(&NodeVault(node.clone()), spec.id, spec.dim).map_err(e)?;
+    let vault = NodeVault(node.clone());
+    let index = Index::open(&vault, spec.id, spec.dim).map_err(e)?;
+    let kb = Index::open_named(&vault, KB_NAMES, spec.id, spec.dim).map_err(e)?;
     *g = Some(Engine {
         pdf,
         embedder: Box::new(embedder),
         index,
+        kb,
     });
     Ok(())
 }
 
-async fn node_of(state: &State<'_, AppState>) -> CmdResult<Node> {
+pub(crate) async fn node_of(state: &State<'_, AppState>) -> CmdResult<Node> {
     state
         .node
         .lock()
@@ -167,7 +178,7 @@ async fn node_of(state: &State<'_, AppState>) -> CmdResult<Node> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ComponentStatus {
+pub(crate) struct ComponentStatus {
     id: &'static str,
     size: u64,
     /// missing | downloading | ready | failed
@@ -187,6 +198,31 @@ pub struct DocAiStatus {
     components: Vec<ComponentStatus>,
     files: BTreeMap<String, FileState>,
     total_chunks: usize,
+    /// 已建立索引的知識則數（v0.40，D70）
+    kb_items: usize,
+}
+
+/// 一個元件的下載狀態。
+pub(crate) fn component_status(ai: &DocAi, c: &Component) -> ComponentStatus {
+    let progress = lock(&ai.progress);
+    let p = progress.get(c.id);
+    let state = if models::is_ready(&ai.dir, c) {
+        "ready"
+    } else if p.is_some_and(|p| p.running) {
+        "downloading"
+    } else if p.is_some_and(|p| p.error.is_some()) {
+        "failed"
+    } else {
+        "missing"
+    };
+    ComponentStatus {
+        id: c.id,
+        size: c.size(),
+        state,
+        done: p.map_or(0, |p| p.done),
+        total: p.map_or(c.size(), |p| p.total),
+        error: p.and_then(|p| p.error.clone()),
+    }
 }
 
 #[tauri::command]
@@ -201,34 +237,18 @@ pub async fn docai_status(
         // 載入索引才能回報各檔狀態；載入失敗時照常回報元件狀態
         let _ = tokio::task::block_in_place(|| ensure_engine(ai2, &node));
     }
-    let progress = lock(&ai.progress).clone();
     let components = ai
         .components()
-        .into_iter()
-        .map(|c| {
-            let p = progress.get(c.id);
-            let state = if models::is_ready(&ai.dir, &c) {
-                "ready"
-            } else if p.is_some_and(|p| p.running) {
-                "downloading"
-            } else if p.is_some_and(|p| p.error.is_some()) {
-                "failed"
-            } else {
-                "missing"
-            };
-            ComponentStatus {
-                id: c.id,
-                size: c.size(),
-                state,
-                done: p.map_or(0, |p| p.done),
-                total: p.map_or(c.size(), |p| p.total),
-                error: p.and_then(|p| p.error.clone()),
-            }
-        })
+        .iter()
+        .map(|c| component_status(&ai, c))
         .collect();
-    let (files, total_chunks) = match lock(&ai.engine).as_ref() {
-        Some(en) if ready => (en.index.files().clone(), en.index.total_chunks()),
-        _ => (BTreeMap::new(), 0),
+    let (files, total_chunks, kb_items) = match lock(&ai.engine).as_ref() {
+        Some(en) if ready => (
+            en.index.files().clone(),
+            en.index.total_chunks(),
+            en.kb.files().len(),
+        ),
+        _ => (BTreeMap::new(), 0, 0),
     };
     Ok(DocAiStatus {
         supported: models::pdfium_component().is_some(),
@@ -238,6 +258,7 @@ pub async fn docai_status(
         components,
         files,
         total_chunks,
+        kb_items,
     })
 }
 
@@ -253,6 +274,7 @@ pub async fn docai_enable(app: AppHandle, ai: State<'_, DocAi>, model: String) -
     let s = Settings {
         enabled: true,
         model,
+        ask: lock(&ai.settings).ask,
     };
     ai.save_settings(&s)?;
     *lock(&ai.settings) = s;
@@ -268,7 +290,7 @@ pub async fn docai_enable(app: AppHandle, ai: State<'_, DocAi>, model: String) -
     Ok(())
 }
 
-fn start_download(app: AppHandle, c: Component) {
+pub(crate) fn start_download(app: AppHandle, c: Component) {
     tauri::async_runtime::spawn(async move {
         let ai = app.state::<DocAi>();
         let set = |p: Progress| {
@@ -317,6 +339,8 @@ pub async fn docai_disable(
 ) -> CmdResult<()> {
     let mut s = lock(&ai.settings).clone();
     s.enabled = false;
+    // 問知識庫需要文件理解：一併關閉
+    s.ask = false;
     ai.save_settings(&s)?;
     *lock(&ai.settings) = s.clone();
     let engine = lock(&ai.engine).take();
@@ -324,10 +348,16 @@ pub async fn docai_disable(
         if let Ok(node) = node_of(&state).await {
             let vault = NodeVault(node);
             match engine {
-                Some(mut en) => en.index.clear(&vault).map_err(e)?,
+                Some(mut en) => {
+                    en.index.clear(&vault).map_err(e)?;
+                    en.kb.clear(&vault).map_err(e)?;
+                }
                 None => {
                     if let Some(spec) = model_spec(&s.model) {
                         Index::open(&vault, spec.id, spec.dim)
+                            .and_then(|mut i| i.clear(&vault))
+                            .map_err(e)?;
+                        Index::open_named(&vault, KB_NAMES, spec.id, spec.dim)
                             .and_then(|mut i| i.clear(&vault))
                             .map_err(e)?;
                     }
@@ -498,7 +528,98 @@ pub async fn docai_rebuild(state: State<'_, AppState>, ai: State<'_, DocAi>) -> 
         ensure_engine(ai, &node)?;
         let mut g = lock(&ai.engine);
         let en = g.as_mut().ok_or("文件理解尚未就緒")?;
-        en.index.clear(&NodeVault(node)).map_err(e)
+        let vault = NodeVault(node);
+        en.index.clear(&vault).map_err(e)?;
+        en.kb.clear(&vault).map_err(e)
+    })
+}
+
+/// 知識條目的標題路徑：分類 › 主題（依合併後的結果）。
+pub(crate) fn kb_paths(snap: &KbSnapshot) -> HashMap<String, (String, Vec<String>)> {
+    let cats: HashMap<&str, &hills_node::kb::KbCategory> =
+        snap.categories.iter().map(|c| (c.id.as_str(), c)).collect();
+    let topics: HashMap<&str, &hills_node::kb::KbTopic> =
+        snap.topics.iter().map(|t| (t.id.as_str(), t)).collect();
+    let resolve_topic = |id: &str| {
+        topics
+            .get(id)
+            .and_then(|t| topics.get(t.resolved.as_str()).copied().or(Some(*t)))
+    };
+    snap.items
+        .iter()
+        .map(|it| {
+            let mut path = Vec::new();
+            let mut cat_id = String::new();
+            if let Some(t) = resolve_topic(&it.topic_id) {
+                let cat = cats
+                    .get(t.category_id.as_str())
+                    .and_then(|c| cats.get(c.resolved.as_str()).copied().or(Some(*c)));
+                if let Some(c) = cat {
+                    path.push(c.name.clone());
+                    cat_id = c.id.clone();
+                }
+                path.push(t.name.clone());
+            }
+            (it.key.clone(), (cat_id, path))
+        })
+        .collect()
+}
+
+/// 依 `updatedAt` 比對，重建新增或修改的知識、移除已刪除的（technical-design §16.20「知識條目」）。
+pub(crate) fn sync_kb(ai: &DocAi, node: &Node, snap: &KbSnapshot) -> CmdResult<usize> {
+    ensure_engine(ai, node)?;
+    let paths = kb_paths(snap);
+    let mut g = lock(&ai.engine);
+    let en = g.as_mut().ok_or("文件理解尚未就緒")?;
+    let vault = NodeVault(node.clone());
+    let live: std::collections::HashSet<&str> = snap.items.iter().map(|i| i.key.as_str()).collect();
+    let gone: Vec<String> = en
+        .kb
+        .files()
+        .keys()
+        .filter(|k| !live.contains(k.as_str()))
+        .cloned()
+        .collect();
+    for k in gone {
+        en.kb.forget(&vault, &k).map_err(e)?;
+    }
+    let mut changed = 0;
+    for it in &snap.items {
+        let at = u64::try_from(it.updated_at).unwrap_or(0);
+        if en.kb.files().get(&it.key).is_some_and(|f| f.at == at) {
+            continue;
+        }
+        let doc = KbDoc {
+            title: it.title.clone(),
+            path: paths.get(&it.key).map(|p| p.1.clone()).unwrap_or_default(),
+            body: it.body.clone(),
+            html: it.format == hills_node::doc_spec::DocFormat::Html,
+        };
+        let chunks = kb_chunks(&doc);
+        let texts: Vec<String> = chunks.iter().map(|c| c.embed_text()).collect();
+        let vecs = en.embedder.embed_passages(&texts).map_err(e)?;
+        en.kb
+            .put(&vault, &it.key, &it.title, chunks, vecs, at)
+            .map_err(e)?;
+        changed += 1;
+    }
+    if changed > 0 {
+        tracing::info!(items = changed, "知識索引更新");
+    }
+    Ok(changed)
+}
+
+/// 前端在知識列表變動時呼叫（文件理解未開啟時不做事）。
+#[tauri::command]
+pub async fn docai_index_kb(state: State<'_, AppState>, ai: State<'_, DocAi>) -> CmdResult<usize> {
+    if !lock(&ai.settings).enabled || !ai.all_ready() {
+        return Ok(0);
+    }
+    let node = node_of(&state).await?;
+    let ai = ai.inner();
+    tokio::task::block_in_place(|| {
+        let snap = node.kb().map_err(e)?;
+        sync_kb(ai, &node, &snap)
     })
 }
 
@@ -598,6 +719,7 @@ mod tests {
         ai.save_settings(&Settings {
             enabled: true,
             model: "bge-m3".into(),
+            ask: false,
         })
         .unwrap();
         let again = DocAi::new(dir.path().join("docai"));

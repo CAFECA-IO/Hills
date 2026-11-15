@@ -5,13 +5,21 @@
 
 pub mod chunk;
 pub mod embed;
+pub mod hybrid;
 pub mod index;
+pub mod kbask;
+pub mod kbtext;
+#[cfg(feature = "llama")]
+pub mod llm;
 pub mod models;
 pub mod parse;
 
 pub use chunk::{Block, Chunk, chunk_blocks};
 pub use embed::{Embedder, FakeEmbedder, FastEmbedder};
-pub use index::{FileState, FileStatus, Hit, Index, Vault};
+pub use hybrid::{Candidate, Found, SourceKind};
+pub use index::{FileState, FileStatus, Hit, Index, KB_NAMES, Passage, Vault};
+pub use kbask::{Answer, AskInput, Citation, FakeLlm, Hooks, Intent, IntentKind, Llm, Step, Turn};
+pub use kbtext::{KbDoc, kb_chunks};
 pub use models::{Component, ModelSpec, model_spec};
 
 /// 單檔上限（technical-design §16.20）。
@@ -36,6 +44,10 @@ pub enum DocAiError {
     Checksum,
     #[error("索引讀寫失敗：{0}")]
     Store(String),
+    #[error("已停止")]
+    Cancelled,
+    #[error("語言模型錯誤：{0}")]
+    Llm(String),
     #[error("讀寫檔案失敗：{0}")]
     Io(#[from] std::io::Error),
 }

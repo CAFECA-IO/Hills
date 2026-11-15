@@ -77,12 +77,30 @@ pub struct Hit {
 pub struct Index {
     manifest: Manifest,
     chunks: HashMap<String, Vec<StoredChunk>>,
+    /// 清單檔名與每個出處的加密檔名前綴（PDF：`docai-index` / `docai-`；知識：`docai-kb` / `docai-kb-`）
+    names: (&'static str, &'static str),
 }
+
+/// 知識條目索引的清單檔名與前綴（technical-design §16.20「知識條目」，D70）。
+pub const KB_NAMES: (&str, &str) = ("docai-kb", "docai-kb-");
+const PDF_NAMES: (&str, &str) = (MANIFEST, "docai-");
 
 /// 檔案代碼 → 加密檔名。
 pub fn file_name(key: &str) -> String {
+    file_name_with(PDF_NAMES.1, key)
+}
+
+fn file_name_with(prefix: &str, key: &str) -> String {
     let h = data_encoding::HEXLOWER.encode(blake3::hash(key.as_bytes()).as_bytes());
-    format!("docai-{}", &h[..16])
+    format!("{prefix}{}", &h[..16])
+}
+
+/// 一段已向量化的內容（混合檢索用）。
+pub struct Passage<'a> {
+    pub key: &'a str,
+    pub name: &'a str,
+    pub chunk: &'a Chunk,
+    pub vec: &'a [f32],
 }
 
 fn ser<T: Serialize>(v: &T) -> Result<Vec<u8>> {
@@ -96,6 +114,16 @@ fn de<T: for<'a> Deserialize<'a>>(b: &[u8]) -> Result<T> {
 impl Index {
     /// 讀取索引；模型不同（或格式不符）時清除全部，之後重建。
     pub fn open(vault: &dyn Vault, model: &str, dim: usize) -> Result<Self> {
+        Self::open_named(vault, PDF_NAMES, model, dim)
+    }
+
+    /// 以指定的清單檔名與前綴開啟（知識條目用 [`KB_NAMES`]）。
+    pub fn open_named(
+        vault: &dyn Vault,
+        names: (&'static str, &'static str),
+        model: &str,
+        dim: usize,
+    ) -> Result<Self> {
         let dim32 = u32::try_from(dim).map_err(|_| DocAiError::Store("維度錯誤".into()))?;
         let fresh = Manifest {
             format: FORMAT,
@@ -103,10 +131,11 @@ impl Index {
             dim: dim32,
             files: BTreeMap::new(),
         };
-        let old = vault.read(MANIFEST)?.and_then(|b| de::<Manifest>(&b).ok());
+        let old = vault.read(names.0)?.and_then(|b| de::<Manifest>(&b).ok());
         let mut idx = Self {
             manifest: fresh.clone(),
             chunks: HashMap::new(),
+            names,
         };
         match old {
             Some(m) if m.format == FORMAT && m.model == model && m.dim == dim32 => {
@@ -119,7 +148,7 @@ impl Index {
                         continue;
                     }
                     match vault
-                        .read(&file_name(&key))?
+                        .read(&idx.fname(&key))?
                         .and_then(|b| de::<StoredFile>(&b).ok())
                     {
                         Some(f) if f.key == key && f.model == model => {
@@ -134,9 +163,9 @@ impl Index {
             }
             Some(m) => {
                 for key in m.files.keys() {
-                    vault.remove(&file_name(key))?;
+                    vault.remove(&idx.fname(key))?;
                 }
-                vault.write(MANIFEST, &ser(&idx.manifest)?)?;
+                vault.write(names.0, &ser(&idx.manifest)?)?;
             }
             None => {}
         }
@@ -145,6 +174,23 @@ impl Index {
 
     pub fn model(&self) -> &str {
         &self.manifest.model
+    }
+
+    fn fname(&self, key: &str) -> String {
+        file_name_with(self.names.1, key)
+    }
+
+    /// 所有已向量化的段落。
+    pub fn passages(&self) -> impl Iterator<Item = Passage<'_>> {
+        self.chunks.iter().flat_map(move |(key, chunks)| {
+            let name = self.manifest.files.get(key).map_or("", |f| f.name.as_str());
+            chunks.iter().map(move |c| Passage {
+                key: key.as_str(),
+                name,
+                chunk: &c.chunk,
+                vec: &c.vec,
+            })
+        })
     }
 
     pub fn files(&self) -> &BTreeMap<String, FileState> {
@@ -156,7 +202,7 @@ impl Index {
     }
 
     fn save_manifest(&self, vault: &dyn Vault) -> Result<()> {
-        vault.write(MANIFEST, &ser(&self.manifest)?)
+        vault.write(self.names.0, &ser(&self.manifest)?)
     }
 
     /// 寫入一個檔案的段落與向量（取代舊的）。
@@ -184,7 +230,7 @@ impl Index {
             model: self.manifest.model.clone(),
             chunks: stored,
         };
-        vault.write(&file_name(key), &ser(&file)?)?;
+        vault.write(&self.fname(key), &ser(&file)?)?;
         self.chunks.insert(key.to_owned(), file.chunks);
         self.manifest.files.insert(
             key.to_owned(),
@@ -211,7 +257,7 @@ impl Index {
         at: u64,
     ) -> Result<()> {
         if self.chunks.remove(key).is_some() {
-            vault.remove(&file_name(key))?;
+            vault.remove(&self.fname(key))?;
         }
         self.manifest.files.insert(
             key.to_owned(),
@@ -231,13 +277,13 @@ impl Index {
             return Ok(());
         }
         self.chunks.remove(key);
-        vault.remove(&file_name(key))?;
+        vault.remove(&self.fname(key))?;
         self.save_manifest(vault)
     }
 
     pub fn clear(&mut self, vault: &dyn Vault) -> Result<()> {
         for key in self.manifest.files.keys() {
-            vault.remove(&file_name(key))?;
+            vault.remove(&self.fname(key))?;
         }
         self.manifest.files.clear();
         self.chunks.clear();

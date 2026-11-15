@@ -164,6 +164,30 @@ pub fn all() -> Vec<ToolDef> {
             ),
         },
         ToolDef {
+            name: "ask_knowledge",
+            kind: Kind::Read,
+            description: "Ask the organization knowledge base a question in natural language. A local model on this computer understands the question, searches knowledge items and PDF passages, and answers only from what it found, marking sources as [n]. Returns `understood` (intent and rewritten queries), `answer` (Markdown), `citations` (n, kind item|pdf, key, title, heading, page), `uncited` (sentences without a source) and `notFound` (nothing relevant; `answer` is empty). `history` is up to 3 previous {question, answer} turns; `scope` limits the search to a category id or one knowledge key. Fails if Ask knowledge base is not turned on on this computer. Can take up to 2 minutes.",
+            schema: obj(
+                json!({
+                    "question": { "type": "string" },
+                    "history": {
+                        "type": "array",
+                        "maxItems": 3,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "question": { "type": "string" },
+                                "answer": { "type": "string" }
+                            },
+                            "required": ["question", "answer"]
+                        }
+                    },
+                    "scope": { "type": "string" }
+                }),
+                &["question"],
+            ),
+        },
+        ToolDef {
             name: "list_teams",
             kind: Kind::Read,
             description: "Teams with members, leads (member ids), archived and canManage (the user can change this team's members and leads).",

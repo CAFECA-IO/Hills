@@ -8,6 +8,8 @@ import type { FolderPickEntry, KbItem } from './api';
 export const MAX_IMPORT_FILES = 500;
 /** 知識內文上限（與 hills-node 相同，UTF-8 位元組）。 */
 export const MAX_BODY_BYTES = 64 * 1024;
+/** 選擇檔案匯入時的資料夾名稱（= 分類；存在知識的來源裡，不隨介面語言變動）。 */
+export const FILES_ROOT = '匯入的檔案';
 /** 根目錄檔案的主題名稱。 */
 export const ROOT_TOPIC = '一般';
 

@@ -18,18 +18,8 @@ import {
   type ImportFile,
   type ImportStatus,
 } from './kb-import-utils';
-import { formatBytes, uploadPickedFile, validateSizes } from './share';
-import {
-  Badge,
-  Button,
-  Checkbox,
-  Dialog,
-  DialogFooter,
-  ErrorText,
-  Field,
-  ProgressBar,
-  TextInput,
-} from './ui';
+import { uploadPickedFile, validateSizes } from './share';
+import { Button, Dialog, DialogFooter, ErrorText, LinkButton, ProgressBar } from './ui';
 
 interface Prepared extends ImportFile {
   sha256: string;
@@ -105,8 +95,6 @@ async function prepare(
   };
 }
 
-const STATUS_TONE = { new: 'primary', changed: 'solid', same: 'neutral' } as const;
-
 export function KbImport({
   pick,
   data,
@@ -126,8 +114,7 @@ export function KbImport({
   const missing = useMemo(() => missingFrom(existing, files), [existing, files]);
   const [phase, setPhase] = useState<Phase>({ kind: 'checking', done: 0 });
   const [prepared, setPrepared] = useState<Prepared[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [category, setCategory] = useState(pick.root);
+  const [showList, setShowList] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cancel = useRef(false);
@@ -158,9 +145,6 @@ export function KbImport({
       }
       if (!live) return;
       setPrepared(out);
-      setSelected(
-        new Set(out.filter((p) => !p.tooLarge && p.status !== 'same').map((p) => p.path)),
-      );
       setPhase({ kind: 'review' });
     })();
     return () => {
@@ -168,11 +152,10 @@ export function KbImport({
     };
   }, [files, existing]);
 
-  const groups = useMemo(() => {
-    const m = new Map<string, Prepared[]>();
-    for (const p of prepared) m.set(p.topic, [...(m.get(p.topic) ?? []), p]);
-    return [...m.entries()];
-  }, [prepared]);
+  // 要匯入的：新增與更新（沒有變更、太大的一律略過）
+  const chosen = prepared.filter((p) => !p.tooLarge && p.status !== 'same');
+  const count = (f: (p: Prepared) => boolean) => prepared.filter(f).length;
+  const topics = [...new Set(chosen.map((p) => p.topic))];
 
   const run = async (targets: Prepared[]) => {
     cancel.current = false;
@@ -181,7 +164,7 @@ export function KbImport({
     try {
       const nodes = await api.storageNodes();
       // 分類與主題：依名稱沿用既有的（合併後的最終項目），沒有才建立
-      const catName = category.trim() || pick.root;
+      const catName = pick.root;
       let snap = await api.kb();
       let cat = snap.categories.find((c) => c.resolved === c.id && c.name === catName)?.id;
       if (!cat) cat = await api.kbCreateCategory(catName);
@@ -235,30 +218,35 @@ export function KbImport({
     onImported();
   };
 
-  const chosen = prepared.filter((p) => selected.has(p.path));
-  const toggle = (path: string, on: boolean) =>
-    setSelected((s) => {
-      const n = new Set(s);
-      if (on) n.add(path);
-      else n.delete(path);
-      return n;
-    });
+  const statusText = (p: Prepared) =>
+    p.tooLarge
+      ? t('kbImport.status.tooLarge')
+      : `${t(`kbImport.status.${p.status}`)}${p.truncated ? ` · ${t('kbImport.status.truncated')}` : ''}`;
+  const added = count((p) => !p.tooLarge && p.status === 'new');
+  const updated = count((p) => !p.tooLarge && p.status === 'changed');
+  const same = count((p) => !p.tooLarge && p.status === 'same');
+  const truncated = chosen.filter((p) => p.truncated).length;
+  const tooLarge = count((p) => p.tooLarge);
 
   return (
     <Dialog
       title={t('kbImport.title', { name: pick.root })}
-      width="xl"
+      width="md"
       onClose={phase.kind === 'running' ? () => undefined : onClose}
       footer={
         phase.kind === 'review' ? (
-          <DialogFooter start={<span className="text-xs text-muted">{t('kbImport.public')}</span>}>
-            <Button variant="secondary" onClick={onClose}>
-              {t('common.cancel')}
-            </Button>
-            <Button disabled={chosen.length === 0} onClick={() => void run(chosen)}>
-              {t('kbImport.submit', { n: chosen.length })}
-            </Button>
-          </DialogFooter>
+          chosen.length === 0 ? (
+            <DialogFooter>
+              <Button onClick={onClose}>{t('common.close')}</Button>
+            </DialogFooter>
+          ) : (
+            <DialogFooter>
+              <Button variant="secondary" onClick={onClose}>
+                {t('common.cancel')}
+              </Button>
+              <Button onClick={() => void run(chosen)}>{t('kbImport.submit')}</Button>
+            </DialogFooter>
+          )
         ) : phase.kind === 'running' ? (
           <DialogFooter>
             <Button variant="secondary" onClick={() => (cancel.current = true)}>
@@ -283,7 +271,7 @@ export function KbImport({
       }
     >
       {phase.kind === 'checking' && (
-        <div className="flex flex-col gap-2 py-6">
+        <div className="flex flex-col gap-2 py-4">
           <ProgressBar
             value={files.length ? Math.round((phase.done / files.length) * 100) : 100}
             label={t('kbImport.checking')}
@@ -294,58 +282,71 @@ export function KbImport({
         </div>
       )}
       {phase.kind === 'review' && (
-        <div className="flex flex-col gap-4">
-          <Field label={t('kbImport.category')} hint={t('kbImport.categoryHint')}>
-            <TextInput value={category} onChange={(e) => setCategory(e.target.value)} />
-          </Field>
-          {prepared.length === 0 ? (
-            <p className="text-sm text-muted">{t('kbImport.none')}</p>
+        <div className="flex flex-col gap-3 text-sm">
+          {chosen.length === 0 ? (
+            <p className="font-semibold">{t('kbImport.nothing')}</p>
           ) : (
-            <div className="flex max-h-[50vh] flex-col gap-3 overflow-auto pr-1">
-              {groups.map(([topic, list]) => (
-                <section key={topic} className="flex flex-col gap-1">
-                  <h3 className="text-xs font-bold text-muted">
-                    {t('kbImport.topic', { name: topic, n: list.length })}
-                  </h3>
-                  <ul className="flex flex-col divide-y divide-line rounded-control border border-line">
-                    {list.map((p) => (
-                      <li key={p.path} className="flex items-center gap-3 px-3 py-1.5 text-sm">
-                        <Checkbox
-                          checked={selected.has(p.path)}
-                          disabled={p.tooLarge}
-                          onChange={(e) => toggle(p.path, e.target.checked)}
-                          aria-label={p.path}
-                        />
-                        <span className="min-w-0 flex-1 truncate" title={p.path}>
-                          {p.path}
-                        </span>
-                        <span className="shrink-0 text-xs text-muted">{formatBytes(p.size)}</span>
-                        {p.tooLarge ? (
-                          <Badge tone="alert">{t('kbImport.status.tooLarge')}</Badge>
-                        ) : (
-                          <>
-                            {p.truncated && <Badge>{t('kbImport.status.truncated')}</Badge>}
-                            <Badge tone={STATUS_TONE[p.status]}>
-                              {t(`kbImport.status.${p.status}`)}
-                            </Badge>
-                          </>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ))}
+            <>
+              <p className="text-base font-bold">
+                {added && updated
+                  ? t('kbImport.will', { added, updated })
+                  : added
+                    ? t('kbImport.willAdd', { n: added })
+                    : t('kbImport.willUpdate', { n: updated })}
+              </p>
+              <p>
+                {t('kbImport.where', {
+                  category: pick.root,
+                  n: topics.length,
+                  topics: topics.slice(0, 5).join('、') + (topics.length > 5 ? '…' : ''),
+                })}
+              </p>
+            </>
+          )}
+          <ul className="flex list-disc flex-col gap-1 pl-5 text-muted">
+            {same > 0 && <li>{t('kbImport.sameN', { n: same })}</li>}
+            {truncated > 0 && <li>{t('kbImport.truncatedN', { n: truncated })}</li>}
+            {skipped > 0 && <li>{t('kbImport.skipped', { n: skipped })}</li>}
+            {tooLarge > 0 && <li>{t('kbImport.tooLargeN', { n: tooLarge })}</li>}
+            {overLimit > 0 && <li>{t('kbImport.overLimit', { n: overLimit })}</li>}
+            {missing.length > 0 && <li>{t('kbImport.missing', { n: missing.length })}</li>}
+          </ul>
+          {chosen.length > 0 && (
+            <p role="note" className="rounded-control bg-bg px-3 py-2 text-xs">
+              {t('kbImport.public')}
+            </p>
+          )}
+          {prepared.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <LinkButton
+                tone="muted"
+                className="self-start text-xs underline"
+                aria-expanded={showList}
+                onClick={() => setShowList((v) => !v)}
+              >
+                {showList ? t('kbImport.hideList') : t('kbImport.showList', { n: prepared.length })}
+              </LinkButton>
+              {showList && (
+                <ul className="flex max-h-60 flex-col overflow-auto rounded-control border border-line text-xs">
+                  {prepared.map((p) => (
+                    <li
+                      key={p.path}
+                      className="flex gap-3 border-b border-line px-3 py-1 last:border-b-0"
+                    >
+                      <span className="min-w-0 flex-1 truncate" title={p.path}>
+                        {p.path}
+                      </span>
+                      <span className="shrink-0 text-muted">{statusText(p)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
-          <p className="text-xs text-muted">
-            {t('kbImport.skipped', { n: skipped })}
-            {overLimit > 0 && ` · ${t('kbImport.overLimit', { n: overLimit })}`}
-            {missing.length > 0 && ` · ${t('kbImport.missing', { n: missing.length })}`}
-          </p>
         </div>
       )}
       {phase.kind === 'running' && (
-        <div className="flex flex-col gap-2 py-6">
+        <div className="flex flex-col gap-2 py-4">
           <ProgressBar
             value={Math.round((phase.done / Math.max(1, chosen.length)) * 100)}
             label={t('kbImport.running')}
@@ -362,11 +363,7 @@ export function KbImport({
       {phase.kind === 'done' && outcome && (
         <div className="flex flex-col gap-2 py-2 text-sm">
           <p className="font-semibold">
-            {t('kbImport.summary', {
-              added: outcome.added,
-              updated: outcome.updated,
-              same: prepared.filter((p) => p.status === 'same' && !selected.has(p.path)).length,
-            })}
+            {t('kbImport.summary', { added: outcome.added, updated: outcome.updated })}
           </p>
           {outcome.failed.length > 0 && (
             <ul className="flex flex-col gap-1">
@@ -376,9 +373,6 @@ export function KbImport({
                 </li>
               ))}
             </ul>
-          )}
-          {missing.length > 0 && (
-            <p className="text-xs text-muted">{t('kbImport.missing', { n: missing.length })}</p>
           )}
         </div>
       )}

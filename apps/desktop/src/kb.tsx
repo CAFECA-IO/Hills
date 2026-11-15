@@ -22,6 +22,7 @@ import {
 } from './doc-spec';
 import { Moon } from './figures';
 import { KbImport } from './kb-import';
+import { FILES_ROOT } from './kb-import-utils';
 import { navigate } from './nav';
 import { AskPanel } from './kb-ask';
 import { YearSection } from './kb-year';
@@ -58,6 +59,8 @@ import {
   LinkButton,
   ListButton,
   MarkdownEditor,
+  Menu,
+  MenuItem,
   Pressable,
   SegmentedControl,
   Select,
@@ -116,6 +119,36 @@ export function Knowledge({ members, isAdmin, timezone, onOpenConv, openItem = n
   const [editing, setEditing] = useState<KbInput | null>(null);
   const [importPick, setImportPick] = useState<FolderPick | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
+  const [importMenu, setImportMenu] = useState(false);
+  const importBtn = useRef<HTMLButtonElement>(null);
+  const startImport = async (kind: 'files' | 'folder') => {
+    setImportMenu(false);
+    setPickError(null);
+    try {
+      if (kind === 'folder') {
+        const p = await api.pickFolder();
+        if (p) setImportPick(p);
+        return;
+      }
+      const files = await api.pickFiles();
+      if (files.length === 0) return;
+      setImportPick({
+        root: FILES_ROOT,
+        entries: files.map((f) => ({
+          kind: 'file' as const,
+          path: f.name,
+          token: f.token,
+          size: f.size,
+          mtime: f.mtime,
+        })),
+        skipped: [],
+        totalSize: files.reduce((n, f) => n + f.size, 0),
+        fileCount: files.length,
+      });
+    } catch (err) {
+      setPickError(String(err));
+    }
+  };
   const [reading, setReading] = useState<string | null>(openItem);
   const [now] = useState(() => Date.now());
   const ask = useKbAsk();
@@ -189,20 +222,32 @@ export function Knowledge({ members, isAdmin, timezone, onOpenConv, openItem = n
                 label: t(`kb.view.${k}` as MessageKey),
               }))}
             />
-            <Button
-              variant="secondary"
-              onClick={async () => {
-                setPickError(null);
-                try {
-                  const p = await api.pickFolder();
-                  if (p) setImportPick(p);
-                } catch (err) {
-                  setPickError(String(err));
-                }
-              }}
-            >
-              {t('kbImport.open')}
-            </Button>
+            <div className="relative">
+              <Button
+                ref={importBtn}
+                variant="secondary"
+                aria-haspopup="menu"
+                aria-expanded={importMenu}
+                onClick={() => setImportMenu((o) => !o)}
+              >
+                {t('kbImport.open')}
+              </Button>
+              {importMenu && (
+                <Menu
+                  label={t('kbImport.open')}
+                  onClose={() => setImportMenu(false)}
+                  anchorRef={importBtn}
+                  className="absolute top-full right-0 z-20 mt-2"
+                >
+                  <MenuItem onSelect={() => void startImport('files')}>
+                    {t('kbImport.pickFiles')}
+                  </MenuItem>
+                  <MenuItem onSelect={() => void startImport('folder')}>
+                    {t('kbImport.pickFolder')}
+                  </MenuItem>
+                </Menu>
+              )}
+            </div>
             <Button onClick={() => setEditing(blank())}>{t('kb.new')}</Button>
           </>
         }

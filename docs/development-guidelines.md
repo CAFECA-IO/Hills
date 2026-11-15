@@ -1,6 +1,6 @@
 # Hills 開發規範
 
-> 版本：v0.3 · 2026-11-15 · 適用對象：所有人類開發者與 AI Agent
+> 版本：v0.4 · 2026-11-15 · 適用對象：所有人類開發者與 AI Agent
 > AI Agent 另需遵守 [AGENTS.md](../AGENTS.md)。本文件與規劃文件衝突時，以規劃文件為準（見 [docs/README.md](./README.md) 的文件優先順序）。
 
 ## 1. 文件優先（Docs-first）
@@ -31,6 +31,7 @@ scripts/     開發與維運腳本
 - pdfium 動態函式庫與向量模型，在使用者開啟「文件理解」時才下載。來源 URL、SHA-256 與大小固定寫在 `crates/hills-docai/src/models.rs`；更換版本時同時更新這三項，並確認授權。
 - ONNX Runtime 由 `ort` 在建置時下載並靜態連結，因此第一次建置需要網路。
 - 需要 pdfium 或模型的測試標為 `#[ignore]`，並以環境變數 `HILLS_DOCAI_DIR` 指向已下載的元件，手動執行：`cargo test -p hills-docai -- --ignored`。
+- v0.4（D70，technical-design §16.21）：問知識庫的語言模型（Gemma 4 E4B GGUF）同樣在開啟時才下載，來源、SHA-256 與大小寫在 `models.rs`。llama.cpp 經 `llama-cpp-2` 在建置時編譯（macOS 開 Metal），第一次建置較久。問答流程的測試一律用假的語言模型（依提示回傳固定 JSON 與文字）；需要真模型的測試標 `#[ignore]`。
 
 ## 3. 分支、Commit 與 PR
 

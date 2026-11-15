@@ -1,6 +1,6 @@
 # Hills 通用元件
 
-> 版本：v0.15 · 2026-11-15 · 對應 [feature-plan.md](./feature-plan.md) v1.48（D45、D47、D56、D58、D63、D66、D67、D69）
+> 版本：v0.16 · 2026-11-15 · 對應 [feature-plan.md](./feature-plan.md) v1.49（D45、D47、D56、D58、D63、D66、D67、D69、D70）
 > 本文件定義 `apps/desktop/src/ui/` 的通用元件：用途、何時用、變體、狀態、鍵盤與無障礙、API。視覺基礎（token、字級、間距）見 [design-system.md](./design-system.md)。
 > 畫面只能組合這些元件（design-system §1、§11）。需要新元件或新變體時，**先改本文件，再改 `src/ui/`**，並補 `src/ui/ui.test.tsx`。
 
@@ -478,6 +478,58 @@ v0.7：
 | `children` | ReactNode | 目前要顯示的角色 |
 
 切換動畫：舊內容往切換方向反側位移 28 px 並淡出（240 ms），切換後從另一側淡入；動畫中再按箭頭會忽略。舞台可聚焦，← → 切換。下方圓點不可點（`aria-hidden`），位置由 `aria-label` 表達。
+
+### ActivityGrid（v0.16，D70）
+
+一年的每日數量格子（類 GitHub 貢獻圖）：53 欄（週）× 7 列（星期一到日），每格 10 px、間距 3 px，顏色取 `--hills-activity-0…4`，上方月份、左側「一、三、五」。用在知識庫「這一年」，之後其他「一年活動」也用它。
+
+| prop | 型別 | 說明 |
+|---|---|---|
+| `days` | `{ date: string; count: number }[]` | 每天的數量（`YYYY-MM-DD`，本機時區）；沒列出的日子為 0 |
+| `end` | string | 最後一天（預設今天），往前 53 週 |
+| `levels` | number[] | 分階門檻，預設 `[1, 2, 4, 7]` |
+| `selectedWeek` / `onSelectWeek` | string \| null | 選取的週（該週星期一的日期）；有 `onSelectWeek` 時欄可選取 |
+| `label` | string | 整體名稱（`role="grid"` 的 `aria-label`） |
+| `cellLabel` | `(day) => string` | 每格的提示與無障礙名稱，例如「11 月 12 日 · 新增 3 則」 |
+
+- 鍵盤：格子整體一個 Tab 停點；← → 逐週、↑ ↓ 逐日移動焦點，Enter 選取該週；Home / End 到第一週 / 本週。
+- 選取的週加 2 px `--hills-text` 外框；未來的日子不畫。
+- 圖例「少 … 多」與標頭數字由畫面組合，不在元件內。
+
+### CitationMark（v0.16，D70）
+
+本文中的出處編號 `[n]`：小圓角膠囊，`--hills-cite-soft` 底、`--hills-cite-text` 字。是按鈕（`aria-label`「出處 n：〈標題〉」），點選或 Enter 呼叫 `onActivate(n)`（畫面捲到參考卡並在星空上選取）。由 `Markdown` 的 `citations` 選項把 `[n]` 轉成此元件；不在 1…N 的編號不轉換。
+
+| prop | 型別 | 說明 |
+|---|---|---|
+| `n` | number | 編號 |
+| `title` | string | 出處標題（無障礙名稱用） |
+| `onActivate` | `(n) => void` | 點選 |
+
+### SourceCard（v0.16，D70）
+
+參考卡：左側編號（同 `CitationMark` 配色），右側兩行——標題（粗體）與說明（`text-muted`，例如「知識 · 工程 › 網路 · 陳小華 · 10/28」或「PDF 片段 · 第 4 頁 · 故障排除」）。整張是一個按鈕或連結，`highlighted` 時加主色外框（由 `CitationMark` 帶過來時短暫強調）。
+
+| prop | 型別 | 說明 |
+|---|---|---|
+| `n` | number | 編號 |
+| `title` / `meta` | string | 兩行文字 |
+| `icon` | ReactNode? | 知識或 PDF 圖示 |
+| `onOpen` | `() => void` | 開啟出處 |
+| `highlighted` | boolean? | 強調 |
+
+### ChatComposer（v0.16，D70）
+
+多行輸入 + 送出 / 停止按鈕。Enter 送出、Shift+Enter 換行、輸入法組字中不送出；高度隨內容在 1–6 行之間變化。`busy` 時送出鍵變成「停止」。用在問知識庫；聊天頁之後可改用。
+
+| prop | 型別 | 說明 |
+|---|---|---|
+| `value` / `onChange` | string | 內容 |
+| `onSubmit` | `() => void` | 送出（空白時停用） |
+| `busy` / `onStop` | boolean / `() => void` | 產生中與停止 |
+| `label` / `placeholder` | string | 無障礙名稱與提示文字 |
+| `before` | ReactNode? | 輸入框上方（範圍標籤、追問建議） |
+| `hint` | ReactNode? | 輸入框下方小字 |
 
 ## 6. 回饋與流程
 

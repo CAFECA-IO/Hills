@@ -1,6 +1,6 @@
 # Hills 設計系統
 
-> 版本：v0.12 · 2026-11-15 · 對應 [feature-plan.md](./feature-plan.md) v1.48（D22、D40、D43、D45、D47、D56、D58、D59、D63、D66、D69）
+> 版本：v0.13 · 2026-11-15 · 對應 [feature-plan.md](./feature-plan.md) v1.49（D22、D40、D43、D45、D47、D56、D58、D59、D63、D66、D69、D70）
 > 本文件定義視覺基礎：原則、token、字級、間距、圓角、陰影、層級、動態、無障礙、圖示與列印。通用元件的規格見 [components.md](./components.md)；畫面結構與流程見 [ui-spec.md](./ui-spec.md)。
 > 實作來源：`apps/desktop/src/styles/tokens.css`（token）、`apps/desktop/src/ui/`（元件）。三者不一致時以本文件為準，並修正程式碼。
 
@@ -43,6 +43,8 @@
 | 山景 | `--hills-sky-top/-bottom`、`--hills-mountain`、`--hills-hill-near/-mid/-far` | 首頁焦點山、山丘 | 只用於插畫 |
 | 知識庫星空 | `--hills-night-top/-bottom`、`--hills-night-text`、`--hills-star`、`--hills-star-dim` | 星空背景、星星、星空上的文字 | 深淺色模式相同 |
 | 知識關聯 | `--hills-rel-ref/-topic/-task/-conv` | 星座連線、關聯膠囊邊框 | 一律搭配線型（實線 / 虛線 / 點線）與圖例 |
+| 一年貢獻格（v0.13，D70） | `--hills-activity-0…4` | 知識庫「這一年」格子的五階深淺（0 = 沒有新增） | 單一色相（主色藍）由淺到深，不用紅綠；第 0 階與卡片底色對比 ≥ 1.5 : 1，第 1–4 階 ≥ 3 : 1；亮 / 暗模式各一組；一律附圖例「少 … 多」與每格文字提示 |
+| 引用（v0.13，D70） | `--hills-cite`（星空上的外圈、編號底色）、`--hills-cite-soft`（本文編號底色）、`--hills-cite-text`（編號文字，對 `-soft` ≥ 4.5 : 1） | 問知識庫的出處編號：本文 `CitationMark`、參考卡編號、星空上被引用的星星 | 同一個出處在本文、參考卡與星空用同一個號碼與顏色；星空上另以虛線連線與外圈標示，不只靠顏色 |
 | 目標層級 | `--hills-level-year/-quarter/-month/-week/-day`（`bg-level-*`、`text-level-*`） | 層級標記、進度環、進度條；`-day` 用於任務欄（D46 取消日目標） | 一律搭配層級文字 |
 | 狀態 | `--hills-st-<狀態>`（徽章色）、`--hills-st-<狀態>-text`（文字色，對 surface ≥ 4.5 : 1） | Presence 徽章、狀態文字、成功 / 進行中標示 | 搭配徽章形狀與文字（ui-spec 狀態表） |
 | 啟動動畫 | `--hills-boot-flame-out/-mid/-in`、`--hills-boot-log`、`--hills-boot-glow`（v0.5） | 啟動動畫 F 的營火、木柴、火光（§9） | 只用於啟動動畫；其餘版本重用山景、星空、羅盤、角色、狀態 token |

@@ -928,6 +928,16 @@
         "area:core"
       ],
       "body": "## 目標\n\n成員用髮型、服裝款式與三種顏色搭配出像自己的角色；取消動物角色。\n\n## 工作項目\n\n- [ ] `Look` 加 `head`、`outfit`；寫入檢查與讀取時的取餘數\n- [ ] 舊角色自動對應（男性、女性、五種動物）與單元測試\n- [ ] token：髮色、膚色、描邊、腮紅；移除 `--hills-look-<kind>-*`\n- [ ] `characters.tsx` 重寫成頭 × 款式 × 體型 × 姿勢；頭像取景\n- [ ] 設定「我是誰」：髮型舞台、款式小卡、三列配色\n- [ ] 首頁山丘、往山丘走、團隊頁、訊息頭像、啟動動畫改用新角色\n- [ ] mock、i18n\n\n## 驗收條件\n\n- 8 種髮型 × 8 種款式 × 3 種體型 × 5 種姿勢都能正確顯示，沒有破圖\n- 原本選舊角色的成員升級後不需要操作，看到的造型每次都相同\n- 還沒升級的同事看到新版成員時顯示男性或女性的舊角色，不會出錯\n- 山丘場景同時顯示 12 個角色時，在 Mac（WebKit）上捲動與踏步動畫不卡頓\n\n## 參考\n\nfeature-plan D69；technical-design §16.8 v0.38；design-system §2.2、§9 v0.12；components v0.15；ui-spec「設定」v0.50；設計畫布「Hills 角色重繪 · 四男四女」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+    },
+    {
+      "title": "[M1] 知識庫問答：本機模型、知識條目語意索引、一年貢獻格（D70）",
+      "milestone": "M1 計劃、Scrum、對話與檔案（MVP）",
+      "labels": [
+        "type:feature",
+        "area:ui",
+        "area:core"
+      ],
+      "body": "## 目標\n\n成員在知識庫用平常說話的方式提問，由這台電腦上的語言模型根據知識庫回答並附出處；知識庫底部改為一年貢獻格。全程不上傳、不經 AI Gateway。\n\n## 工作項目\n\n- [ ] hills-docai：知識條目語意索引 `docai-kb`（切片、排程、刪除與重建）\n- [ ] hills-docai：BM25 + 語意的混合檢索（RRF）、範圍限定\n- [ ] hills-docai `kbask`：Gemma 4 E4B（llama.cpp，`llama-cpp-2`）下載與載入 / 卸載、意圖 JSON（GBNF）、相關度門檻、作答串流、出處檢查、取消；假模型測試\n- [ ] 桌機指令與事件 `kbask_*`、`kbask://*`\n- [ ] `ui/`：`ActivityGrid`、`CitationMark`、`SourceCard`、`ChatComposer`；token `--hills-activity-*`、`--hills-cite*`\n- [ ] 知識庫頁面：右側問知識庫面板（五種狀態）、預覽卡「問這則知識」、星空引用標示、這一年格子\n- [ ] 設定 › AI 協助：「問知識庫」卡；文件理解卡加知識索引數\n- [ ] mock、i18n\n\n## 驗收條件\n\n- 問題在知識庫有答案時，回答的每個出處編號都能對到參考卡，點選後開啟正確的知識或 PDF 頁\n- 知識庫沒有的主題回「沒有找到」，不自行編造\n- 關閉網路時問答仍可使用；抓包確認問答過程沒有任何對外連線\n- Apple Silicon 16 GB 的 Mac 上，第一個字在 5 秒內出現（模型已載入）\n- 新增或修改一則知識後，1 分鐘內可被問到\n- 只用鍵盤可以完成提問、看出處、選取一週\n\n## 參考\n\nfeature-plan D70（修改 D9、D42、D68）；technical-design §16.20–16.21 v0.40；ui-spec「知識庫」「設定」v0.51；design-system v0.13；components v0.16；development-guidelines v0.4；設計畫布「Hills 知識庫 · 星空問答」\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
     }
   ]
 }

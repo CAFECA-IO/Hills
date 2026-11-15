@@ -23,7 +23,7 @@ export function idHash(id: string): number {
 /** 頭像底色數（tokens.css --hills-avatar-0…6，design-system §9 v0.8）。 */
 export const AVATAR_TONES = 7;
 
-/** 尚未設定外觀的成員：由 ID 決定（每個人看到的都一樣）。 */
+/** 尚未設定外觀的成員：由 ID 決定，每個人看到的都一樣（technical-design §16.8 v0.39）。 */
 export function defaultLook(id: string): Look {
   const h = idHash(id);
   const head = (h >>> 20) % LOOK_HEADS;

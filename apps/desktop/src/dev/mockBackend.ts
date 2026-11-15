@@ -2338,6 +2338,7 @@ Object.assign(handlers, {
       ? Object.fromEntries(Object.entries(docai.files).map(([k, v]) => [k, { reason: null, ...v }]))
       : {},
     totalChunks: docaiReady() ? Object.values(docai.files).reduce((n, f) => n + f.chunks, 0) : 0,
+    kbItems: docaiReady() ? kbItems.length : 0,
   }),
   docai_enable: (a: Record<string, unknown>) => {
     if (docai.model !== a.model) {
@@ -2397,6 +2398,137 @@ Object.assign(handlers, {
       score:
         c.snippet.includes(q) || c.heading.join(' ').includes(q) ? 0.9 - i * 0.01 : 0.5 - i * 0.01,
     }));
+  },
+});
+
+// ── 問知識庫（technical-design §16.21，D70）：?ask=1 開啟並已就緒（同時開啟文件理解） ──
+const askOn = new URLSearchParams(window.location.search).get('ask') === '1';
+if (askOn) {
+  docai.enabled = true;
+  docai.comps.forEach((c) => {
+    c.done = c.size;
+    c.ready = true;
+  });
+  docai.files['F-q4'] = {
+    name: '2026Q4 季度報告初稿.pdf',
+    chunks: 18,
+    at: Date.now(),
+    status: 'ready',
+  };
+}
+const ask = {
+  enabled: askOn,
+  llm: { size: 4_977_171_584, done: askOn ? 4_977_171_584 : 0, ready: askOn },
+  seq: 0,
+  cancelled: new Set<number>(),
+};
+const ASK_ANSWER =
+  '不會不見。同事傳的訊息會先存在信箱節點，你重新連上後 app 會自動補同步 [1]。\n\n如果 relay 一直連不上：\n\n- 先看左下角狀態是否顯示「離線」。\n- 依部署說明重新啟動 relay 容器，並確認 UDP 7842 有開 [2]。\n\n下一季也會把這類維運步驟整理進知識庫 [3]。這通常幾分鐘內就會恢復。';
+Object.assign(handlers, {
+  docai_index_kb: () => 0,
+  kbask_status: () => ({
+    enabled: ask.enabled,
+    ready: ask.enabled && ask.llm.ready && docaiReady(),
+    components: [
+      {
+        id: 'gemma-4-e4b-it',
+        size: ask.llm.size,
+        state: ask.llm.ready ? 'ready' : ask.llm.done > 0 ? 'downloading' : 'missing',
+        done: ask.llm.done,
+        total: ask.llm.size,
+        error: null,
+      },
+    ],
+    memoryLow: false,
+  }),
+  kbask_enable: () => {
+    ask.enabled = true;
+    docai.enabled = true;
+    const tick = setInterval(() => {
+      for (const c of docai.comps) if (!c.ready) Object.assign(c, { done: c.size, ready: true });
+      ask.llm.done = Math.min(ask.llm.size, ask.llm.done + ask.llm.size / 10);
+      if (ask.llm.done >= ask.llm.size) {
+        ask.llm.ready = true;
+        clearInterval(tick);
+      }
+      emit('docai://progress', 'x');
+    }, 400);
+  },
+  kbask_disable: (a: Record<string, unknown>) => {
+    ask.enabled = false;
+    if (a.purge) Object.assign(ask.llm, { done: 0, ready: false });
+  },
+  kbask_cancel: (a: Record<string, unknown>) => {
+    const askId = Number(a.askId);
+    ask.cancelled.add(askId);
+    emit('kbask://error', { askId, message: '已停止', cancelled: true });
+  },
+
+  kbask_suggest: () => [
+    'relay 斷線時訊息會不見嗎？',
+    '新增儲存節點要準備什麼？',
+    '檔案續傳怎麼運作？',
+  ],
+  kbask_ask: (a: Record<string, unknown>) => {
+    const askId = ++ask.seq;
+    const q = String(a.question);
+    const kind = /在嗎|在不在/.test(q) ? 'people' : 'kb';
+    const notFound = /獎金|薪水/.test(q);
+    const intent = { intent: kind, queries: [q.replace(/[？?]$/, '')], keywords: [] };
+    const fire = (ms: number, ev: string, p: object) =>
+      setTimeout(() => !ask.cancelled.has(askId) && emit(ev, { askId, ...p }), ms);
+    const base = { understood: intent, citations: [], uncited: [], notFound: false, answer: '' };
+    fire(500, 'kbask://step', { step: 'understood', intent });
+    if (kind === 'people') {
+      fire(800, 'kbask://done', { answer: base });
+      return askId;
+    }
+    fire(
+      1100,
+      'kbask://step',
+      notFound ? { step: 'found', items: 0, pdfs: 0 } : { step: 'found', items: 2, pdfs: 1 },
+    );
+    if (notFound) {
+      fire(1400, 'kbask://done', { answer: { ...base, notFound: true } });
+      return askId;
+    }
+    fire(1300, 'kbask://step', { step: 'answering' });
+    const pieces = ASK_ANSWER.match(/.{1,6}/gsu) ?? [];
+    pieces.forEach((p, i) => fire(1400 + i * 45, 'kbask://token', { text: p }));
+    fire(1500 + pieces.length * 45, 'kbask://done', {
+      answer: {
+        ...base,
+        answer: ASK_ANSWER,
+        uncited: ['這通常幾分鐘內就會恢復。'],
+        citations: [
+          {
+            n: 1,
+            kind: 'item',
+            key: 'mem-d:k5',
+            title: 'mailbox 補同步',
+            heading: ['工程', '同步', 'mailbox 補同步'],
+            page: null,
+          },
+          {
+            n: 2,
+            kind: 'item',
+            key: 'mem-a:k7',
+            title: 'relay 部署',
+            heading: ['部署', 'relay 部署'],
+            page: null,
+          },
+          {
+            n: 3,
+            kind: 'pdf',
+            key: 'F-q4',
+            title: '2026Q4 季度報告初稿.pdf',
+            heading: ['4. 下季計畫'],
+            page: 7,
+          },
+        ],
+      },
+    });
+    return askId;
   },
 });
 

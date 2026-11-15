@@ -138,6 +138,7 @@ export function McpPersonalCard() {
       <div className="flex flex-col gap-1">
         <h2 className="font-medium">{t('mcp.title')}</h2>
         <p className="text-sm text-muted">{t('mcp.intro')}</p>
+        <p className="text-xs text-muted">{t('mcp.askHint')}</p>
       </div>
       {!data.allowed ? (
         <p className="text-sm text-muted">{t('mcp.notAllowed')}</p>

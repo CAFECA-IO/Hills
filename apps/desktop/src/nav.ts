@@ -8,7 +8,10 @@ export type NavTarget =
   | { page: 'files'; conv?: string; fileKey?: string }
   | { page: 'chat'; conv: string; message?: string; fromFiles?: boolean }
   | { page: 'task'; team: string; task: string; fromFiles?: boolean }
-  | { page: 'kb'; item: string; fromFiles?: boolean };
+  | { page: 'kb'; item: string; fromFiles?: boolean }
+  /** v0.51（D70）：問知識庫的「看團隊」「前往設定」 */
+  | { page: 'team' }
+  | { page: 'settings'; group: 'ai' };
 
 const EVENT = 'hills:navigate';
 

@@ -481,7 +481,60 @@ export interface DocAiStatus {
   components: DocComponent[];
   files: Record<string, DocFileState>;
   totalChunks: number;
+  /** 已建立索引的知識則數（v0.40，D70） */
+  kbItems: number;
 }
+
+// ── 問知識庫（D70，technical-design §16.21） ──
+
+export interface KbAskStatus {
+  enabled: boolean;
+  ready: boolean;
+  /** 語言模型 + 尚未就緒的文件理解元件 */
+  components: DocComponent[];
+  memoryLow: boolean;
+}
+
+export type AskIntentKind = 'kb' | 'howto' | 'people' | 'chat';
+
+export interface AskIntent {
+  intent: AskIntentKind;
+  queries: string[];
+  keywords: string[];
+}
+
+export interface AskTurn {
+  question: string;
+  answer: string;
+}
+
+export interface AskCitation {
+  n: number;
+  kind: 'item' | 'pdf';
+  key: string;
+  title: string;
+  heading: string[];
+  page: number | null;
+}
+
+export interface AskAnswer {
+  understood: AskIntent;
+  answer: string;
+  citations: AskCitation[];
+  uncited: string[];
+  notFound: boolean;
+}
+
+export type AskStep =
+  | { step: 'understood'; intent: AskIntent }
+  | { step: 'found'; items: number; pdfs: number }
+  | { step: 'answering' };
+
+export type AskEvent =
+  | ({ askId: number } & AskStep & { type: 'step' })
+  | { askId: number; type: 'token'; text: string }
+  | { askId: number; type: 'done'; answer: AskAnswer }
+  | { askId: number; type: 'error'; message: string; cancelled: boolean };
 
 export interface DocHit {
   fileKey: string;
@@ -998,6 +1051,10 @@ export interface ConvRow {
 export const EVENTS = {
   node: 'hills://node',
   docai: 'docai://progress',
+  askStep: 'kbask://step',
+  askToken: 'kbask://token',
+  askDone: 'kbask://done',
+  askError: 'kbask://error',
   /** 本機 MCP：有新的待確認變更或設定改變（technical-design §18.4） */
   mcp: 'hills://mcp',
 } as const;
@@ -1358,6 +1415,14 @@ export const api = {
   docaiRebuild: () => call<void>('docai_rebuild'),
   docaiSearch: (query: string, limit?: number) =>
     call<DocHit[]>('docai_search', { query, limit: limit ?? null }),
+  docaiIndexKb: () => call<number>('docai_index_kb'),
+  kbaskStatus: () => call<KbAskStatus>('kbask_status'),
+  kbaskEnable: () => call<void>('kbask_enable'),
+  kbaskDisable: (purge: boolean) => call<void>('kbask_disable', { purge }),
+  kbaskAsk: (question: string, history: AskTurn[], scope: string | null) =>
+    call<number>('kbask_ask', { question, history, scope }),
+  kbaskCancel: (askId: number) => call<void>('kbask_cancel', { askId }),
+  kbaskSuggest: () => call<string[]>('kbask_suggest'),
   /** 系統閒置秒數；不支援的平台為 null（ui-spec v0.48） */
   idleSeconds: () => call<number | null>('idle_seconds'),
   syncStatus: () => call<SyncStatus | null>('sync_status'),

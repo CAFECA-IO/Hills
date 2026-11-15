@@ -2,7 +2,7 @@
 import { useEffect } from 'react';
 import type { AppInfo } from '../api';
 import { McpOrgCard, McpPersonalCard } from '../mcp-settings';
-import { DocAiCard } from '../settings-docai';
+import { DocAiCard, KbAskCard } from '../settings-docai';
 import { writeFlag } from './model';
 
 export function AiGroup({ info }: { info: AppInfo }) {
@@ -15,6 +15,7 @@ export function AiGroup({ info }: { info: AppInfo }) {
       {info.isAdmin && <McpOrgCard />}
       <McpPersonalCard />
       <DocAiCard />
+      <KbAskCard />
     </div>
   );
 }

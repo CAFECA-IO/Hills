@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { t } from '../i18n';
+import { activityWeeks, ChatComposer } from '.';
 import {
   Badge,
   Button,
@@ -492,5 +493,46 @@ describe('ui 元件（docs/components.md）', () => {
     const h = html(<Skeleton variant="board" count={4} />);
     expect(h).toContain(`aria-label="${t('common.loading')}"`);
     expect(h).toContain('hills-shimmer');
+  });
+});
+
+describe('問答與一年活動（components v0.16，D70）', () => {
+  it('activityWeeks: 53 週、週一開始、分階與未來的日子', () => {
+    const end = new Date(2026, 10, 11); // 週三
+    const w = activityWeeks(
+      [
+        { date: '2026-11-10', count: 3 },
+        { date: '2026-11-09', count: 8 },
+      ],
+      end,
+    );
+    expect(w).toHaveLength(53);
+    expect(w[52]!.week).toBe('2026-11-09');
+    expect(w[52]!.cells[0]!.level).toBe(4);
+    expect(w[52]!.cells[1]!.level).toBe(2);
+    expect(w[52]!.cells[3]!.future).toBe(true);
+  });
+  it('Markdown 出處編號與推論句', () => {
+    const h = html(
+      <Markdown
+        variant="chat"
+        citations={{ titles: { 1: 'mailbox 補同步' }, uncited: ['這是推論。'] }}
+      >
+        {'訊息不會不見 [1]。不存在的 [9]。這是推論。'}
+      </Markdown>,
+    );
+    expect(h).toContain(`aria-label="${t('ask.cite', { n: 1, title: 'mailbox 補同步' })}"`);
+    expect(h).toContain('[9]');
+    expect(h).toContain(t('ask.inferred'));
+  });
+  it('ChatComposer 空白時停用送出，忙碌時顯示停止', () => {
+    expect(html(<ChatComposer value="" onChange={noop} onSubmit={noop} label="問" />)).toContain(
+      'disabled',
+    );
+    expect(
+      html(
+        <ChatComposer value="x" onChange={noop} onSubmit={noop} busy onStop={noop} label="問" />,
+      ),
+    ).toContain(t('ask.stop'));
   });
 });

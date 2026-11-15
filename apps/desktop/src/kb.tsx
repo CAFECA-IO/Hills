@@ -20,6 +20,9 @@ import {
   type DocFormat,
 } from './doc-spec';
 import { Moon } from './figures';
+import { AskPanel } from './kb-ask';
+import { YearSection } from './kb-year';
+import { useKbAsk, type AskScope } from './kbask';
 import { KbPdfHits } from './kb-pdf-hits';
 import { useLoad, useSize } from './hooks';
 import { formatTime, t, type MessageKey } from './i18n';
@@ -33,7 +36,6 @@ import {
   relations,
   upToWeek,
   weekOf,
-  weekly,
   type RelationKind,
 } from './kb-utils';
 import { PageHead } from './layout';
@@ -49,13 +51,13 @@ import {
   EmptyState,
   ErrorText,
   Field,
+  IconButton,
   LinkButton,
   ListButton,
   MarkdownEditor,
   Pressable,
   SegmentedControl,
   Select,
-  Slider,
   TextArea,
   TextInput,
   useAction,
@@ -75,6 +77,15 @@ const REL_DASH: Record<RelationKind, string | undefined> = {
   conv: '4 4',
 };
 const relName = (k: RelationKind) => t(`kb.rel.${k}` as MessageKey);
+
+const ASK_OPEN_KEY = 'hills.kb.askOpen';
+function readAskOpen(): boolean {
+  try {
+    return localStorage.getItem(ASK_OPEN_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
 
 interface Props {
   members: MemberView[];
@@ -96,6 +107,30 @@ export function Knowledge({ members, isAdmin, timezone, onOpenConv, openItem = n
   const [editing, setEditing] = useState<KbInput | null>(null);
   const [reading, setReading] = useState<string | null>(openItem);
   const [now] = useState(() => Date.now());
+  const ask = useKbAsk();
+  const [scope, setScope] = useState<AskScope | null>(null);
+  const [askOpen, setAskOpen] = useState(readAskOpen);
+  const toggleAsk = (open: boolean) => {
+    setAskOpen(open);
+    try {
+      localStorage.setItem(ASK_OPEN_KEY, open ? '1' : '0');
+    } catch {
+      // 無法寫入時只在這次有效
+    }
+  };
+  // 知識變動時更新本機語意索引（文件理解未開啟時後端不做事，D70）
+  useEffect(() => {
+    if (kb.data) void api.docaiIndexKb().catch(() => undefined);
+  }, [kb.data]);
+  // 最近一次回答引用的知識 → 編號（星空上標示）
+  const lastDone = [...ask.msgs].reverse().find((m) => m.phase === 'done' && m.answer);
+  const cited = useMemo(() => {
+    const map = new Map<string, number>();
+    lastDone?.answer?.citations.forEach((c) => {
+      if (c.kind === 'item' && !map.has(c.key)) map.set(c.key, c.n);
+    });
+    return map;
+  }, [lastDone]);
   const data: KbSnapshot = kb.data ?? { categories: [], topics: [], items: [] };
   const me = members.find((m) => m.isMe)?.id ?? '';
   const canEdit = (i: KbItem) => i.author === me || isAdmin;
@@ -175,42 +210,86 @@ export function Knowledge({ members, isAdmin, timezone, onOpenConv, openItem = n
           setSel(k);
         }}
       />
-      {view === 'sky' ? (
-        <div className="flex min-h-0 flex-1 gap-3">
-          <Starfield
-            data={data}
-            items={shown}
-            q={q}
-            catFilter={catFilter}
-            selected={sel}
-            onSelect={setSel}
-            thisWeek={thisWeek}
-            timezone={timezone}
+      <div className="flex min-h-0 flex-1 gap-3">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+          {view === 'sky' ? (
+            <Starfield
+              data={data}
+              items={shown}
+              q={q}
+              catFilter={catFilter}
+              selected={sel}
+              onSelect={setSel}
+              thisWeek={thisWeek}
+              timezone={timezone}
+              now={now}
+              cited={cited}
+            />
+          ) : (
+            <KbList
+              data={data}
+              items={shown.filter((i) => matches(i, q))}
+              onOpen={(k) => setReading(k)}
+            />
+          )}
+          <YearSection
+            items={data.items}
             now={now}
-          />
-          <PreviewCard
-            item={selected}
-            data={data}
-            onOpen={() => selected && setReading(selected.key)}
-            onSelect={setSel}
-            convs={convs.data ?? []}
+            timezone={timezone}
+            week={week}
+            onWeek={setWeek}
           />
         </div>
-      ) : (
-        <KbList
-          data={data}
-          items={shown.filter((i) => matches(i, q))}
-          onOpen={(k) => setReading(k)}
-        />
-      )}
-      <Timeline
-        items={data.items}
-        now={now}
-        timezone={timezone}
-        week={week}
-        onWeek={setWeek}
-        thisWeek={thisWeek}
-      />
+        {askOpen ? (
+          <AskPanel
+            ask={ask}
+            data={data}
+            nameOf={nameOf}
+            scope={scope}
+            onClearScope={() => setScope(null)}
+            onOpenItem={(k) => {
+              setReading(k);
+              setSel(k);
+            }}
+            onNewKnowledge={(title, body) =>
+              setEditing({ ...blank(), title: title.slice(0, 200), body: body || blank().body })
+            }
+            onCollapse={() => toggleAsk(false)}
+            overlay={
+              selected && (
+                <PreviewCard
+                  item={selected}
+                  data={data}
+                  onOpen={() => setReading(selected.key)}
+                  onSelect={setSel}
+                  convs={convs.data ?? []}
+                  onClose={() => setSel(null)}
+                  onAsk={() => {
+                    setScope({ id: selected.key, label: selected.title });
+                    setSel(null);
+                  }}
+                  floating
+                />
+              )
+            }
+          />
+        ) : (
+          <div className="flex shrink-0 flex-col gap-3">
+            <Button variant="secondary" onClick={() => toggleAsk(true)}>
+              {t('ask.expand')}
+            </Button>
+            {view === 'sky' && (
+              <PreviewCard
+                item={selected}
+                data={data}
+                onOpen={() => selected && setReading(selected.key)}
+                onSelect={setSel}
+                convs={convs.data ?? []}
+              />
+            )}
+          </div>
+        )}
+      </div>
       {editing && (
         <KbEditor
           initial={editing}
@@ -263,6 +342,7 @@ function Starfield({
   thisWeek,
   timezone,
   now,
+  cited,
 }: {
   data: KbSnapshot;
   items: KbItem[];
@@ -273,6 +353,8 @@ function Starfield({
   thisWeek: string;
   timezone: string;
   now: number;
+  /** 最近一次回答引用的知識 → 出處編號（D70） */
+  cited: Map<string, number>;
 }) {
   const [box, setBox] = useState<HTMLDivElement | null>(null);
   const size = useSize(box);
@@ -285,8 +367,17 @@ function Starfield({
   const cites = useMemo(() => citations(items), [items]);
   const sel = items.find((i) => i.key === selected) ?? null;
   const rels = sel ? relations(sel, items, data.topics) : [];
+  const citedCats = new Set(
+    items.filter((i) => cited.has(i.key)).map((i) => placeOf(i, data.topics).categoryId),
+  );
   const dim = (i: KbItem) =>
-    (catFilter !== null && placeOf(i, data.topics).categoryId !== catFilter) || !matches(i, q);
+    (catFilter !== null && placeOf(i, data.topics).categoryId !== catFilter) ||
+    !matches(i, q) ||
+    (cited.size > 0 && !citedCats.has(placeOf(i, data.topics).categoryId));
+  const citedPos = [...cited]
+    .sort((a, b) => a[1] - b[1])
+    .map(([k]) => lay.stars.get(k))
+    .filter((p): p is NonNullable<typeof p> => !!p);
   const selPos = sel ? lay.stars.get(sel.key) : undefined;
   return (
     <div
@@ -354,6 +445,18 @@ function Starfield({
               />
             );
           })}
+        {citedPos.slice(1).map((p, i) => (
+          <line
+            key={`cite-${i}`}
+            x1={citedPos[i]!.x}
+            y1={citedPos[i]!.y}
+            x2={p.x}
+            y2={p.y}
+            stroke="var(--hills-cite)"
+            strokeWidth={1.6}
+            strokeDasharray="5 5"
+          />
+        ))}
         {selPos && (
           <line
             x1={selPos.x}
@@ -371,13 +474,14 @@ function Starfield({
           const r = 3.5 + Math.min(7, (cites.get(i.key) ?? 0) * 1.6);
           const isNew = weekOf(i.createdAt, timezone) === thisWeek;
           const on = i.key === selected;
+          const n = cited.get(i.key);
           return (
             <g
               key={i.key}
               role="button"
               tabIndex={0}
               aria-pressed={on}
-              aria-label={`${i.title}${isNew ? `，${t('kb.new.badge')}` : ''}`}
+              aria-label={`${i.title}${isNew ? `，${t('kb.new.badge')}` : ''}${n ? `，${t('ask.cite.star', { n })}` : ''}`}
               onClick={() => onSelect(on ? null : i.key)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -401,6 +505,37 @@ function Starfield({
               />
               <circle cx={p.x} cy={p.y} r={r * 2.2} fill="var(--hills-star)" opacity={0.12} />
               <circle cx={p.x} cy={p.y} r={r} fill="var(--hills-star)" />
+              {n !== undefined && (
+                <>
+                  <circle cx={p.x} cy={p.y} r={r + 12} fill="var(--hills-cite)" opacity={0.18} />
+                  <circle
+                    cx={p.x}
+                    cy={p.y}
+                    r={r + 3}
+                    fill="none"
+                    stroke="var(--hills-cite)"
+                    strokeWidth={2}
+                  />
+                  <rect
+                    x={p.x - r - 22}
+                    y={p.y - r - 18}
+                    width={14}
+                    height={14}
+                    rx={4}
+                    fill="var(--hills-cite)"
+                  />
+                  <text
+                    x={p.x - r - 15}
+                    y={p.y - r - 7}
+                    textAnchor="middle"
+                    fontSize={10}
+                    fontWeight={700}
+                    fill="var(--hills-night-top)"
+                  >
+                    {n}
+                  </text>
+                </>
+              )}
               {on && (
                 <circle
                   cx={p.x}
@@ -427,7 +562,7 @@ function Starfield({
                   </text>
                 </>
               )}
-              {(on || r > 6) && (
+              {(on || r > 6 || n !== undefined) && (
                 <text
                   x={p.x}
                   y={p.y + r + 14}
@@ -484,12 +619,20 @@ function PreviewCard({
   onOpen,
   onSelect,
   convs,
+  onClose,
+  onAsk,
+  floating = false,
 }: {
   item: KbItem | null;
   data: KbSnapshot;
   onOpen: () => void;
   onSelect: (k: string) => void;
   convs: ConvRow[];
+  onClose?: () => void;
+  /** 「問這則知識」（D70） */
+  onAsk?: () => void;
+  /** 疊在問答面板上方 */
+  floating?: boolean;
 }) {
   const [sharing, setSharing] = useState(false);
   if (!item) {
@@ -502,8 +645,27 @@ function PreviewCard({
   const rels = relations(item, data.items, data.topics);
   const cited = citations(data.items).get(item.key) ?? 0;
   return (
-    <aside className="scroll-panel flex w-72 shrink-0 flex-col gap-2 rounded-card bg-surface p-4 shadow-sm wide:w-80">
-      <span className="text-xs text-muted">{pathOf(item, data)}</span>
+    <aside
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' && onClose) {
+          e.stopPropagation();
+          onClose();
+        }
+      }}
+      className={
+        floating
+          ? 'flex max-h-[70vh] flex-col gap-2 overflow-auto rounded-card bg-surface p-4 shadow-lg'
+          : 'scroll-panel flex w-72 shrink-0 flex-col gap-2 rounded-card bg-surface p-4 shadow-sm wide:w-80'
+      }
+    >
+      <div className="flex items-center gap-2">
+        <span className="min-w-0 flex-1 truncate text-xs text-muted">{pathOf(item, data)}</span>
+        {onClose && (
+          <IconButton label={t('common.close')} size="sm" onClick={onClose}>
+            ×
+          </IconButton>
+        )}
+      </div>
       <h2 className="text-lg leading-snug font-bold">{item.title}</h2>
       <p className="text-sm text-muted">
         {summaryOf(item.format, item.body, 90) || t('kb.noBody')}
@@ -540,8 +702,17 @@ function PreviewCard({
           })}
         </ul>
       )}
-      <div className="mt-auto flex gap-2 pt-2">
-        <Button className="h-8 px-3 py-0" onClick={onOpen}>
+      <div className="mt-auto flex flex-wrap gap-2 pt-2">
+        {onAsk && (
+          <Button className="h-8 px-3 py-0" onClick={onAsk}>
+            {t('ask.thisItem')}
+          </Button>
+        )}
+        <Button
+          variant={onAsk ? 'secondary' : 'primary'}
+          className="h-8 px-3 py-0"
+          onClick={onOpen}
+        >
           {t('kb.open')}
         </Button>
         <Button variant="secondary" className="h-8 px-3 py-0" onClick={() => setSharing(true)}>
@@ -594,77 +765,6 @@ function ShareToConv({
         </Button>
       </div>
     </div>
-  );
-}
-
-// ── 時間軸 ───────────────────────────────────────────────────
-
-function Timeline({
-  items,
-  now,
-  timezone,
-  week,
-  onWeek,
-  thisWeek,
-}: {
-  items: KbItem[];
-  now: number;
-  timezone: string;
-  week: string | null;
-  onWeek: (w: string | null) => void;
-  thisWeek: string;
-}) {
-  const weeks = weekly(items, now, timezone);
-  const max = Math.max(1, ...weeks.map((w) => w.count));
-  const idx = week
-    ? Math.max(
-        0,
-        weeks.findIndex((w) => w.week === week),
-      )
-    : weeks.length - 1;
-  const newThisWeek = weeks.find((w) => w.week === thisWeek)?.count ?? 0;
-  const shownCount = upToWeek(items, week, timezone).length;
-  return (
-    <section className="flex h-20 shrink-0 items-center gap-4 rounded-card bg-surface px-4 shadow-sm">
-      <div className="flex w-44 shrink-0 flex-col">
-        <span className="text-xs font-bold">{t('kb.timeline.title')}</span>
-        <span className="text-xs text-muted">
-          {t('kb.timeline.summary', { count: shownCount, added: newThisWeek })}
-        </span>
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <div className="flex h-8 items-end gap-1" aria-hidden>
-          {weeks.map((w, i) => (
-            <span
-              key={w.week}
-              className={`min-w-1 flex-1 rounded-t ${i <= idx ? 'bg-primary' : 'bg-line'}`}
-              style={{ height: `${Math.max(8, (w.count / max) * 100)}%` }}
-              title={`${w.week} · ${w.count}`}
-            />
-          ))}
-        </div>
-        <Slider
-          min={0}
-          max={Math.max(0, weeks.length - 1)}
-          value={idx}
-          aria-label={t('kb.timeline.slider')}
-          aria-valuetext={weeks[idx]?.week}
-          onChange={(e) => {
-            const i = Number(e.target.value);
-            onWeek(i >= weeks.length - 1 ? null : (weeks[i]?.week ?? null));
-          }}
-          className="w-full"
-        />
-      </div>
-      <div className="flex w-28 shrink-0 flex-col items-end gap-1 text-xs">
-        <span className="font-bold">{weeks[idx]?.week}</span>
-        {week && (
-          <LinkButton className="underline" onClick={() => onWeek(null)}>
-            {t('kb.timeline.now')}
-          </LinkButton>
-        )}
-      </div>
-    </section>
   );
 }
 

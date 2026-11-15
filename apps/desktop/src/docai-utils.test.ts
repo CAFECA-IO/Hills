@@ -44,6 +44,7 @@ const status = (p: Partial<DocAiStatus> = {}): DocAiStatus => ({
   components: [],
   files: {},
   totalChunks: 0,
+  kbItems: 0,
   ...p,
 });
 

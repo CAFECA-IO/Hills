@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { api, type DocAiModel, type DocComponent } from './api';
 import { refreshDocAi, useDocAi } from './docai';
+import { refreshKbAsk, useKbAskStatus } from './kbask';
 import { t, type MessageKey } from './i18n';
 import { formatBytes } from './share';
 import {
@@ -20,7 +21,7 @@ import {
 
 const MODELS: DocAiModel[] = ['e5-small', 'bge-m3'];
 
-function ComponentRow({ c, onRetry }: { c: DocComponent; onRetry: () => void }) {
+export function ComponentRow({ c, onRetry }: { c: DocComponent; onRetry: () => void }) {
   const pct = c.total > 0 ? Math.round((Math.min(c.done, c.total) / c.total) * 100) : 0;
   const name = t(`docai.comp.${c.id}` as MessageKey);
   return (
@@ -125,7 +126,11 @@ export function DocAiCard() {
                         chunks: status.totalChunks,
                         queued: waiting,
                       })
-                    : t('docai.summary', { files: indexed, chunks: status.totalChunks })}
+                    : t('docai.summaryKb', {
+                        items: status.kbItems ?? 0,
+                        files: indexed,
+                        chunks: status.totalChunks,
+                      })}
                 </p>
               )}
               <div className="flex flex-wrap gap-2">
@@ -148,6 +153,62 @@ export function DocAiCard() {
             </>
           )}
           <p className="text-xs text-muted">{t('docai.later')}</p>
+        </>
+      )}
+      <ErrorText message={error} />
+    </Card>
+  );
+}
+
+/** 設定 › AI 協助 › 問知識庫（ui-spec v0.51，D70；technical-design §16.21）。 */
+export function KbAskCard() {
+  const status = useKbAskStatus();
+  const docai = useDocAi().status;
+  const { error, attempt } = useAction();
+  const [busy, setBusy] = useState(false);
+  if (!status || !docai?.supported) return null;
+  const run = (fn: () => Promise<unknown>) =>
+    void attempt(async () => {
+      setBusy(true);
+      try {
+        await fn();
+      } finally {
+        setBusy(false);
+        await Promise.all([refreshKbAsk(), refreshDocAi()]);
+      }
+    });
+  return (
+    <Card className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <h2 className="flex-1 font-medium">{t('kbask.title')}</h2>
+          <ScopeTag scope="device" label={t('settings.scope.device')} />
+        </div>
+        <p className="text-sm text-muted">{t('kbask.intro')}</p>
+      </div>
+      <Switch
+        checked={status.enabled}
+        disabled={busy}
+        onChange={(on) => run(() => (on ? api.kbaskEnable() : api.kbaskDisable(false)))}
+        label={t('kbask.enable')}
+        description={status.enabled ? undefined : t('kbask.enableHint')}
+      />
+      {status.memoryLow && <p className="text-sm text-warning">{t('kbask.memoryLow')}</p>}
+      {status.enabled && (
+        <>
+          <ul className="flex flex-col divide-y divide-line">
+            {status.components.map((c) => (
+              <ComponentRow key={c.id} c={c} onRetry={() => run(() => api.kbaskEnable())} />
+            ))}
+          </ul>
+          {status.ready && <p className="text-sm">{t('kbask.ready')}</p>}
+          <div className="flex flex-wrap gap-2">
+            <ConfirmButton
+              label={t('kbask.purge')}
+              message={t('kbask.purge.confirm')}
+              onConfirm={() => run(() => api.kbaskDisable(true))}
+            />
+          </div>
         </>
       )}
       <ErrorText message={error} />

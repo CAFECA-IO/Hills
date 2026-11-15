@@ -32,6 +32,15 @@
   --hills-rel-topic: #8fb8ff;
   --hills-rel-task: #7ee0b5;
   --hills-rel-conv: #f4a3c8;
+  /* 知識庫「這一年」貢獻格與問答出處（design-system v0.13，D70） */
+  --hills-activity-0: #c8d2df;
+  --hills-activity-1: #5f8fe6;
+  --hills-activity-2: #3f76d8;
+  --hills-activity-3: #1f5bc0;
+  --hills-activity-4: #133f8a;
+  --hills-cite: #ffcf6b;
+  --hills-cite-soft: #fff3d1;
+  --hills-cite-text: #6b4a00;
   /* 目標層級（ui-spec「目標」，一律搭配層級文字） */
   --hills-level-year: #7c5cfc;
   --hills-level-quarter: #1f6feb;
@@ -174,6 +183,13 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --hills-activity-0: #2e3a4a;
+    --hills-activity-1: #3d72c4;
+    --hills-activity-2: #5b8ff0;
+    --hills-activity-3: #8db3f7;
+    --hills-activity-4: #c4d8fb;
+    --hills-cite-soft: #4a3a12;
+    --hills-cite-text: #ffe3a3;
     --hills-avatar-0: #1b2b45;
     --hills-avatar-1: #3a2027;
     --hills-avatar-2: #183327;
@@ -272,6 +288,14 @@
   --color-night-text: var(--hills-night-text);
   --color-star: var(--hills-star);
   --color-star-dim: var(--hills-star-dim);
+  --color-activity-0: var(--hills-activity-0);
+  --color-activity-1: var(--hills-activity-1);
+  --color-activity-2: var(--hills-activity-2);
+  --color-activity-3: var(--hills-activity-3);
+  --color-activity-4: var(--hills-activity-4);
+  --color-cite: var(--hills-cite);
+  --color-cite-soft: var(--hills-cite-soft);
+  --color-cite-text: var(--hills-cite-text);
   --color-level-quarter: var(--hills-level-quarter);
   --color-level-month: var(--hills-level-month);
   --color-level-week: var(--hills-level-week);

@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { KbCategory, KbItem, KbTopic } from './api';
 import {
   activeCategories,
+  activityDays,
+  isoWeekOfMonday,
+  yearStats,
   citations,
   layout,
   matches,
@@ -121,5 +124,30 @@ describe('layout', () => {
     }
     // 每個主題 6 則 → 5 條星座線，兩個主題共 10 條
     expect(a.lines).toHaveLength(10);
+  });
+});
+
+describe('這一年（D70）', () => {
+  const tz = 'Asia/Taipei';
+  const items = [
+    item('a', 'st', { createdAt: T0 }),
+    item('b', 'st', { createdAt: T0 + 1000 }),
+    item('c', 'st', { createdAt: T0 - DAY }),
+    item('d', 'st', { createdAt: T0 - 3 * DAY }),
+  ];
+  it('counts per local day', () => {
+    const days = activityDays(items, tz);
+    expect(days.find((d) => d.date === '2026-11-08')?.count).toBe(2);
+    expect(days.find((d) => d.date === '2026-11-07')?.count).toBe(1);
+  });
+  it('year, streak and this week', () => {
+    const s = yearStats(items, T0, tz);
+    expect(s.year).toBe(4);
+    expect(s.streak).toBe(2);
+    expect(s.week).toBe(4);
+  });
+  it('monday to ISO week', () => {
+    expect(isoWeekOfMonday('2026-11-02')).toBe('2026-W45');
+    expect(isoWeekOfMonday('2025-12-29')).toBe('2026-W01');
   });
 });

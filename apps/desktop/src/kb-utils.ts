@@ -1,6 +1,6 @@
 /** 知識庫「星空」的純函式（ui-spec「知識庫」、technical-design §16.11）。 */
 import type { KbCategory, KbItem, KbTopic } from './api';
-import { periodsAt } from './goals-utils';
+import { periodsAt, periodsOfYmd, ymdIn } from './goals-utils';
 
 export type RelationKind = 'ref' | 'topic' | 'task' | 'conv';
 
@@ -91,6 +91,62 @@ export function weekly(
     if (w <= first) break;
   }
   return weeks.map((week) => ({ week, count: counts.get(week) ?? 0 }));
+}
+
+// ── 這一年（ui-spec「知識庫」v0.51，D70） ───────────────────────
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** 時區內的日期 `YYYY-MM-DD`。 */
+export function dayOf(ms: number, tz: string): string {
+  const { y, m, d } = ymdIn(ms, tz);
+  return `${y}-${pad2(m)}-${pad2(d)}`;
+}
+
+/** 每天新增的知識數。 */
+export function activityDays(items: KbItem[], tz: string): { date: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const i of items) {
+    const k = dayOf(i.createdAt, tz);
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  return [...counts].map(([date, count]) => ({ date, count }));
+}
+
+const addDays = (date: string, n: number) => {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  const t = new Date(Date.UTC(y, m - 1, d + n));
+  return `${t.getUTCFullYear()}-${pad2(t.getUTCMonth() + 1)}-${pad2(t.getUTCDate())}`;
+};
+
+/** 今年新增、最近一年內最長連續天數、本週新增。 */
+export function yearStats(
+  items: KbItem[],
+  now: number,
+  tz: string,
+): { year: number; streak: number; week: number } {
+  const today = dayOf(now, tz);
+  const yearStart = `${today.slice(0, 4)}-01-01`;
+  const days = new Set(items.map((i) => dayOf(i.createdAt, tz)));
+  const from = addDays(today, -370);
+  let streak = 0;
+  let run = 0;
+  for (let d = from; d <= today; d = addDays(d, 1)) {
+    run = days.has(d) ? run + 1 : 0;
+    streak = Math.max(streak, run);
+  }
+  const thisWeek = weekOf(now, tz);
+  return {
+    year: items.filter((i) => dayOf(i.createdAt, tz) >= yearStart).length,
+    streak,
+    week: items.filter((i) => weekOf(i.createdAt, tz) === thisWeek).length,
+  };
+}
+
+/** 格子的週（星期一 `YYYY-MM-DD`）→ ISO 週代碼（與 `weekOf` 相同格式）。 */
+export function isoWeekOfMonday(monday: string): string {
+  const [y, m, d] = monday.split('-').map(Number) as [number, number, number];
+  return periodsOfYmd(y, m, d).week;
 }
 
 /** 只留下到某週為止建立的知識（`week` 為 null 時全部）。 */

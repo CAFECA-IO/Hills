@@ -7,6 +7,7 @@ import { Children, isValidElement, useState, type ReactElement, type ReactNode }
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { t } from '../i18n';
+import { CitationMark } from './ask';
 
 // ── remark 外掛（mdast 最小型別，避免依賴 @types/mdast）──────────
 interface MdNode {
@@ -56,6 +57,76 @@ function remarkCallouts() {
         hProperties: { dataCallout: kind },
       };
     });
+}
+
+/** 出處標示（v0.16，D70）：`[n]`（1…N）→ 出處編號；`uncited` 中的句子 → 淡色「推論」。 */
+export interface CitationOptions {
+  titles: Record<number, string>;
+  uncited?: string[];
+  onActivate?: (n: number) => void;
+}
+
+const CITE = /\[(\d{1,2})\]/g;
+
+function citeNodes(text: string, opt: CitationOptions): MdNode[] {
+  const out: MdNode[] = [];
+  let last = 0;
+  for (const m of text.matchAll(CITE)) {
+    const n = Number(m[1]);
+    if (!(n in opt.titles)) continue;
+    if (m.index > last) out.push({ type: 'text', value: text.slice(last, m.index) });
+    out.push({
+      type: 'citation',
+      data: { hName: 'sup', hProperties: { dataCite: String(n) } },
+      children: [{ type: 'text', value: String(n) }],
+    } as MdNode);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push({ type: 'text', value: text.slice(last) });
+  return out;
+}
+
+function splitText(text: string, opt: CitationOptions): MdNode[] {
+  const marks = (opt.uncited ?? [])
+    .map((u) => u.trim())
+    .filter((u) => u.length >= 4 && text.includes(u));
+  if (marks.length === 0) return citeNodes(text, opt);
+  const out: MdNode[] = [];
+  let rest = text;
+  while (rest) {
+    let best = -1;
+    let hit = '';
+    for (const u of marks) {
+      const i = rest.indexOf(u);
+      if (i >= 0 && (best < 0 || i < best)) {
+        best = i;
+        hit = u;
+      }
+    }
+    if (best < 0) {
+      out.push(...citeNodes(rest, opt));
+      break;
+    }
+    if (best > 0) out.push(...citeNodes(rest.slice(0, best), opt));
+    out.push({
+      type: 'inferred',
+      data: { hName: 'span', hProperties: { className: 'md-inferred' } },
+      children: [{ type: 'text', value: hit }],
+    } as MdNode);
+    rest = rest.slice(best + hit.length);
+  }
+  return out;
+}
+
+function remarkCitations(opt: CitationOptions) {
+  const visit = (n: MdNode) => {
+    if (!n.children || ['code', 'inlineCode', 'citation', 'inferred'].includes(n.type)) return;
+    n.children = n.children.flatMap((c) =>
+      c.type === 'text' && c.value ? splitText(c.value, opt) : [c],
+    );
+    n.children.forEach(visit);
+  };
+  return () => (tree: MdNode) => visit(tree);
 }
 
 // ── 目錄 ───────────────────────────────────────────
@@ -124,6 +195,7 @@ export function Markdown({
   id,
   variant = 'doc',
   toc = false,
+  citations,
 }: {
   children: string;
   className?: string;
@@ -132,13 +204,19 @@ export function Markdown({
   variant?: 'doc' | 'chat';
   /** 顯示目錄（只在 doc；至少 2 個有 key 的段落） */
   toc?: boolean;
+  /** 出處編號與推論句（問知識庫，D70） */
+  citations?: CitationOptions;
 }) {
   const items = toc && variant === 'doc' ? tocOf(children) : [];
   const body = (
     <div id={id} className={`prose-hills prose-${variant} min-w-0 break-words ${className}`}>
       <ReactMarkdown
         skipHtml
-        remarkPlugins={[remarkGfm, remarkSectionKeys, remarkCallouts]}
+        remarkPlugins={
+          citations
+            ? [remarkGfm, remarkSectionKeys, remarkCallouts, remarkCitations(citations)]
+            : [remarkGfm, remarkSectionKeys, remarkCallouts]
+        }
         components={{
           a: ({ href, children: c }) => (
             <a
@@ -175,6 +253,28 @@ export function Markdown({
               </div>
             );
           },
+          sup: ({ children: c, node }) => {
+            const n = Number(node?.properties?.dataCite);
+            if (!citations || !n) return <sup>{c}</sup>;
+            return (
+              <CitationMark
+                n={n}
+                title={citations.titles[n] ?? ''}
+                onActivate={citations.onActivate}
+              />
+            );
+          },
+          span: ({ children: c, className: cn }) =>
+            cn === 'md-inferred' ? (
+              <span className="text-muted" title={t('ask.inferred.hint')}>
+                {c}
+                <span className="ml-1 rounded-sm bg-bg px-1 text-2xs font-semibold">
+                  {t('ask.inferred')}
+                </span>
+              </span>
+            ) : (
+              <span className={cn}>{c}</span>
+            ),
           input: ({ checked }) => (
             <input type="checkbox" checked={Boolean(checked)} disabled readOnly />
           ),

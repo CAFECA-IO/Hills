@@ -181,6 +181,12 @@ export function Shell({ info }: { info: AppInfo }) {
       setJump({ fromFiles: to.fromFiles, task: to.task });
       setWork((w) => ({ ...w, sub: 'tasks' }));
       setPage('work');
+    } else if (to.page === 'team') {
+      setJump({});
+      setPage('team');
+    } else if (to.page === 'settings') {
+      setJump({});
+      openSettings(to.group);
     } else {
       setJump({ fromFiles: to.fromFiles, kbItem: to.item });
       setPage('kb');

@@ -1,3 +1,7 @@
 packages:
   - apps/desktop
   - packages/*
+
+# vitest 的選用 peer；本專案測試用 jsdom，不安裝 happy-dom（GHSA-834v-8h66-3h79、GHSA-c8p4-j97h-3vg8）
+overrides:
+  happy-dom: '-'

@@ -25,6 +25,9 @@
     }
   },
   "bundle": {
+    "macOS": {
+      "minimumSystemVersion": "13.3"
+    },
     "active": true,
     "targets": ["app", "dmg", "nsis", "msi"],
     "icon": [

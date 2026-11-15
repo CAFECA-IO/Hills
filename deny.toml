@@ -40,4 +40,7 @@ ignore = [
   { id = "RUSTSEC-2026-0371", reason = "zbus_names：經 keyring → Linux Secret Service（zbus 5）引入；已併入 zbus 6，上游升級後移除" },
   { id = "RUSTSEC-2026-0370", reason = "zvariant：同上" },
   { id = "RUSTSEC-2026-0372", reason = "zvariant_derive：同上" },
+  # mach（0.1、0.3）只是 macOS 系統呼叫的宣告，經 user-idle → IOKit-sys / CoreFoundation-sys 引入，
+  # 用於計時的系統閒置秒數；改寫需 FFI（workspace 禁止 unsafe），上游換成 mach2 後移除。
+  { id = "RUSTSEC-2020-0168", reason = "mach：經 user-idle（macOS 閒置時間）引入，停止維護通知、非安全漏洞" },
 ]

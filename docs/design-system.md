@@ -1,6 +1,6 @@
 # Hills 設計系統
 
-> 版本：v0.11 · 2026-11-14 · 對應 [feature-plan.md](./feature-plan.md) v1.45（D22、D40、D43、D45、D47、D56、D58、D59、D63、D66）
+> 版本：v0.12 · 2026-11-15 · 對應 [feature-plan.md](./feature-plan.md) v1.48（D22、D40、D43、D45、D47、D56、D58、D59、D63、D66、D69）
 > 本文件定義視覺基礎：原則、token、字級、間距、圓角、陰影、層級、動態、無障礙、圖示與列印。通用元件的規格見 [components.md](./components.md)；畫面結構與流程見 [ui-spec.md](./ui-spec.md)。
 > 實作來源：`apps/desktop/src/styles/tokens.css`（token）、`apps/desktop/src/ui/`（元件）。三者不一致時以本文件為準，並修正程式碼。
 
@@ -50,6 +50,7 @@
 | 頭像底色（v0.8，D58） | `--hills-avatar-0…6` | 圓形頭像的底色 | 由成員 ID 決定；只用於頭像 |
 | 往山丘走（v0.9，D59） | `--hills-hill-path`、`--hills-hill-path-edge`、`--hills-hill-ground`、`--hills-trail` | 小組方向山丘場景的小路、小路邊線、草地、足跡（§9） | 重用山景 token；角色狀態另用 `st-online`（在路上）、`primary`（走太慢）、`warning`（方向歪了）、`danger`（往後退）、`muted`（停下來），一律搭配形狀與文字 |
 | 角色 | `--hills-ink*`、`--hills-cloud`、`--hills-sun*`、`--hills-moon*`、`--hills-roof`、`--hills-laptop*`、`--hills-shirt-0…5`、`--hills-look-<kind>-<part>-0…5`（v0.7，D56） | 七種角色與天空裝飾 | 只用於 `characters.tsx`、`figures.tsx` 等插畫；`kind` 為 `man`、`woman`、`cat`、`dog`、`elephant`、`sheep`、`tiger`，`part` 為 `a`（部位 1）、`c`（部位 3），衣服共用 `--hills-shirt-*`；成員從色盤選擇（`team.rs` 的 `LOOK_PALETTE` = 6）；角色固定色（筆電、腳底、口鼻白、眼睛、腮紅）用 `--hills-char-*` |
+| 角色 v2（v0.12，D69） | `--hills-hair-0…5`、`--hills-skin-0…5`、`--hills-shirt-0…5`、`--hills-char-line`、`--hills-char-blush` | 髮色、膚色、衣服顏色、描邊、腮紅 | 取代上一列的 `--hills-look-<kind>-<part>-*`（實作 D69 時刪除）；成員從色盤選擇，各 6 色；款式的固定色（褲子、鞋子、內搭、筆電、杯子）用 `--hills-char-*` |
 | 晨光山丘（v0.7，D56） | `--hills-dawn-top/-upper/-lower/-bottom`、`--hills-dawn-sun`、`--hills-dawn-hill-far/-mid/-near` | 設定頁背景；深色模式為夜晚（沿用星空 token 的色調） | 只用於背景插畫 |
 | 毛玻璃（v0.7，D56） | `--hills-glass`、`--hills-glass-strong`、`--hills-glass-line`、`--hills-glass-shadow`；`backdrop-blur` 18 px | `GlassPanel`、`GlassScope` 內的 `Card`、設定頁的分組膠囊與箭頭 | 只放在插畫背景上；模糊畫在內容後面的兄弟層（`GlassLayer`），不要把 `backdrop-filter` 加在含對話框的容器上（會讓 `position: fixed` 錯位）；玻璃上的文字用 `text` / `muted` 並確保 ≥ 4.5 : 1；`prefers-reduced-transparency: reduce` 時改為 `surface` 實色、不模糊 |
 
@@ -172,6 +173,12 @@ Checkbox、Radio 一律自繪（原生 input 設 `appearance-none`，保留鍵�
 
 - 圖示為自繪內嵌 SVG（`viewBox="0 0 20 20"`、線寬 1.6、圓端點），顏色用 `currentColor`；尺寸 14 / 16 / 18 / 20。不引入圖示字型或第三方圖示套件。
 - 插畫（角色、山景、星空、月相）只用 §2.2 token；角色為原創簡筆圖形（D40）。
+- **角色畫法**（v0.12，D69；取代「無線條」）：
+  - 咖啡色描邊（`--hills-char-line`，3 單位、圓角接點）；約 3.8 頭身；下半部較寬的臉。
+  - 眼睛是深咖啡色圓點、位置偏低；腮紅是扁橢圓，貼在眼睛正下方。
+  - 臉依髮型分三個年齡：眼睛大小、鼻線與腮紅深淺不同。
+  - 角色由四個部分組成：頭（髮型）、軀幹加服裝款式、手臂與手（依姿勢）、腿（依姿勢）。三種體型（一般、壯碩、纖細）共用同一套姿勢。
+  - **手繪抖動**（位移濾鏡）只用在設定的角色舞台與 64 px 以上的頭像；山丘場景與較小的頭像不套濾鏡，避免同時多個角色時變慢。
 - 文字型符號（`×`、`◀`、`▶`、`✓`、`⚑`）可作為圖示，但必須放在 `IconButton` 或有文字說明的元素內。
 
 ### 圓形頭像（v0.8，D58）

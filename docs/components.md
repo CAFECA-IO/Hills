@@ -1,6 +1,6 @@
 # Hills 通用元件
 
-> 版本：v0.14 · 2026-11-14 · 對應 [feature-plan.md](./feature-plan.md) v1.46（D45、D47、D56、D58、D63、D66、D67）
+> 版本：v0.15 · 2026-11-15 · 對應 [feature-plan.md](./feature-plan.md) v1.48（D45、D47、D56、D58、D63、D66、D67、D69）
 > 本文件定義 `apps/desktop/src/ui/` 的通用元件：用途、何時用、變體、狀態、鍵盤與無障礙、API。視覺基礎（token、字級、間距）見 [design-system.md](./design-system.md)。
 > 畫面只能組合這些元件（design-system §1、§11）。需要新元件或新變體時，**先改本文件，再改 `src/ui/`**，並補 `src/ui/ui.test.tsx`。
 
@@ -464,7 +464,11 @@ v0.7：
 
 `Avatar`、`AvatarPair`（`figures.tsx`，插畫元件，v0.11，D58）：圓形頭肩像。`Avatar` props：`member`（`id`、`look`、`presence`）、`size`、`me`（主色外圈）、`badge`（預設 true；size ≤ 24 時不畫）。離線自動 55% 透明；`aria-hidden`，名字與狀態由畫面以文字提供。`AvatarPair` 給群組：兩位成員交疊，後者右下、各帶背景色的白邊。
 
+**v0.15（D69）**：`Character` 改由四個部分組成——腿（依姿勢）、軀幹加服裝款式、手臂與手（依姿勢）、頭（髮型）。props 為 `look`（`head`、`outfit`、`hair`、`skin`、`shirt`）、`pose`（`laptop` \| `hold` \| `rest` \| `wave` \| `walk`）、`animate`、`sketch`（手繪抖動，預設 false；只在角色舞台與 64 px 以上的頭像開啟）。不再有 `kind`。
+
 `CharacterStage`（`ui/`）：設定頁的角色切換舞台。
+
+**v0.15（D69）**：舞台切換的是**髮型**，`count` = 8。服裝款式不新增元件，用 `OptionTile`（8 個選項，`icon` 放目前髮型穿上該款式的小圖）；三列配色仍用 `SwatchGroup`，標籤固定為髮色、膚色、衣服顏色。
 
 | prop | 型別 | 說明 |
 |---|---|---|

@@ -46,10 +46,12 @@ pub struct KbAsk {
     mcp_results: Mutex<HashMap<u64, McpSlot>>,
 }
 
-type McpSlot = (
-    std::time::Instant,
-    Option<Result<serde_json::Value, String>>,
-);
+/// 一次 MCP 提問：登記時間、提問內容的簽章（同一題重問時接上，v0.45a）與結果（None = 進行中）。
+struct McpSlot {
+    at: std::time::Instant,
+    sig: String,
+    result: Option<Result<serde_json::Value, String>>,
+}
 
 /// MCP 結果保留時間與筆數（technical-design §18.3 v0.45）。
 const MCP_KEEP: std::time::Duration = std::time::Duration::from_secs(600);
@@ -668,17 +670,42 @@ pub async fn ask_for_mcp(
         node_of(&state).await?
     };
     let ask = app.state::<KbAsk>();
+    // v0.45a：同一題（問題、前文、範圍、追問選擇都相同）在保留期間內重問時，接上進行中或已完成的那一次，
+    // 呼叫端逾時後重試不會重跑（失敗或被中斷的不沿用）
+    let sig = serde_json::json!([q, history, scope, clarified, focus]).to_string();
+    let reuse = lock(&ask.mcp_results)
+        .iter()
+        .filter(|(_, s)| {
+            s.sig == sig && s.at.elapsed() < MCP_KEEP && !matches!(s.result, Some(Err(_)))
+        })
+        .max_by_key(|(_, s)| s.at)
+        .map(|(k, _)| *k);
+    if let Some(id) = reuse
+        && (lock(&ask.mcp_results)
+            .get(&id)
+            .is_some_and(|s| s.result.is_some())
+            || lock(&ask.current).as_ref().is_some_and(|(c, _)| *c == id))
+    {
+        return wait_mcp(app, id).await;
+    }
     let (id, cancel) = begin(&ask);
     {
         let mut m = lock(&ask.mcp_results);
-        m.retain(|_, (at, _)| at.elapsed() < MCP_KEEP);
+        m.retain(|_, s| s.at.elapsed() < MCP_KEEP);
         while m.len() >= MCP_MAX {
-            let Some(oldest) = m.iter().min_by_key(|(_, (at, _))| *at).map(|(k, _)| *k) else {
+            let Some(oldest) = m.iter().min_by_key(|(_, s)| s.at).map(|(k, _)| *k) else {
                 break;
             };
             m.remove(&oldest);
         }
-        m.insert(id, (std::time::Instant::now(), None));
+        m.insert(
+            id,
+            McpSlot {
+                at: std::time::Instant::now(),
+                sig,
+                result: None,
+            },
+        );
     }
     let app2 = app.clone();
     let cancel2 = cancel.clone();
@@ -705,7 +732,7 @@ pub async fn ask_for_mcp(
         let ask = app2.state::<KbAsk>();
         finish(&ask, id);
         if let Some(slot) = lock(&ask.mcp_results).get_mut(&id) {
-            slot.1 = Some(r);
+            slot.result = Some(r);
         }
     });
     wait_mcp(app, id).await
@@ -724,7 +751,7 @@ async fn wait_mcp(app: &AppHandle, id: u64) -> Result<serde_json::Value, String>
     loop {
         let done = lock(&app.state::<KbAsk>().mcp_results)
             .get(&id)
-            .and_then(|(_, r)| r.clone());
+            .and_then(|s| s.result.clone());
         if let Some(r) = done {
             return r;
         }

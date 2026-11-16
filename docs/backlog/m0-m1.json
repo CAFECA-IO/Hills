@@ -682,7 +682,7 @@
       "labels": [
         "type:infra"
       ],
-      "body": "## 目標\n\n可發佈給全員試用的安裝檔。\n\n## 工作項目\n\n- [ ] macOS 簽章與 notarization\n- [ ] Windows 程式碼簽章\n- [ ] Tauri updater 與更新通道\n\n## 驗收條件\n\n- Mac 與 Windows 筆電皆可安裝並收到自動更新\n\n## 參考\n\ntechnical-design §12\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
+      "body": "## 目標\n\n可發佈給全員試用的安裝檔。\n\n## 工作項目\n\n- [ ] macOS 簽章與 notarization（D75：release.yml 已設定，待設定 Secrets 後發佈 Alpha）\n- [ ] Windows 程式碼簽章\n- [ ] Tauri updater 與更新通道\n\n## 驗收條件\n\n- Mac 與 Windows 筆電皆可安裝並收到自動更新\n\n## 參考\n\ntechnical-design §12\n\n> 開工前請先閱讀 AGENTS.md；若需求與文件不符，先修改文件再改程式碼。\n"
     },
     {
       "title": "[M1] 試用指標收集與錯誤回報",

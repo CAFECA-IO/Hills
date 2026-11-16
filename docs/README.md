@@ -15,6 +15,7 @@
 | 4 | [components.md](./components.md) | 通用元件（`apps/desktop/src/ui/`）的用途、變體、狀態、鍵盤與 API，畫面組成模式 | 新增或修改通用元件 |
 | 5 | [development-guidelines.md](./development-guidelines.md) | 分支、commit、程式碼、測試、資安、發佈 | 開發流程變更 |
 | — | [deploy.md](./deploy.md) | 自架 relay + mailbox 的部署、備份、升級、M0 驗收步驟（依 technical-design §10、§16.9） | 部署方式變更 |
+| — | [release.md](./release.md) | Alpha 版發佈：GitHub Secrets、打 tag、驗證簽章與公證（依 feature-plan D75、technical-design §12.1） | 發佈流程變更 |
 | 6 | [backlog/](./backlog/) | M0–M5 Issue 清單（JSON 為來源，.md 為產生的總覽） | 工作項目增減 |
 
 上層文件與下層衝突時以上層為準，並修正下層文件。

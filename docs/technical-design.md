@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.46 草案 · 2026-11-16 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.47 草案 · 2026-11-16 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -455,6 +455,15 @@ services:
 | 檔案分享 | 見 §15.8 | 見 §15.8 |
 
 結論寫入 `docs/poc-report.md`。iroh 或 Automerge 未通過時，評估替代方案（WebRTC + Yjs / Loro）。
+
+### 12.1 發佈（v0.47，D75）
+
+- **Alpha 版**由 `.github/workflows/release.yml` 建置：推送 `v*` tag（例如 `v0.1.0-alpha.1`）或手動執行時觸發；產出 GitHub draft pre-release，附安裝檔與 `SHA256SUMS.txt`。步驟見 [release.md](./release.md)。
+- **macOS**：universal（`aarch64` + `x86_64`）。以 Developer ID Application 憑證簽章、hardened runtime、Apple notary service 公證並 staple。憑證與 App Store Connect API key 只放在 GitHub Secrets；缺少時 job 失敗，不出未簽章的 mac 版。
+- **entitlements**（`src-tauri/entitlements.plist`）：`com.apple.security.cs.disable-library-validation`（載入下載的 pdfium 動態函式庫，§16.20）、`com.apple.security.device.audio-input`、`com.apple.security.device.camera`（會議）；`Info.plist` 加上麥克風、相機的用途說明。
+- **Windows**：NSIS 與 MSI，Alpha 暫不簽章。
+- **版本**：`tauri.conf.json` 與 `Cargo.toml` 維持 `0.1.0`（MSI 只接受數字版本），Alpha 編號只在 tag；建置時 `HILLS_CHANNEL=alpha`，`app_version` 回傳 `{ version, commit, channel }`。
+- 自動更新（updater）與 Windows 簽章留待 Beta。
 
 ## 13. 待決事項
 

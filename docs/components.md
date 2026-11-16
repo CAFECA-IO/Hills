@@ -1,6 +1,6 @@
 # Hills 通用元件
 
-> 版本：v0.17 · 2026-11-16 · 對應 [feature-plan.md](./feature-plan.md) v1.49（D45、D47、D56、D58、D63、D66、D67、D69、D70）
+> 版本：v0.18 · 2026-11-16 · 對應 [feature-plan.md](./feature-plan.md) v1.49（D45、D47、D56、D58、D63、D66、D67、D69、D70）
 > 本文件定義 `apps/desktop/src/ui/` 的通用元件：用途、何時用、變體、狀態、鍵盤與無障礙、API。視覺基礎（token、字級、間距）見 [design-system.md](./design-system.md)。
 > 畫面只能組合這些元件（design-system §1、§11）。需要新元件或新變體時，**先改本文件，再改 `src/ui/`**，並補 `src/ui/ui.test.tsx`。
 
@@ -498,7 +498,7 @@ v0.7：
 
 ### CitationMark（v0.16，D70）
 
-本文中的出處編號 `[n]`：小圓角膠囊，`--hills-cite-soft` 底、`--hills-cite-text` 字。是按鈕（`aria-label`「出處 n：〈標題〉」），點選或 Enter 呼叫 `onActivate(n)`（畫面捲到參考卡並在星空上選取）。由 `Markdown` 的 `citations` 選項把 `[n]` 轉成此元件；不在 1…N 的編號不轉換。
+本文中的出處編號 `[n]`：小圓角膠囊，`--hills-cite-soft` 底、`--hills-cite-text` 字。是按鈕（`aria-label`「出處 n：〈標題〉」），點選或 Enter 呼叫 `onActivate(n)`（畫面捲到參考卡並在星空上選取）。由 `Markdown` 的 `citations` 選項把 `[n]` 轉成此元件；不在 1…N 的編號不轉換。v0.18（D73）：`citations.doubtful`（未通過檢驗的引述）中的句子以淡色加「待確認」標示，與 `uncited` 的「推論」並列。
 
 | prop | 型別 | 說明 |
 |---|---|---|

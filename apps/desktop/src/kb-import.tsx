@@ -13,6 +13,10 @@ import {
   pickImportable,
   sha256Hex,
   statusOf,
+  stripAffix,
+  commonAffix,
+  cleanName,
+  topicOf,
   titleFor,
   truncateBody,
   type ImportFile,
@@ -29,6 +33,8 @@ interface Prepared extends ImportFile {
   title: string;
   truncated: boolean;
   tooLarge: boolean;
+  /** 檔案裡的標題（`<title>`、第一個 h1 或 `# `）；整理共同前後綴用 */
+  found?: string | null;
   /** 讀取或轉換失敗的原因 */
   error?: string;
 }
@@ -117,9 +123,20 @@ async function prepare(
     status: statusOf(existing, f.path, sha256),
     body: cut.body,
     title: titleFor(f.path, found),
+    found,
     truncated: cut.truncated,
     tooLarge: false,
   };
+}
+
+/** v0.53：去掉同一批標題共同的前後綴，並以整理後的標題重新比對。 */
+function tidyTitles(list: Prepared[], existing: Map<string, KbItem>): Prepared[] {
+  const affix = commonAffix(list.map((p) => p.found ?? null));
+  return list.map((p) => {
+    if (p.tooLarge || p.error || !p.found) return p;
+    const title = titleFor(p.path, stripAffix(p.found, affix));
+    return { ...p, title, status: statusOf(existing, p.path, p.sha256, title) };
+  });
 }
 
 export function KbImport({
@@ -182,7 +199,7 @@ export function KbImport({
         }
         if (!mounted.current) return;
         if (firstError) setError(firstError);
-        setPrepared(out);
+        setPrepared(tidyTitles(out, existing));
         setPhase({ kind: 'review' });
       })();
     }
@@ -202,18 +219,39 @@ export function KbImport({
     const result: Outcome = { added: 0, updated: 0, failed: [] };
     try {
       const nodes = await api.storageNodes();
-      // 分類與主題：依名稱沿用既有的（合併後的最終項目），沒有才建立
-      const catName = pick.root;
+      // 分類與主題（technical-design §16.22 v0.43）：先沿用先前匯入的知識所在的分類、主題；
+      // 沒有時依整理後的名稱（去掉排序編號）找既有的，再沒有才建立。
+      // 沿用的名稱若仍是資料夾原名（沒被改過），順便改成整理後的名稱。
       let snap = await api.kb();
-      let cat = snap.categories.find((c) => c.resolved === c.id && c.name === catName)?.id;
+      const topicOfItem = (key: string) => {
+        const id = snap.items.find((i) => i.key === key)?.topicId;
+        const tp = snap.topics.find((x) => x.id === id);
+        return tp ? (snap.topics.find((x) => x.id === tp.resolved) ?? tp) : undefined;
+      };
+      const prevTopics = [...existing.values()].map((i) => ({
+        folder: i.source.kind === 'import' ? topicOf(i.source.path) : '',
+        topic: topicOfItem(i.key),
+      }));
+      const catName = cleanName(pick.root);
+      const reuseCat = prevTopics.find((x) => x.topic)?.topic?.categoryId;
+      let cat = reuseCat
+        ? (snap.categories.find((c) => c.id === reuseCat)?.resolved ?? reuseCat)
+        : snap.categories.find((c) => c.resolved === c.id && c.name === catName)?.id;
       if (!cat) cat = await api.kbCreateCategory(catName);
+      const catNow = snap.categories.find((c) => c.id === cat);
+      if (catNow && catNow.name === pick.root && catName !== pick.root)
+        await api.kbRename('category', cat, catName).catch(() => undefined);
       const topicIds = new Map<string, string>();
-      for (const name of new Set(targets.map((p) => p.topic))) {
+      for (const folder of new Set(targets.map((p) => p.topic))) {
         snap = await api.kb();
-        const found = snap.topics.find(
-          (x) => x.resolved === x.id && x.categoryId === cat && x.name === name,
-        );
-        topicIds.set(name, found?.id ?? (await api.kbCreateTopic(cat, name)));
+        const name = cleanName(folder);
+        const prev = prevTopics.find((x) => x.folder === folder && x.topic)?.topic;
+        const found =
+          prev ??
+          snap.topics.find((x) => x.resolved === x.id && x.categoryId === cat && x.name === name);
+        if (found && found.name === folder && name !== folder)
+          await api.kbRename('topic', found.id, name).catch(() => undefined);
+        topicIds.set(folder, found?.id ?? (await api.kbCreateTopic(cat, name)));
       }
       for (let i = 0; i < targets.length; i++) {
         if (cancel.current) break;
@@ -338,9 +376,10 @@ export function KbImport({
               </p>
               <p>
                 {t('kbImport.where', {
-                  category: pick.root,
+                  category: cleanName(pick.root),
                   n: topics.length,
-                  topics: topics.slice(0, 5).join('、') + (topics.length > 5 ? '…' : ''),
+                  topics:
+                    topics.slice(0, 5).map(cleanName).join('、') + (topics.length > 5 ? '…' : ''),
                 })}
               </p>
             </>

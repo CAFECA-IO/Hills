@@ -7,13 +7,22 @@ import { api, type AskCitation, type KbItem, type KbSnapshot } from './api';
 import { formatDate, t, type MessageKey } from './i18n';
 import { useKbAskStatus, type AskMessage, type AskScope } from './kbask';
 import { navigate } from './nav';
-import { Button, ChatComposer, ErrorText, IconButton, Markdown, SourceCard } from './ui';
+import {
+  Button,
+  ChatComposer,
+  ErrorText,
+  IconButton,
+  LinkButton,
+  Markdown,
+  SourceCard,
+  TextInput,
+} from './ui';
 
 const BUSY: AskMessage['phase'][] = ['understanding', 'searching', 'answering'];
 
 export interface AskApi {
   msgs: AskMessage[];
-  send: (q: string, scope: AskScope | null) => Promise<void>;
+  send: (q: string, scope: AskScope | null, queries?: string[] | null) => Promise<void>;
   stop: () => void;
   reset: () => void;
   busy: boolean;
@@ -27,10 +36,7 @@ function pathOf(i: KbItem | undefined, data: KbSnapshot): string {
 }
 
 function metaOf(c: AskCitation, data: KbSnapshot, nameOf: (id: string) => string): string {
-  if (c.kind === 'pdf') {
-    const head = c.heading.join(' › ');
-    return [t('ask.source.pdf', { page: c.page ?? 1 }), head].filter(Boolean).join(' · ');
-  }
+  if (c.kind === 'pdf') return t('ask.source.attachment');
   const it = data.items.find((i) => i.key === c.key);
   return [
     t('ask.source.item'),
@@ -40,6 +46,24 @@ function metaOf(c: AskCitation, data: KbSnapshot, nameOf: (id: string) => string
   ]
     .filter(Boolean)
     .join(' · ');
+}
+
+/** 同一出處（kind + key）的引用合併成一張參考卡（ui-spec v0.53）。 */
+export function groupCitations(cs: AskCitation[]): AskCitation[][] {
+  const groups = new Map<string, AskCitation[]>();
+  for (const c of cs) {
+    const k = `${c.kind}:${c.key}`;
+    groups.set(k, [...(groups.get(k) ?? []), c]);
+  }
+  return [...groups.values()];
+}
+
+/** 段落的小節路徑：去掉與標題重複的開頭（分類、主題、知識標題）。 */
+function sectionLabel(c: AskCitation): string {
+  if (c.kind === 'pdf')
+    return [t('ask.source.page', { page: c.page ?? 1 }), ...c.heading].join(' · ');
+  const i = c.heading.indexOf(c.title);
+  return (i >= 0 ? c.heading.slice(i + 1) : c.heading.slice(-1)).join(' › ');
 }
 
 export function AskPanel({
@@ -72,6 +96,8 @@ export function AskPanel({
   const scroller = useRef<HTMLDivElement>(null);
   const ready = status?.ready ?? false;
   const { msgs, busy } = ask;
+  const lastMsg = msgs[msgs.length - 1];
+  const followUps = !busy && !draft && lastMsg?.phase === 'done' ? lastMsg.followUps : [];
 
   useEffect(() => {
     if (!ready || msgs.length > 0) return;
@@ -176,6 +202,9 @@ export function AskPanel({
                       ?.scrollIntoView({ block: 'nearest' });
                   }}
                   onRephrase={() => setDraft(m.question)}
+                  onRequery={(queries) => {
+                    if (!busy) void ask.send(m.question, scope, queries);
+                  }}
                   onNewKnowledge={onNewKnowledge}
                 />
               ))
@@ -191,8 +220,19 @@ export function AskPanel({
               label={t('ask.input')}
               placeholder={t('ask.placeholder')}
               before={
-                scope && (
+                (scope || followUps.length > 0) && (
                   <div className="flex flex-wrap gap-1.5">
+                    {followUps.map((q) => (
+                      <Button
+                        key={q}
+                        variant="secondary"
+                        size="sm"
+                        className="max-w-full rounded-full font-normal"
+                        onClick={() => submit(q)}
+                      >
+                        <span className="truncate">{q}</span>
+                      </Button>
+                    ))}
                     {scope && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-primary-soft py-0.5 pr-1 pl-2.5 text-xs font-semibold text-primary">
                         {t('ask.scope', { name: scope.label })}
@@ -238,6 +278,7 @@ function Exchange({
   onCite,
   onActivateMark,
   onRephrase,
+  onRequery,
   onNewKnowledge,
 }: {
   idx: number;
@@ -248,6 +289,7 @@ function Exchange({
   onCite: (c: AskCitation) => void;
   onActivateMark: (n: number) => void;
   onRephrase: () => void;
+  onRequery: (queries: string[]) => void;
   onNewKnowledge: (title: string, body: string) => void;
 }) {
   const busy = BUSY.includes(m.phase);
@@ -257,6 +299,10 @@ function Exchange({
   const titles: Record<number, string> = {};
   answer?.citations.forEach((c) => (titles[c.n] = c.title));
   const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [unhelpful, setUnhelpful] = useState(false);
+  const groups = answer ? groupCitations(answer.citations) : [];
+  const editQuery = () => setEditing(m.intent?.queries[0] ?? m.question);
   const steps: { key: MessageKey; params?: Record<string, string | number>; done: boolean }[] = [];
   if (m.intent && kb)
     steps.push({
@@ -307,16 +353,67 @@ function Exchange({
           <Elapsed since={m.startedAt} />
         </>
       )}
-      {!busy && m.intent && kb && m.phase === 'done' && (
-        <span className="flex items-center gap-1.5 text-xs text-muted">
+      {!busy && m.intent && kb && (m.phase === 'done' || m.phase === 'notFound') && (
+        <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
           <span
             aria-hidden="true"
             className="rounded-md bg-primary-soft px-1.5 text-2xs font-bold text-primary"
           >
             AI
           </span>
-          {t('ask.understood', { q: m.intent.queries[0] ?? m.question })}
+          {editing === null ? (
+            <>
+              <span className="min-w-0">
+                {t(m.edited ? 'ask.understood.edited' : 'ask.understood', {
+                  q: m.intent.queries[0] ?? m.question,
+                })}
+              </span>
+              <LinkButton tone="muted" className="underline" onClick={editQuery}>
+                {t('ask.understood.edit')}
+              </LinkButton>
+            </>
+          ) : (
+            <form
+              className="flex w-full items-center gap-1.5"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const q = editing.trim();
+                if (!q) return;
+                setEditing(null);
+                onRequery([q.slice(0, 200)]);
+              }}
+            >
+              <TextInput
+                size="sm"
+                className="min-w-0 flex-1"
+                aria-label={t('ask.understood.label')}
+                value={editing}
+                maxLength={200}
+                autoFocus
+                onChange={(e) => setEditing(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setEditing(null);
+                }}
+              />
+              <Button size="sm" type="submit" disabled={!editing.trim()}>
+                {t('ask.understood.search')}
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setEditing(null)}>
+                {t('common.cancel')}
+              </Button>
+            </form>
+          )}
         </span>
+      )}
+      {m.phase === 'done' && answer?.weak && (
+        <div role="note" className="flex flex-col gap-1.5 rounded-control bg-cite-soft px-3 py-2.5">
+          <b className="text-sm text-cite-text">{t('ask.weak.title')}</b>
+          <p className="text-sm leading-5">{t('ask.weak.body')}</p>
+          <span className="flex flex-wrap gap-3 text-xs">
+            <LinkButton onClick={onRephrase}>{t('ask.notFound.rephrase')}</LinkButton>
+            <LinkButton onClick={editQuery}>{t('ask.understood.edit.long')}</LinkButton>
+          </span>
+        </div>
       )}
       {m.phase === 'notFound' && (
         <div className="flex flex-col gap-2">
@@ -331,6 +428,13 @@ function Exchange({
             onClick={onRephrase}
           >
             {t('ask.notFound.rephrase')}
+          </Button>
+          <Button
+            variant="secondary"
+            className="justify-start rounded-control font-normal"
+            onClick={editQuery}
+          >
+            {t('ask.understood.edit.long')}
           </Button>
           <Button
             variant="secondary"
@@ -363,26 +467,37 @@ function Exchange({
       {m.phase === 'done' && answer && answer.citations.length > 0 && (
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-semibold text-muted">{t('ask.sources')}</span>
-          {answer.citations.map((c) => (
-            <SourceCard
-              key={c.n}
-              id={`ask-src-${idx}-${c.n}`}
-              n={c.n}
-              title={
-                c.kind === 'pdf'
-                  ? t('ask.source.pdfTitle', { name: c.title, page: c.page ?? 1 })
-                  : c.title
-              }
-              meta={metaOf(c, data, nameOf)}
-              highlighted={highlight === `${idx}-${c.n}`}
-              onOpen={() => onCite(c)}
-            />
-          ))}
+          {groups.map((g) => {
+            const c = g[0]!;
+            return (
+              <SourceCard
+                key={`${c.kind}:${c.key}`}
+                n={c.n}
+                title={c.title}
+                meta={metaOf(c, data, nameOf)}
+                highlighted={g.some((x) => highlight === `${idx}-${x.n}`)}
+                onOpen={() => onCite(c)}
+                sections={g.map((x) => ({
+                  n: x.n,
+                  id: `ask-src-${idx}-${x.n}`,
+                  label: sectionLabel(x),
+                  excerpt: x.excerpt,
+                }))}
+              />
+            );
+          })}
         </div>
       )}
       {m.phase === 'done' && answer && kb && (
         <div className="flex items-center gap-2 text-xs text-muted">
-          <span className="flex-1">{t('ask.footer', { count: answer.citations.length })}</span>
+          <span className="flex-1">{t('ask.footer', { count: groups.length })}</span>
+          <LinkButton
+            tone="muted"
+            aria-expanded={unhelpful}
+            onClick={() => setUnhelpful((v) => !v)}
+          >
+            {t('ask.unhelpful')}
+          </LinkButton>
           <Button
             variant="secondary"
             size="sm"
@@ -409,6 +524,31 @@ function Exchange({
             }}
           >
             {t('ask.saveKb')}
+          </Button>
+        </div>
+      )}
+      {m.phase === 'done' && answer && kb && unhelpful && (
+        <div className="flex flex-col gap-1.5">
+          <Button
+            variant="secondary"
+            className="justify-start rounded-control font-normal"
+            onClick={onRephrase}
+          >
+            {t('ask.notFound.rephrase')}
+          </Button>
+          <Button
+            variant="secondary"
+            className="justify-start rounded-control font-normal"
+            onClick={editQuery}
+          >
+            {t('ask.understood.edit.long')}
+          </Button>
+          <Button
+            variant="secondary"
+            className="justify-start rounded-control font-normal"
+            onClick={() => onNewKnowledge(m.question, '')}
+          >
+            {t('ask.notFound.add')}
           </Button>
         </div>
       )}

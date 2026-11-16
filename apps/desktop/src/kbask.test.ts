@@ -14,6 +14,8 @@ const msg = (p: Partial<AskMessage> = {}): AskMessage => ({
   error: null,
   prep: null,
   startedAt: 0,
+  followUps: [],
+  edited: false,
   ...p,
 });
 
@@ -23,6 +25,7 @@ const answer = (p: Partial<AskAnswer> = {}): AskAnswer => ({
   citations: [],
   uncited: [],
   notFound: false,
+  weak: false,
   ...p,
 });
 

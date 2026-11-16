@@ -2,6 +2,9 @@
 import { describe, expect, it } from 'vitest';
 import type { FolderPickEntry, KbItem } from './api';
 import {
+  cleanName,
+  commonAffix,
+  stripAffix,
   byteLength,
   htmlToMarkdown,
   importedBy,
@@ -68,6 +71,8 @@ describe('匯入資料夾（D71）', () => {
     const map = importedBy(items, 'me', '06');
     expect(statusOf(map, 'a.html', 'x')).toBe('same');
     expect(statusOf(map, 'a.html', 'z')).toBe('changed');
+    expect(statusOf(map, 'a.html', 'x', 'a.html')).toBe('same');
+    expect(statusOf(map, 'a.html', 'x', '整理後的標題')).toBe('changed');
     expect(statusOf(map, 'b.html', 'y')).toBe('new');
     expect(missingFrom(map, []).map((i) => i.title)).toEqual(['a.html']);
     expect(importedBy(items, 'me', '07').size).toBe(0);
@@ -106,5 +111,28 @@ describe('匯入資料夾（D71）', () => {
     expect(await sha256Hex(new TextEncoder().encode('abc'))).toBe(
       'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
     );
+  });
+  it('名稱整理：共同的標題後綴、資料夾編號（v0.53）', () => {
+    const titles = [
+      '異常事件｜污水廠知識圖譜',
+      '儀控訊號｜污水廠知識圖譜',
+      'SOP｜污水廠知識圖譜',
+      null,
+      '本體',
+    ];
+    const a = commonAffix(titles);
+    expect(a).toEqual({ prefix: null, suffix: '污水廠知識圖譜' });
+    expect(stripAffix('異常事件｜污水廠知識圖譜', a)).toBe('異常事件');
+    expect(stripAffix('本體', a)).toBe('本體');
+    // 只有一個檔案有時不去掉
+    expect(commonAffix(['A - 網站', 'B'])).toEqual({ prefix: null, suffix: null });
+    expect(stripAffix('首頁 | Hills | 說明', { prefix: 'Hills', suffix: null })).toBe(
+      '首頁 | Hills | 說明',
+    );
+    expect(cleanName('06_污水廠知識圖譜')).toBe('污水廠知識圖譜');
+    expect(cleanName('01-共用知識')).toBe('共用知識');
+    expect(cleanName('3. 廠站')).toBe('廠站');
+    expect(cleanName('2026')).toBe('2026');
+    expect(cleanName('AquaMind')).toBe('AquaMind');
   });
 });

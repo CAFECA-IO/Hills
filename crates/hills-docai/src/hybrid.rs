@@ -37,6 +37,8 @@ pub struct Options {
     pub rrf_k: f32,
     /// 語意相關度門檻：最高 cosine 低於此值且沒有關鍵字命中時視為找不到
     pub min_cosine: f32,
+    /// 最高 cosine 低於此值（或只靠關鍵字找到）時視為「相關度偏低」（technical-design §16.21 v0.43）
+    pub strong_cosine: f32,
 }
 
 impl Default for Options {
@@ -47,6 +49,7 @@ impl Default for Options {
             budget: 4000.0,
             rrf_k: 60.0,
             min_cosine: 0.80,
+            strong_cosine: 0.85,
         }
     }
 }
@@ -66,11 +69,14 @@ pub struct Found {
     pub score: f32,
 }
 
-/// 檢索結果；`relevant` = 最高 cosine 達門檻或有關鍵字命中。
+/// 檢索結果；`relevant` = 最高 cosine 達門檻或有關鍵字命中；`weak` = 相關但最高 cosine 未達
+/// `strong_cosine`（只部分相關，或只靠關鍵字命中）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Retrieved {
     pub found: Vec<Found>,
     pub relevant: bool,
+    pub weak: bool,
+    pub top_cosine: f32,
 }
 
 /// 斷詞：拉丁字母與數字以連續字串為一詞（小寫），中日韓字取單字與相鄰兩字。
@@ -148,6 +154,8 @@ pub fn retrieve(
         return Retrieved {
             found: Vec::new(),
             relevant: false,
+            weak: false,
+            top_cosine: 0.0,
         };
     }
     let docs: Vec<Vec<String>> = candidates
@@ -228,8 +236,11 @@ pub fn retrieve(
         });
     }
     let top_cos = found.iter().map(|f| f.cosine).fold(f32::MIN, f32::max);
+    let relevant = !found.is_empty() && (top_cos >= opt.min_cosine || keyword_hit);
     Retrieved {
-        relevant: !found.is_empty() && (top_cos >= opt.min_cosine || keyword_hit),
+        relevant,
+        weak: relevant && top_cos < opt.strong_cosine,
+        top_cosine: top_cos.max(0.0),
         found,
     }
 }
@@ -300,7 +311,16 @@ mod tests {
             &Options::default(),
         );
         assert!(r.relevant);
+        assert!(!r.weak);
         assert_eq!(r.found[0].key, "k:a");
+        // 只靠關鍵字命中 → 相關但偏低
+        let r = retrieve(
+            &cands,
+            &[("mailbox".into(), vec![0.0, 0.0])],
+            &["mailbox".into()],
+            &Options::default(),
+        );
+        assert!(r.relevant && r.weak);
         // 沒有關鍵字、語意也不夠接近 → 找不到
         let r = retrieve(
             &cands,

@@ -90,15 +90,67 @@ export function importedBy(items: KbItem[], me: string, root: string): Map<strin
   return map;
 }
 
+/** v0.53：雜湊相同但標題不同（例如標題整理過）也算更新。 */
 export function statusOf(
   existing: Map<string, KbItem>,
   path: string,
   sha256: string | null,
+  title?: string,
 ): ImportStatus {
   const e = existing.get(path);
   if (!e || e.source.kind !== 'import') return 'new';
   if (sha256 === null) return 'changed';
+  if (title !== undefined && e.title !== title) return 'changed';
   return e.source.sha256 === sha256 ? 'same' : 'changed';
+}
+
+// ── 名稱整理（ui-spec v0.53、technical-design §16.22 v0.43） ─────────
+
+const SEPS = [' | ', '｜', '|', ' - ', ' — ', ' – ', '—', '–'];
+
+function splitTitle(title: string): { sep: string; parts: string[] } | null {
+  for (const sep of SEPS) {
+    if (title.includes(sep)) {
+      const parts = title.split(sep).map((x) => x.trim());
+      if (parts.length >= 2 && parts.every(Boolean)) return { sep, parts };
+    }
+  }
+  return null;
+}
+
+/** 同一批標題共同的前後綴（以分隔符號切開的第一段或最後一段；至少 2 個且過半）。 */
+export function commonAffix(titles: (string | null)[]): {
+  prefix: string | null;
+  suffix: string | null;
+} {
+  const split = titles.map((x) => (x ? splitTitle(x) : null));
+  const pick = (part: (p: string[]) => string) => {
+    const n = new Map<string, number>();
+    for (const sp of split) if (sp) n.set(part(sp.parts), (n.get(part(sp.parts)) ?? 0) + 1);
+    const best = [...n.entries()].sort((a, b) => b[1] - a[1])[0];
+    return best && best[1] >= 2 && best[1] * 2 > titles.length ? best[0] : null;
+  };
+  return { prefix: pick((p) => p[0]!), suffix: pick((p) => p[p.length - 1]!) };
+}
+
+/** 去掉共同的前後綴；去掉後是空的就保留原標題。 */
+export function stripAffix(
+  title: string,
+  affix: { prefix: string | null; suffix: string | null },
+): string {
+  const sp = splitTitle(title);
+  if (!sp) return title;
+  let parts = sp.parts;
+  if (affix.suffix && parts.length > 1 && parts[parts.length - 1] === affix.suffix)
+    parts = parts.slice(0, -1);
+  if (affix.prefix && parts.length > 1 && parts[0] === affix.prefix) parts = parts.slice(1);
+  return parts.join(sp.sep) || title;
+}
+
+/** 分類、主題名稱去掉開頭的排序編號（`06_`、`01-`、`3.`、`04 `）；去掉後是空的就保留。 */
+export function cleanName(name: string): string {
+  const c = name.replace(/^\d+[_\-.\s]+/, '').trim();
+  return c || name;
 }
 
 /** 資料夾中已不存在的匯入知識。 */

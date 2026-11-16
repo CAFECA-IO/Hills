@@ -2182,7 +2182,7 @@ const shards = new Map<string, Uint8Array>();
 // 知識庫匯入（D71）：?import=1 時「匯入資料夾」選到示範資料夾
 const fakeTexts = new Map<string, Uint8Array>();
 const page = (title: string, rows: number) =>
-  `<!doctype html><html><head><title>${title}</title><script>render()</script></head><body><nav>首頁</nav><h1>${title}</h1><p>這是 <strong>${title}</strong> 的說明。</p><table><tr><th>代碼</th><th>名稱</th><th>單位</th></tr>${Array.from({ length: rows }, (_, i) => `<tr><td>FIT-${i}</td><td>進流流量計 ${i} 號（每五分鐘回傳一筆）</td><td>m³/h</td></tr>`).join('')}</table></body></html>`;
+  `<!doctype html><html><head><title>${title}｜污水廠知識圖譜</title><script>render()</script></head><body><nav>首頁</nav><h1>${title}</h1><p>這是 <strong>${title}</strong> 的說明。</p><table><tr><th>代碼</th><th>名稱</th><th>單位</th></tr>${Array.from({ length: rows }, (_, i) => `<tr><td>FIT-${i}</td><td>進流流量計 ${i} 號（每五分鐘回傳一筆）</td><td>m³/h</td></tr>`).join('')}</table></body></html>`;
 function importFolder() {
   const files: [string, string][] = [
     ['index.html', page('污水廠知識圖譜', 3)],
@@ -2470,7 +2470,7 @@ const ask = {
   cancelled: new Set<number>(),
 };
 const ASK_ANSWER =
-  '不會不見。同事傳的訊息會先存在信箱節點，你重新連上後 app 會自動補同步 [1]。\n\n如果 relay 一直連不上：\n\n- 先看左下角狀態是否顯示「離線」。\n- 依部署說明重新啟動 relay 容器，並確認 UDP 7842 有開 [2]。\n\n下一季也會把這類維運步驟整理進知識庫 [3]。這通常幾分鐘內就會恢復。';
+  '不會不見。同事傳的訊息會先存在信箱節點，你重新連上後 app 會自動補同步 [1]，補同步依時間順序進行 [4]。\n\n如果 relay 一直連不上：\n\n- 先看左下角狀態是否顯示「離線」。\n- 依部署說明重新啟動 relay 容器，並確認 UDP 7842 有開 [2]。\n\n下一季也會把這類維運步驟整理進知識庫 [3]。這通常幾分鐘內就會恢復。';
 Object.assign(handlers, {
   docai_index_kb: () => 0,
   kbask_status: () => ({
@@ -2511,6 +2511,10 @@ Object.assign(handlers, {
     emit('kbask://error', { askId, message: '已停止', cancelled: true });
   },
 
+  kbask_follow_ups: async () => {
+    await delay(1500);
+    return ['補同步會花多久？', 'relay 要開哪些連接埠？'];
+  },
   kbask_suggest: () => [
     'relay 斷線時訊息會不見嗎？',
     '新增儲存節點要準備什麼？',
@@ -2521,12 +2525,21 @@ Object.assign(handlers, {
     const q = String(a.question);
     const kind = /在嗎|在不在/.test(q) ? 'people' : 'kb';
     const notFound = /獎金|薪水/.test(q);
-    const intent = { intent: kind, queries: [q.replace(/[？?]$/, '')], keywords: [] };
+    const weak = /每天|例行/.test(q);
+    const edited = Array.isArray(a.queries) ? (a.queries as string[]) : null;
+    const intent = { intent: kind, queries: edited ?? [q.replace(/[？?]$/, '')], keywords: [] };
     const fire = (ms: number, ev: string, p: object) =>
       setTimeout(() => !ask.cancelled.has(askId) && emit(ev, { askId, ...p }), ms);
-    const base = { understood: intent, citations: [], uncited: [], notFound: false, answer: '' };
+    const base = {
+      understood: intent,
+      citations: [],
+      uncited: [],
+      notFound: false,
+      weak: false,
+      answer: '',
+    };
     if (askId === 1) fire(150, 'kbask://step', { step: 'loading' });
-    fire(500, 'kbask://step', { step: 'understood', intent });
+    fire(edited ? 100 : 500, 'kbask://step', { step: 'understood', intent });
     if (kind === 'people') {
       fire(800, 'kbask://done', { answer: base });
       return askId;
@@ -2546,7 +2559,10 @@ Object.assign(handlers, {
     fire(1500 + pieces.length * 45, 'kbask://done', {
       answer: {
         ...base,
-        answer: ASK_ANSWER,
+        weak,
+        answer: weak
+          ? `知識庫裡沒有直接列出每天的例行工作，以下根據 relay 與信箱的維運內容整理。\n\n${ASK_ANSWER}`
+          : ASK_ANSWER,
         uncited: ['這通常幾分鐘內就會恢復。'],
         citations: [
           {
@@ -2556,14 +2572,16 @@ Object.assign(handlers, {
             title: 'mailbox 補同步',
             heading: ['工程', '同步', 'mailbox 補同步'],
             page: null,
+            excerpt: '同事傳來的訊息會先加密存在信箱節點（mailbox），重新連上後由 app 自動補同步…',
           },
           {
             n: 2,
             kind: 'item',
             key: 'mem-a:k7',
             title: 'relay 部署',
-            heading: ['部署', 'relay 部署'],
+            heading: ['部署', 'relay 部署', '啟動'],
             page: null,
+            excerpt: '以 docker compose 啟動 relay，開放 TCP 443 與 UDP 7842…',
           },
           {
             n: 3,
@@ -2572,6 +2590,16 @@ Object.assign(handlers, {
             title: '2026Q4 季度報告初稿.pdf',
             heading: ['4. 下季計畫'],
             page: 7,
+            excerpt: '下季將把維運手冊整理進知識庫，並補上常見故障排除…',
+          },
+          {
+            n: 4,
+            kind: 'item',
+            key: 'mem-d:k5',
+            title: 'mailbox 補同步',
+            heading: ['工程', '同步', 'mailbox 補同步', '順序'],
+            page: null,
+            excerpt: '補同步依訊息時間排序，同一對話的訊息不會亂序…',
           },
         ],
       },

@@ -259,6 +259,7 @@ export function SourceCard({
   onOpen,
   highlighted = false,
   id,
+  sections,
 }: {
   n: number;
   title: string;
@@ -267,7 +268,14 @@ export function SourceCard({
   onOpen: () => void;
   highlighted?: boolean;
   id?: string;
+  /** 同一出處的多個段落（components v0.17） */
+  sections?: { n: number; label: string; excerpt: string; id?: string }[];
 }) {
+  const badge = (k: number) => (
+    <span className="inline-flex min-w-5 shrink-0 justify-center rounded-md bg-cite-soft px-1 text-xs leading-4 font-bold text-cite-text">
+      {k}
+    </span>
+  );
   return (
     <button
       id={id}
@@ -275,9 +283,7 @@ export function SourceCard({
       onClick={onOpen}
       className={`flex w-full min-w-0 items-start gap-2.5 rounded-control border bg-surface px-3 py-2 text-left transition-colors duration-(--hills-motion) hover:border-primary ${highlighted ? 'border-primary' : 'border-line'} ${FOCUS_RING}`}
     >
-      <span className="mt-0.5 inline-flex min-w-5 justify-center rounded-md bg-cite-soft px-1 text-xs leading-4 font-bold text-cite-text">
-        {n}
-      </span>
+      {!sections?.length && <span className="mt-0.5">{badge(n)}</span>}
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex items-center gap-1.5 text-sm font-semibold">
           {icon && (
@@ -288,6 +294,19 @@ export function SourceCard({
           <span className="truncate">{title}</span>
         </span>
         <span className="truncate text-xs text-muted">{meta}</span>
+        {sections && sections.length > 0 && (
+          <span className="mt-1 flex flex-col gap-1.5">
+            {sections.map((sec) => (
+              <span key={sec.n} id={sec.id} className="flex items-start gap-2 text-xs">
+                {badge(sec.n)}
+                <span className="flex min-w-0 flex-col">
+                  {sec.label && <span className="truncate font-semibold">{sec.label}</span>}
+                  <span className="line-clamp-2 text-muted">{sec.excerpt}</span>
+                </span>
+              </span>
+            ))}
+          </span>
+        )}
       </span>
     </button>
   );

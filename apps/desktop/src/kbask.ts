@@ -37,6 +37,10 @@ export interface AskMessage {
   prep: { kind: 'indexing'; items: number } | { kind: 'loading' } | null;
   /** 送出時間（顯示已經過幾秒） */
   startedAt: number;
+  /** 回答後的追問建議（v0.53） */
+  followUps: string[];
+  /** 以修改過的查詢重問（v0.53） */
+  edited: boolean;
 }
 
 // ── 狀態（設定與知識庫共用） ─────────────────────────────
@@ -129,12 +133,34 @@ const newMessage = (question: string, scope: AskScope | null): AskMessage => ({
   error: null,
   prep: null,
   startedAt: Date.now(),
+  followUps: [],
+  edited: false,
 });
 
 /** 一段問答對話。 */
 export function useKbAsk() {
   const [msgs, setMsgs] = useState<AskMessage[]>([]);
   const current = useRef<number | null>(null);
+  const latest = useRef<AskMessage[]>([]);
+  useEffect(() => {
+    latest.current = msgs;
+  });
+
+  /** 回答完成後產生追問建議（背景；提問時後端會中斷） */
+  const followUp = useCallback(async (askId: number, answer: AskAnswer | undefined) => {
+    if (!answer || answer.notFound || answer.citations.length === 0) return;
+    const m = latest.current.find((x) => x.askId === askId);
+    if (!m) return;
+    try {
+      const q = await api.kbaskFollowUps(m.question, answer.answer, [
+        ...new Set(answer.citations.map((c) => c.title)),
+      ]);
+      if (q.length > 0)
+        setMsgs((all) => all.map((x) => (x.askId === askId ? { ...x, followUps: q } : x)));
+    } catch {
+      // 追問建議是附加的，失敗就不顯示
+    }
+  }, []);
 
   useEffect(() => {
     const offs: Promise<() => void>[] = [];
@@ -151,6 +177,7 @@ export function useKbAsk() {
           );
           if ((type === 'done' || type === 'error') && current.current === p.askId)
             current.current = null;
+          if (type === 'done') void followUp(p.askId, p.answer as AskAnswer | undefined);
         }),
       );
     on(EVENTS.askStep, 'step');
@@ -160,17 +187,17 @@ export function useKbAsk() {
     return () => {
       offs.forEach((p) => void p.then((off) => off()));
     };
-  }, []);
+  }, [followUp]);
 
   const send = useCallback(
-    async (question: string, scope: AskScope | null) => {
+    async (question: string, scope: AskScope | null, queries: string[] | null = null) => {
       const q = question.trim();
       if (!q) return;
       const history = historyOf(msgs);
       const idx = msgs.length;
-      setMsgs((all) => [...all, newMessage(q, scope)]);
+      setMsgs((all) => [...all, { ...newMessage(q, scope), edited: !!queries }]);
       try {
-        const askId = await api.kbaskAsk(q, history, scope?.id ?? null);
+        const askId = await api.kbaskAsk(q, history, scope?.id ?? null, queries);
         current.current = askId;
         setMsgs((all) => all.map((m, i) => (i === idx ? { ...m, askId } : m)));
       } catch (err) {

@@ -279,6 +279,7 @@ mod tests {
             &crate::kbask::AskInput {
                 question: "relay 斷線的時候訊息會不見嗎？".into(),
                 history: Vec::new(),
+                queries: None,
             },
             &cancel,
         )
@@ -346,6 +347,7 @@ mod tests {
             &crate::kbask::AskInput {
                 question: "relay 斷線的時候訊息會不見嗎？".into(),
                 history: Vec::new(),
+                queries: None,
             },
             crate::kbask::Hooks {
                 on_step: &mut |s| eprintln!("{:?} {s:?}", t.elapsed()),

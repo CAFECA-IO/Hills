@@ -517,6 +517,8 @@ export interface AskCitation {
   title: string;
   heading: string[];
   page: number | null;
+  /** 段落開頭約 80 字（v0.43） */
+  excerpt: string;
 }
 
 export interface AskAnswer {
@@ -525,6 +527,8 @@ export interface AskAnswer {
   citations: AskCitation[];
   uncited: string[];
   notFound: boolean;
+  /** 找到的內容只部分相關（v0.43） */
+  weak: boolean;
 }
 
 export type AskStep =
@@ -1423,8 +1427,14 @@ export const api = {
   kbaskStatus: () => call<KbAskStatus>('kbask_status'),
   kbaskEnable: () => call<void>('kbask_enable'),
   kbaskDisable: (purge: boolean) => call<void>('kbask_disable', { purge }),
-  kbaskAsk: (question: string, history: AskTurn[], scope: string | null) =>
-    call<number>('kbask_ask', { question, history, scope }),
+  kbaskAsk: (
+    question: string,
+    history: AskTurn[],
+    scope: string | null,
+    queries: string[] | null = null,
+  ) => call<number>('kbask_ask', { question, history, scope, queries }),
+  kbaskFollowUps: (question: string, answer: string, titles: string[]) =>
+    call<string[]>('kbask_follow_ups', { question, answer, titles }),
   kbaskCancel: (askId: number) => call<void>('kbask_cancel', { askId }),
   kbaskSuggest: () => call<string[]>('kbask_suggest'),
   /** 系統閒置秒數；不支援的平台為 null（ui-spec v0.48） */

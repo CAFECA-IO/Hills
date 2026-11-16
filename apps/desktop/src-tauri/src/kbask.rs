@@ -394,10 +394,21 @@ pub async fn kbask_ask(
     question: String,
     history: Vec<Turn>,
     scope: Option<String>,
+    queries: Option<Vec<String>>,
 ) -> CmdResult<u64> {
     let q = question.trim().to_owned();
     if q.is_empty() || q.chars().count() > 2000 {
         return Err("問題不能是空的，也不能超過 2000 字".into());
+    }
+    // 修改過的查詢（technical-design §16.21 v0.43）：1–3 句，各 200 字以內
+    if let Some(qs) = &queries
+        && (qs.is_empty()
+            || qs.len() > 3
+            || qs
+                .iter()
+                .any(|x| x.trim().is_empty() || x.chars().count() > 200))
+    {
+        return Err("查詢要 1 到 3 句，每句 200 字以內".into());
     }
     let node = node_of(&state).await?;
     let (id, cancel) = begin(&ask);
@@ -407,6 +418,7 @@ pub async fn kbask_ask(
             let input = AskInput {
                 question: q,
                 history,
+                queries,
             };
             let res = ask_now(
                 &app,
@@ -470,6 +482,35 @@ pub async fn kbask_cancel(ask: State<'_, KbAsk>, ask_id: u64) -> CmdResult<()> {
         flag.store(true, Ordering::Relaxed);
     }
     Ok(())
+}
+
+/// 回答後的 2 個追問建議（technical-design §16.21 v0.43）；提問時中斷（與建議問題共用旗標）。
+#[tauri::command]
+pub async fn kbask_follow_ups(
+    app: AppHandle,
+    question: String,
+    answer: String,
+    titles: Vec<String>,
+) -> CmdResult<Vec<String>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let ai = app.state::<DocAi>();
+        let ask = app.state::<KbAsk>();
+        if !ask_on(&ai) || !ready(&ai) || lock(&ask.current).is_some() {
+            return Ok(Vec::new());
+        }
+        let llm = llm_of(&ai, &ask)?;
+        let flag = Arc::new(AtomicBool::new(false));
+        *lock(&ask.suggesting) = Some(flag.clone());
+        let res = kbask::follow_ups(&*llm, &question, &answer, &titles, &flag);
+        lock(&ask.suggesting).take();
+        match res {
+            Ok(q) => Ok(q),
+            Err(hills_docai::DocAiError::Cancelled) => Ok(Vec::new()),
+            Err(x) => Err(x.to_string()),
+        }
+    })
+    .await
+    .map_err(e)?
 }
 
 /// 依最近 30 天新增的知識產生 3 個建議問題；知識沒有變動時沿用上次的結果。
@@ -549,6 +590,7 @@ pub async fn ask_for_mcp(
         let input = AskInput {
             question: q,
             history: history.into_iter().rev().take(3).rev().collect(),
+            queries: None,
         };
         let r = ask_now(
             &app2,

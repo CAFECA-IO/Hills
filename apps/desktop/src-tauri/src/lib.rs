@@ -50,6 +50,7 @@ pub fn run() {
             kbask::kbask_ask,
             kbask::kbask_cancel,
             kbask::kbask_suggest,
+            kbask::kbask_follow_ups,
             mcp::mcp_settings,
             mcp::set_mcp_enabled,
             mcp::regenerate_mcp_token,

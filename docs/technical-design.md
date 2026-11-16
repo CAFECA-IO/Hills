@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.42b 草案 · 2026-11-16 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.42c 草案 · 2026-11-16 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -1273,7 +1273,7 @@ PDF 的內容在**成員自己的裝置**上解析、切片、向量化與檢索
 | 向量模型 multilingual-e5-small（預設） | Xenova/multilingual-e5-small，`onnx/model_quantized.onnx` + tokenizer，固定 commit | MIT | 約 135 MB，384 維 |
 | 向量模型 bge-m3（可選） | Xenova/bge-m3，`onnx/model_quantized.onnx` + tokenizer，固定 commit | MIT | 約 590 MB，1024 維 |
 
-ONNX Runtime 由 `ort`（經 `fastembed`）在建置時靜態連結。Rust 綁定：`pdfium-render`（MIT / Apache-2.0）、`fastembed`（Apache-2.0）。下載支援續傳（`.part` + Range）；雜湊不符時刪除重下。
+ONNX Runtime 由 `ort`（經 `fastembed`）在建置時靜態連結。向量化一律在 CPU 執行（v0.42c）：不使用 ONNX Runtime 的自動加速選擇（macOS 預設會啟用 CoreML，段落長度不同就重新編譯模型，記憶體可暴增到數十 GB）。Rust 綁定：`pdfium-render`（MIT / Apache-2.0）、`fastembed`（Apache-2.0）。下載支援續傳（`.part` + Range）；雜湊不符時刪除重下。
 
 **取得內容**：
 - 前端以既有的下載管線（§15）把檔案解密到記憶體，以二進位請求交給 `docai_index_bytes`。已下載的檔案改由 Rust 讀本機下載紀錄中的路徑（§16.19，`docai_index_downloaded`）。**不在磁碟留下明文副本。**

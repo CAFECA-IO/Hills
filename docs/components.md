@@ -1,6 +1,6 @@
 # Hills 通用元件
 
-> 版本：v0.16 · 2026-11-15 · 對應 [feature-plan.md](./feature-plan.md) v1.49（D45、D47、D56、D58、D63、D66、D67、D69、D70）
+> 版本：v0.17 · 2026-11-16 · 對應 [feature-plan.md](./feature-plan.md) v1.49（D45、D47、D56、D58、D63、D66、D67、D69、D70）
 > 本文件定義 `apps/desktop/src/ui/` 的通用元件：用途、何時用、變體、狀態、鍵盤與無障礙、API。視覺基礎（token、字級、間距）見 [design-system.md](./design-system.md)。
 > 畫面只能組合這些元件（design-system §1、§11）。需要新元件或新變體時，**先改本文件，再改 `src/ui/`**，並補 `src/ui/ui.test.tsx`。
 
@@ -502,7 +502,7 @@ v0.7：
 
 | prop | 型別 | 說明 |
 |---|---|---|
-| `n` | number | 編號 |
+| `n` | number | 編號（有 `sections` 時為第一段的編號） |
 | `title` | string | 出處標題（無障礙名稱用） |
 | `onActivate` | `(n) => void` | 點選 |
 
@@ -517,6 +517,7 @@ v0.7：
 | `icon` | ReactNode? | 知識或 PDF 圖示 |
 | `onOpen` | `() => void` | 開啟出處 |
 | `highlighted` | boolean? | 強調 |
+| `sections` | `{ n, label, excerpt, id? }[]`? | v0.17：同一出處的多個段落，在說明下方逐段列出編號、小節路徑與摘錄（純文字，整張卡仍是一個按鈕）；有時左側編號改為各段編號 |
 
 ### ChatComposer（v0.16，D70）
 

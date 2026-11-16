@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.43 草案 · 2026-11-16 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.44 草案 · 2026-11-16 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -1395,6 +1395,20 @@ Block = Heading{level, text, page} | Para{text, page}
 7. **相關度偏低**（v0.43）：`weak` = 最高 cosine < 0.85（`strong_cosine`，與 0.80 一起校準）或只靠關鍵字命中。作答提示加一條「資料與問題只部分相關時，第一句先說明知識庫裡沒有直接的答案，以下根據哪些內容」；介面顯示提示框。
 8. **修改理解**（v0.43）：`kbask_ask` 可帶 `queries`（1–3 句，各 ≤ 200 字）；有值時跳過第 2 步，意圖 = kb、關鍵字取查詢斷詞的前 5 個，照常送出 `understood` 進度。
 9. **追問建議**（v0.43）：回答完成後前端呼叫 `kbask_follow_ups(question, answer, titles)`；以 GBNF 限定輸出 2 個字串的 JSON 陣列（每個 ≤ 30 字），溫度 0.7、最多 120 token；與建議問題共用取消旗標，提問時中斷。
+
+**v0.44 流程（D73，取代上面第 1、5、6 步的寫法；其餘照舊）**：理解 → （追問）→ 檢索 → （追問）→ 初稿 → 檢驗 → （修正）→ 潤稿 → 整理出處。回答完成後才送出，kb / howto 不串流文字。
+
+1. **理解**：一次呼叫，GBNF 輸出 `{ intent, queries, keywords, template, clarify }`。`template` ∈ `steps`（步驟）/ `list`（條列）/ `table`（表格）/ `explain`（說明）/ `compare`（比較）/ `troubleshoot`（問題排除）/ `short`（簡答），預設 `explain`。`clarify` = `null` 或 `{ question, options[2–4] }`（每個選項 ≤ 20 字），只在問題太籠統、指涉不明且前文無法補足時填寫。`AskInput.clarified` 為真（使用者已回答過追問）時忽略 `clarify`。
+2. **追問（模型）**：有 `clarify` 時直接回傳 `Answer.clarify`，不檢索、不作答。
+3. **檢索與門檻**：不變（含 `weak`）。`AskInput.focus`（分類 › 主題前綴）有值時只用標題路徑以此開頭的段落。
+4. **追問（主題分散）**：未追問過時，前 6 段依標題路徑前兩層（分類 › 主題）分組；至少 2 組各 ≥ 2 段且最大組 < 60% 時回傳 `clarify = { question: "你想問的是哪一部分？", options: 各組名稱（最多 3 組）+ 「全部」, focus: [[分類, 主題], …] }`。
+5. **初稿**：作答提示加上該樣板的固定指示；`max_tokens` 900，溫度 0.2。
+6. **檢驗**：一次呼叫（片段 + 初稿），GBNF 輸出 `{ ok, issues: [{ quote, kind, note }] }`，`kind` ∈ `unsupported`（出處沒有或不符）、`citation`（編號錯）、`logic`（論述矛盾、跳躍）、`unclear`（用語難懂）；最多 5 項，`quote` ≤ 60 字。
+7. **修正**：有問題時把清單交給模型重寫一次，再檢驗一次；仍有問題時 `Answer.unverified = issues`，介面列出並以淡色標示被點名的句子。
+8. **潤稿**：保留事實、數字與 `[n]`，只調整用語、順序與格式並維持樣板。潤稿後的編號不是潤稿前的子集，或少了一半以上時改用潤稿前的版本。
+9. **整理出處**：`check_citations` → `tidy_citations`（同 v0.43）。
+
+進度 `kbask://step` 新增 `clarifying`、`drafting`、`verifying`、`revising`、`polishing`。`kbask_ask` 新增參數 `clarified`、`focus`（最多 3 段，各 ≤ 100 字）。MCP `ask_knowledge` 有追問時回傳 `{ clarify: { question, options } }`，代理可帶 `clarified`、`focus` 再問；回傳也包含 `unverified`。M4 上每題約 40–60 秒。
 
 **指令與事件**：
 

@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.44 草案 · 2026-11-16 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.45 草案 · 2026-11-16 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -1410,6 +1410,15 @@ Block = Heading{level, text, page} | Para{text, page}
 
 進度 `kbask://step` 新增 `clarifying`、`drafting`、`verifying`、`revising`、`polishing`。`kbask_ask` 新增參數 `clarified`、`focus`（最多 3 段，各 ≤ 100 字）。MCP `ask_knowledge` 有追問時回傳 `{ clarify: { question, options } }`，代理可帶 `clarified`、`focus` 再問；回傳也包含 `unverified`。M4 上每題約 40–60 秒。
 
+**v0.45 修正（D73 加註）**：
+
+- **主題分散追問**只計知識本身的段落（附件段落不算），且理解問題時樣板為 `short`（單一事實）不以主題分散追問；選項名稱去掉開頭的排序編號。
+- **理解問題**的指示附上籠統問題應追問的例子（「污水廠要怎麼維護？」→「想問哪一類：每日巡檢 / 異常處置 / 設備保養」）。
+- **潤稿**只給格式描述，不給樣板名稱；輸出開頭若是樣板名稱（簡答、說明、步驟、條列、表格、比較、問題排除）加「。」或「：」則去掉。
+- **檢驗**逐一核對每個 `[n]`：片段 n 必須含有該句的關鍵名詞、代碼或數字，否則列為 `citation`。
+- **附件歸屬**：`citations` 每項加 `owner?`、`ownerTitle?`（附件所屬知識的 key 與標題，由 `list_files` 的知識來源補上）；介面依 `owner ?? key` 合併參考卡，附件段落標「附件 · 檔名」，HTML / Markdown 附件不顯示頁碼。
+- **相關度**：`strong_cosine` 暫改 0.82；`Answer` 加 `topCosine`（介面不顯示，MCP 回傳，用來校準）。
+
 **指令與事件**：
 
 | 指令 | 參數 | 回傳 |
@@ -1636,7 +1645,8 @@ kind = `recover`，流程與加入相同（產生**新的** IK / EK / DK、`Appl
 | `list_conversations` | — | 對話列表 |
 | `read_messages` | `conv`、`limit?`（≤ 50） | 最近的訊息 |
 | `search_knowledge` | `query`、`limit?` | 標題與內文包含關鍵字的知識；v0.37（D68）：開啟文件理解時另回 `contentHits`（PDF 內容命中：檔名、頁碼、標題路徑、片段、出處，§16.20） |
-| `ask_knowledge` | `question`、`history?`（最多 3 輪 `{question, answer}`）、`scope?`（分類 id 或知識 key） | v0.41（D70）：以本機語言模型根據知識庫回答（§16.21），回傳 `understood`（意圖與改寫的查詢）、`answer`（含 `[n]`）、`citations`（`n`、`kind`、`key`、`title`、`page?`、`heading`）、`notFound`。讀取類，不需確認。這台電腦未開啟問知識庫時回錯誤「問知識庫尚未在這台電腦開啟」；同一時間只處理一個問題，逾時 120 秒 |
+| `ask_knowledge` | `question`、`history?`（最多 3 輪 `{question, answer}`）、`scope?`（分類 id 或知識 key） | v0.41（D70）：以本機語言模型根據知識庫回答（§16.21），回傳 `understood`（意圖與改寫的查詢）、`answer`（含 `[n]`）、`citations`（`n`、`kind`、`key`、`title`、`page?`、`heading`）、`notFound`。讀取類，不需確認。這台電腦未開啟問知識庫時回錯誤「問知識庫尚未在這台電腦開啟」；同一時間只處理一個問題，逾時 120 秒。v0.45：最多等 60 秒，未完成時回傳 `{ pending: true, askId }`，以 `get_ask_result` 取回 |
+| `get_ask_result` | `askId` | v0.45：取回 `ask_knowledge` 的結果；最多再等 60 秒，仍未完成時回傳 `{ pending: true, askId }`。結果保留 10 分鐘（最多 10 筆）；只有新的提問會中斷進行中的那一題。讀取類，不需確認 |
 | `list_teams` | — | v0.28（D51）：小組（id、名稱、成員、負責人、封存時間、本人能否管理） |
 | `list_knowledge_tree` | — | v0.28（D51）：知識庫分類與主題（含 `resolved`：合併後的最終項目），不含內文 |
 

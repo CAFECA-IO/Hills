@@ -9,12 +9,23 @@ import {
   listen,
   type AskAnswer,
   type AskIntent,
+  type AskOptions,
   type AskTurn,
   type KbAskStatus,
 } from './api';
 
 export type AskPhase =
-  'understanding' | 'searching' | 'answering' | 'done' | 'notFound' | 'error' | 'cancelled';
+  | 'understanding'
+  | 'searching'
+  | 'answering'
+  | 'done'
+  | 'notFound'
+  | 'clarify'
+  | 'error'
+  | 'cancelled';
+
+/** 作答的階段（v0.44，D73） */
+export type AskStage = 'drafting' | 'verifying' | 'revising' | 'polishing';
 
 export interface AskScope {
   /** 分類 id 或知識 key */
@@ -41,6 +52,10 @@ export interface AskMessage {
   followUps: string[];
   /** 以修改過的查詢重問（v0.53） */
   edited: boolean;
+  /** 已經過的作答階段（v0.54；修正後會再檢驗一次） */
+  stages: AskStage[];
+  /** 這一輪的選項（重問、追問的回答）*/
+  opts: AskOptions;
 }
 
 // ── 狀態（設定與知識庫共用） ─────────────────────────────
@@ -93,6 +108,7 @@ export function applyEvent(
     | { type: 'step'; step: 'understood'; intent: AskIntent }
     | { type: 'step'; step: 'found'; items: number; pdfs: number }
     | { type: 'step'; step: 'answering' }
+    | { type: 'step'; step: AskStage }
     | { type: 'token'; text: string }
     | { type: 'done'; answer: AskAnswer }
     | { type: 'error'; message: string; cancelled: boolean },
@@ -105,7 +121,8 @@ export function applyEvent(
         return { ...m, intent: ev.intent, phase: 'searching', prep: null };
       if (ev.step === 'found')
         return { ...m, found: { items: ev.items, pdfs: ev.pdfs }, phase: 'searching' };
-      return { ...m, phase: 'answering' };
+      if (ev.step === 'answering') return { ...m, phase: 'answering' };
+      return { ...m, phase: 'answering', stages: [...m.stages, ev.step] };
     case 'token':
       return { ...m, text: m.text + ev.text, phase: 'answering' };
     case 'done':
@@ -114,7 +131,7 @@ export function applyEvent(
         answer: ev.answer,
         intent: ev.answer.understood,
         text: ev.answer.answer,
-        phase: ev.answer.notFound ? 'notFound' : 'done',
+        phase: ev.answer.clarify ? 'clarify' : ev.answer.notFound ? 'notFound' : 'done',
       };
     case 'error':
       return { ...m, phase: ev.cancelled ? 'cancelled' : 'error', error: ev.message };
@@ -135,6 +152,8 @@ const newMessage = (question: string, scope: AskScope | null): AskMessage => ({
   startedAt: Date.now(),
   followUps: [],
   edited: false,
+  stages: [],
+  opts: {},
 });
 
 /** 一段問答對話。 */
@@ -190,14 +209,14 @@ export function useKbAsk() {
   }, [followUp]);
 
   const send = useCallback(
-    async (question: string, scope: AskScope | null, queries: string[] | null = null) => {
+    async (question: string, scope: AskScope | null, opts: AskOptions = {}) => {
       const q = question.trim();
       if (!q) return;
       const history = historyOf(msgs);
       const idx = msgs.length;
-      setMsgs((all) => [...all, { ...newMessage(q, scope), edited: !!queries }]);
+      setMsgs((all) => [...all, { ...newMessage(q, scope), edited: !!opts.queries, opts }]);
       try {
-        const askId = await api.kbaskAsk(q, history, scope?.id ?? null, queries);
+        const askId = await api.kbaskAsk(q, history, scope?.id ?? null, opts);
         current.current = askId;
         setMsgs((all) => all.map((m, i) => (i === idx ? { ...m, askId } : m)));
       } catch (err) {

@@ -13,7 +13,7 @@ use hills_docai::models::{self, GEMMA_4_E4B};
 use hills_docai::{Candidate, SourceKind};
 use hills_node::Node;
 use hills_node::kb::{KbSnapshot, KbSource};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::commands::{AppState, CmdResult, e};
@@ -231,6 +231,10 @@ fn step_name(s: &Step) -> &'static str {
         Step::Understood { .. } => "understood",
         Step::Found { .. } => "found",
         Step::Answering => "answering",
+        Step::Drafting => "drafting",
+        Step::Verifying => "verifying",
+        Step::Revising => "revising",
+        Step::Polishing => "polishing",
     }
 }
 
@@ -287,8 +291,16 @@ fn ask_now(
             return Err(hills_docai::DocAiError::Store("文件理解尚未就緒".into()));
         };
         let mut cands: Vec<Candidate<'_>> = Vec::new();
+        // v0.44：使用者在追問中選了某個主題（分類 › 主題前綴）
+        let in_focus = |heading: &[String]| {
+            input
+                .focus
+                .as_ref()
+                .is_none_or(|f| f.is_empty() || heading.starts_with(f))
+        };
         for p in en.kb.passages() {
-            if scope.items.as_ref().is_none_or(|s| s.contains(p.key)) {
+            if scope.items.as_ref().is_none_or(|s| s.contains(p.key)) && in_focus(&p.chunk.heading)
+            {
                 cands.push(Candidate {
                     kind: SourceKind::Item,
                     passage: p,
@@ -296,7 +308,13 @@ fn ask_now(
             }
         }
         for p in en.index.passages() {
-            if visible.contains(p.key) && scope.files.as_ref().is_none_or(|s| s.contains(p.key)) {
+            if visible.contains(p.key)
+                && scope.files.as_ref().is_none_or(|s| s.contains(p.key))
+                && input
+                    .focus
+                    .as_ref()
+                    .is_none_or(|f| f.is_empty() || f.first().is_some_and(|n| n == p.name))
+            {
                 cands.push(Candidate {
                     kind: SourceKind::Pdf,
                     passage: p,
@@ -394,8 +412,13 @@ pub async fn kbask_ask(
     question: String,
     history: Vec<Turn>,
     scope: Option<String>,
-    queries: Option<Vec<String>>,
+    opts: Option<AskOptions>,
 ) -> CmdResult<u64> {
+    let AskOptions {
+        queries,
+        clarified,
+        focus,
+    } = opts.unwrap_or_default();
     let q = question.trim().to_owned();
     if q.is_empty() || q.chars().count() > 2000 {
         return Err("問題不能是空的，也不能超過 2000 字".into());
@@ -410,6 +433,7 @@ pub async fn kbask_ask(
     {
         return Err("查詢要 1 到 3 句，每句 200 字以內".into());
     }
+    let focus = check_focus(focus)?;
     let node = node_of(&state).await?;
     let (id, cancel) = begin(&ask);
     std::thread::Builder::new()
@@ -419,6 +443,8 @@ pub async fn kbask_ask(
                 question: q,
                 history,
                 queries,
+                clarified,
+                focus,
             };
             let res = ask_now(
                 &app,
@@ -568,17 +594,44 @@ pub async fn kbask_suggest(app: AppHandle, state: State<'_, AppState>) -> CmdRes
     .map_err(e)?
 }
 
-/// MCP `ask_knowledge`（technical-design §18.3 v0.41）：不串流，最多等 120 秒。
+/// 提問的選項（v0.43 修改理解的查詢；v0.44 已回答追問、選的範圍）。
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AskOptions {
+    queries: Option<Vec<String>>,
+    clarified: bool,
+    focus: Option<Vec<String>>,
+}
+
+/// 追問選的範圍（technical-design §16.21 v0.44）：最多 3 段，各 1–100 字。
+fn check_focus(focus: Option<Vec<String>>) -> CmdResult<Option<Vec<String>>> {
+    match focus {
+        Some(f)
+            if f.len() > 3
+                || f.iter()
+                    .any(|x| x.trim().is_empty() || x.chars().count() > 100) =>
+        {
+            Err("範圍最多 3 段，每段 100 字以內".into())
+        }
+        Some(f) if f.is_empty() => Ok(None),
+        other => Ok(other),
+    }
+}
+
+/// MCP `ask_knowledge`（technical-design §18.3 v0.41、§16.21 v0.44）：不串流，最多等 180 秒。
 pub async fn ask_for_mcp(
     app: &AppHandle,
     question: String,
     history: Vec<Turn>,
     scope: Option<String>,
+    clarified: bool,
+    focus: Option<Vec<String>>,
 ) -> Result<serde_json::Value, String> {
     let q = question.trim().to_owned();
     if q.is_empty() {
         return Err("question is empty".into());
     }
+    let focus = check_focus(focus)?;
     let node = {
         let state = app.state::<AppState>();
         node_of(&state).await?
@@ -591,6 +644,8 @@ pub async fn ask_for_mcp(
             question: q,
             history: history.into_iter().rev().take(3).rev().collect(),
             queries: None,
+            clarified,
+            focus,
         };
         let r = ask_now(
             &app2,
@@ -606,13 +661,13 @@ pub async fn ask_for_mcp(
         finish(&app2.state::<KbAsk>(), id);
         r
     });
-    match tokio::time::timeout(std::time::Duration::from_secs(120), job).await {
+    match tokio::time::timeout(std::time::Duration::from_secs(180), job).await {
         Ok(Ok(Ok(a))) => serde_json::to_value(&a).map_err(|x| x.to_string()),
         Ok(Ok(Err(m))) => Err(m),
         Ok(Err(x)) => Err(x.to_string()),
         Err(_) => {
             cancel.store(true, Ordering::Relaxed);
-            Err("timed out after 120 seconds".into())
+            Err("timed out after 180 seconds".into())
         }
     }
 }

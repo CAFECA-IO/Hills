@@ -63,6 +63,8 @@ function remarkCallouts() {
 export interface CitationOptions {
   titles: Record<number, string>;
   uncited?: string[];
+  /** 未通過檢驗的引述（v0.17，D73）→ 淡色「待確認」 */
+  doubtful?: string[];
   onActivate?: (n: number) => void;
 }
 
@@ -87,7 +89,8 @@ function citeNodes(text: string, opt: CitationOptions): MdNode[] {
 }
 
 function splitText(text: string, opt: CitationOptions): MdNode[] {
-  const marks = (opt.uncited ?? [])
+  const doubtful = new Set((opt.doubtful ?? []).map((u) => u.trim()));
+  const marks = [...(opt.uncited ?? []), ...doubtful]
     .map((u) => u.trim())
     .filter((u) => u.length >= 4 && text.includes(u));
   if (marks.length === 0) return citeNodes(text, opt);
@@ -110,7 +113,10 @@ function splitText(text: string, opt: CitationOptions): MdNode[] {
     if (best > 0) out.push(...citeNodes(rest.slice(0, best), opt));
     out.push({
       type: 'inferred',
-      data: { hName: 'span', hProperties: { className: 'md-inferred' } },
+      data: {
+        hName: 'span',
+        hProperties: { className: doubtful.has(hit) ? 'md-doubtful' : 'md-inferred' },
+      },
       children: [{ type: 'text', value: hit }],
     } as MdNode);
     rest = rest.slice(best + hit.length);
@@ -265,7 +271,14 @@ export function Markdown({
             );
           },
           span: ({ children: c, className: cn }) =>
-            cn === 'md-inferred' ? (
+            cn === 'md-doubtful' ? (
+              <span className="text-muted" title={t('ask.doubtful.hint')}>
+                {c}
+                <span className="ml-1 rounded-sm bg-cite-soft px-1 text-2xs font-semibold text-cite-text">
+                  {t('ask.doubtful')}
+                </span>
+              </span>
+            ) : cn === 'md-inferred' ? (
               <span className="text-muted" title={t('ask.inferred.hint')}>
                 {c}
                 <span className="ml-1 rounded-sm bg-bg px-1 text-2xs font-semibold">

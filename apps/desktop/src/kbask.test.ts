@@ -16,6 +16,8 @@ const msg = (p: Partial<AskMessage> = {}): AskMessage => ({
   startedAt: 0,
   followUps: [],
   edited: false,
+  stages: [],
+  opts: {},
   ...p,
 });
 
@@ -61,5 +63,20 @@ describe('問知識庫狀態（D70）', () => {
       done('4'),
     ]);
     expect(h.map((t) => t.question)).toEqual(['2', '3', '4']);
+  });
+  it('作答階段與追問（D73）', () => {
+    let m = msg();
+    m = applyEvent(m, { type: 'step', step: 'drafting' });
+    m = applyEvent(m, { type: 'step', step: 'verifying' });
+    m = applyEvent(m, { type: 'step', step: 'revising' });
+    m = applyEvent(m, { type: 'step', step: 'verifying' });
+    expect(m.stages).toEqual(['drafting', 'verifying', 'revising', 'verifying']);
+    expect(m.phase).toBe('answering');
+    const c = applyEvent(m, {
+      type: 'done',
+      answer: answer({ answer: '', clarify: { question: '哪一類？', options: ['甲', '乙'] } }),
+    });
+    expect(c.phase).toBe('clarify');
+    expect(historyOf([c])).toEqual([]);
   });
 });

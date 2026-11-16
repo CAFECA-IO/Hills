@@ -2526,7 +2526,8 @@ Object.assign(handlers, {
     const kind = /在嗎|在不在/.test(q) ? 'people' : 'kb';
     const notFound = /獎金|薪水/.test(q);
     const weak = /每天|例行/.test(q);
-    const edited = Array.isArray(a.queries) ? (a.queries as string[]) : null;
+    const opts = (a.opts ?? {}) as { queries?: string[]; clarified?: boolean; focus?: string[] };
+    const edited = Array.isArray(opts.queries) ? opts.queries : null;
     const intent = { intent: kind, queries: edited ?? [q.replace(/[？?]$/, '')], keywords: [] };
     const fire = (ms: number, ev: string, p: object) =>
       setTimeout(() => !ask.cancelled.has(askId) && emit(ev, { askId, ...p }), ms);
@@ -2544,6 +2545,15 @@ Object.assign(handlers, {
       fire(800, 'kbask://done', { answer: base });
       return askId;
     }
+    // D73 示範：「怎麼維護」→ 模型追問（理解後直接回傳，不檢索）
+    if (!opts.clarified && !opts.focus && /怎麼維護/.test(q)) {
+      const clarify = {
+        question: '想問哪一類的維護？',
+        options: ['每日巡檢', '異常處置', '設備保養'],
+      };
+      fire(700, 'kbask://done', { answer: { ...base, clarify } });
+      return askId;
+    }
     fire(
       1100,
       'kbask://step',
@@ -2553,10 +2563,25 @@ Object.assign(handlers, {
       fire(1400, 'kbask://done', { answer: { ...base, notFound: true } });
       return askId;
     }
-    fire(1300, 'kbask://step', { step: 'answering' });
-    const pieces = ASK_ANSWER.match(/.{1,6}/gsu) ?? [];
-    pieces.forEach((p, i) => fire(1400 + i * 45, 'kbask://token', { text: p }));
-    fire(1500 + pieces.length * 45, 'kbask://done', {
+    // D73 示範：「每天」→ 主題分散追問；「校正」→ 未通過檢驗
+    if (!opts.clarified && !opts.focus && /每天/.test(q)) {
+      const clarify = {
+        question: '找到的內容分屬幾個不同的主題，你想問的是哪一部分？',
+        options: ['工程 › 同步', '部署 › relay', '全部'],
+        focus: [['工程', '同步'], ['部署', 'relay'], []],
+      };
+      fire(1300, 'kbask://done', { answer: { ...base, clarify } });
+      return askId;
+    }
+    const doubt = /校正/.test(q);
+    fire(1300, 'kbask://step', { step: 'drafting' });
+    fire(2200, 'kbask://step', { step: 'verifying' });
+    if (doubt) {
+      fire(2800, 'kbask://step', { step: 'revising' });
+      fire(3400, 'kbask://step', { step: 'verifying' });
+    }
+    fire(doubt ? 4000 : 2900, 'kbask://step', { step: 'polishing' });
+    fire(doubt ? 4800 : 3700, 'kbask://done', {
       answer: {
         ...base,
         weak,
@@ -2564,6 +2589,15 @@ Object.assign(handlers, {
           ? `知識庫裡沒有直接列出每天的例行工作，以下根據 relay 與信箱的維運內容整理。\n\n${ASK_ANSWER}`
           : ASK_ANSWER,
         uncited: ['這通常幾分鐘內就會恢復。'],
+        unverified: doubt
+          ? [
+              {
+                quote: '先看左下角狀態是否顯示「離線」。',
+                kind: 'unsupported',
+                note: '參考資料沒有提到左下角的狀態',
+              },
+            ]
+          : [],
         citations: [
           {
             n: 1,

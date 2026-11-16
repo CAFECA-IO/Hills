@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, type AskCitation, type KbItem, type KbSnapshot } from './api';
 import { formatDate, t, type MessageKey } from './i18n';
 import { useKbAskStatus, type AskMessage, type AskScope } from './kbask';
+import type { AskOptions } from './api';
 import { navigate } from './nav';
 import {
   Button,
@@ -22,7 +23,7 @@ const BUSY: AskMessage['phase'][] = ['understanding', 'searching', 'answering'];
 
 export interface AskApi {
   msgs: AskMessage[];
-  send: (q: string, scope: AskScope | null, queries?: string[] | null) => Promise<void>;
+  send: (q: string, scope: AskScope | null, opts?: AskOptions) => Promise<void>;
   stop: () => void;
   reset: () => void;
   busy: boolean;
@@ -203,7 +204,23 @@ export function AskPanel({
                   }}
                   onRephrase={() => setDraft(m.question)}
                   onRequery={(queries) => {
-                    if (!busy) void ask.send(m.question, scope, queries);
+                    if (!busy) void ask.send(m.question, scope, { queries });
+                  }}
+                  onChoose={(option, focus) => {
+                    if (busy) return;
+                    void ask.send(`${m.question}（${option}）`, scope, {
+                      clarified: true,
+                      focus: focus && focus.length > 0 ? focus : null,
+                      queries: m.opts.queries ?? null,
+                    });
+                  }}
+                  onOther={() => {
+                    setDraft(m.question);
+                    document
+                      .querySelector<HTMLTextAreaElement>(
+                        'aside[aria-labelledby=kb-ask-title] textarea',
+                      )
+                      ?.focus();
                   }}
                   onNewKnowledge={onNewKnowledge}
                 />
@@ -279,6 +296,8 @@ function Exchange({
   onActivateMark,
   onRephrase,
   onRequery,
+  onChoose,
+  onOther,
   onNewKnowledge,
 }: {
   idx: number;
@@ -290,6 +309,8 @@ function Exchange({
   onActivateMark: (n: number) => void;
   onRephrase: () => void;
   onRequery: (queries: string[]) => void;
+  onChoose: (option: string, focus: string[] | undefined) => void;
+  onOther: () => void;
   onNewKnowledge: (title: string, body: string) => void;
 }) {
   const busy = BUSY.includes(m.phase);
@@ -323,7 +344,12 @@ function Exchange({
       done: true,
     });
   else if (busy && m.intent && kb) steps.push({ key: 'ask.step.searching', done: false });
-  if (m.phase === 'answering') steps.push({ key: 'ask.step.answering', done: false });
+  // v0.54（D73）：初稿 → 檢驗 →（修正）→ 潤稿
+  m.stages.forEach((st, i) =>
+    steps.push({ key: `ask.step.${st}`, done: !busy || i < m.stages.length - 1 }),
+  );
+  if (m.phase === 'answering' && m.stages.length === 0)
+    steps.push({ key: 'ask.step.answering', done: false });
 
   return (
     <div className="flex flex-col gap-2">
@@ -338,8 +364,8 @@ function Exchange({
       {busy && (
         <>
           <ol aria-live="polite" className="flex flex-col gap-1.5 text-xs">
-            {steps.map((s) => (
-              <li key={s.key} className="flex items-center gap-2">
+            {steps.map((s, i) => (
+              <li key={i} className="flex items-center gap-2">
                 <span
                   aria-hidden="true"
                   className={`flex size-4 items-center justify-center rounded-full text-2xs ${s.done ? 'bg-st-online text-on-primary' : 'border-2 border-primary'}`}
@@ -445,6 +471,41 @@ function Exchange({
           </Button>
         </div>
       )}
+      {m.phase === 'clarify' && answer?.clarify && (
+        <div className="flex flex-col gap-2">
+          <p className="max-w-[320px] self-start rounded-2xl rounded-bl-sm bg-bg px-3 py-2 text-sm leading-5">
+            {answer.clarify.question}
+          </p>
+          <div role="group" aria-label={answer.clarify.question} className="flex flex-col gap-1.5">
+            {answer.clarify.options.map((o, i) => (
+              <Button
+                key={o}
+                variant="secondary"
+                className="justify-start rounded-control text-left font-normal"
+                onClick={() => onChoose(o, answer.clarify?.focus?.[i])}
+              >
+                {o}
+              </Button>
+            ))}
+            <LinkButton tone="muted" className="self-start text-xs underline" onClick={onOther}>
+              {t('ask.clarify.other')}
+            </LinkButton>
+          </div>
+        </div>
+      )}
+      {m.phase === 'done' && answer && (answer.unverified?.length ?? 0) > 0 && (
+        <div role="note" className="flex flex-col gap-1 rounded-control bg-cite-soft px-3 py-2.5">
+          <b className="text-sm text-cite-text">{t('ask.unverified.title')}</b>
+          <ul className="flex list-disc flex-col gap-0.5 pl-5 text-xs leading-5">
+            {answer.unverified!.map((u, i) => (
+              <li key={i}>
+                「{u.quote}」：{t(`ask.issue.${u.kind}`)}
+                {u.note ? ` · ${u.note}` : ''}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {intent === 'people' && m.phase === 'done' && (
         <div className="flex flex-col items-start gap-2 text-sm">
           <p>{t('ask.people')}</p>
@@ -453,17 +514,27 @@ function Exchange({
           </Button>
         </div>
       )}
-      {(m.text || answer?.answer) && intent !== 'people' && m.phase !== 'notFound' && (
-        <Markdown
-          variant="chat"
-          className="text-sm leading-6"
-          citations={
-            answer ? { titles, uncited: answer.uncited, onActivate: onActivateMark } : undefined
-          }
-        >
-          {answer?.answer ?? m.text}
-        </Markdown>
-      )}
+      {(m.text || answer?.answer) &&
+        intent !== 'people' &&
+        m.phase !== 'notFound' &&
+        m.phase !== 'clarify' && (
+          <Markdown
+            variant="chat"
+            className="text-sm leading-6"
+            citations={
+              answer
+                ? {
+                    titles,
+                    uncited: answer.uncited,
+                    doubtful: answer.unverified?.map((u) => u.quote),
+                    onActivate: onActivateMark,
+                  }
+                : undefined
+            }
+          >
+            {answer?.answer ?? m.text}
+          </Markdown>
+        )}
       {m.phase === 'done' && answer && answer.citations.length > 0 && (
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-semibold text-muted">{t('ask.sources')}</span>

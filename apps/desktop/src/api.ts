@@ -499,10 +499,34 @@ export interface KbAskStatus {
 
 export type AskIntentKind = 'kb' | 'howto' | 'people' | 'chat';
 
+export type AskTemplate =
+  'steps' | 'list' | 'table' | 'explain' | 'compare' | 'troubleshoot' | 'short';
+
+/** 追問（v0.44，D73）：主題分散時 `focus[i]` 為選項 i 的範圍（「全部」為空陣列）。 */
+export interface AskClarify {
+  question: string;
+  options: string[];
+  focus?: string[][];
+}
+
+export interface AskIssue {
+  quote: string;
+  kind: 'unsupported' | 'citation' | 'logic' | 'unclear';
+  note: string;
+}
+
 export interface AskIntent {
   intent: AskIntentKind;
   queries: string[];
   keywords: string[];
+  template?: AskTemplate;
+  clarify?: AskClarify | null;
+}
+
+export interface AskOptions {
+  queries?: string[] | null;
+  clarified?: boolean;
+  focus?: string[] | null;
 }
 
 export interface AskTurn {
@@ -529,6 +553,10 @@ export interface AskAnswer {
   notFound: boolean;
   /** 找到的內容只部分相關（v0.43） */
   weak: boolean;
+  /** 需要使用者先選擇（v0.44） */
+  clarify?: AskClarify | null;
+  /** 修正後仍未通過檢驗的部分（v0.44） */
+  unverified?: AskIssue[];
 }
 
 export type AskStep =
@@ -536,7 +564,11 @@ export type AskStep =
   | { step: 'loading' }
   | { step: 'understood'; intent: AskIntent }
   | { step: 'found'; items: number; pdfs: number }
-  | { step: 'answering' };
+  | { step: 'answering' }
+  | { step: 'drafting' }
+  | { step: 'verifying' }
+  | { step: 'revising' }
+  | { step: 'polishing' };
 
 export type AskEvent =
   | ({ askId: number } & AskStep & { type: 'step' })
@@ -1427,12 +1459,8 @@ export const api = {
   kbaskStatus: () => call<KbAskStatus>('kbask_status'),
   kbaskEnable: () => call<void>('kbask_enable'),
   kbaskDisable: (purge: boolean) => call<void>('kbask_disable', { purge }),
-  kbaskAsk: (
-    question: string,
-    history: AskTurn[],
-    scope: string | null,
-    queries: string[] | null = null,
-  ) => call<number>('kbask_ask', { question, history, scope, queries }),
+  kbaskAsk: (question: string, history: AskTurn[], scope: string | null, opts?: AskOptions) =>
+    call<number>('kbask_ask', { question, history, scope, opts: opts ?? null }),
   kbaskFollowUps: (question: string, answer: string, titles: string[]) =>
     call<string[]>('kbask_follow_ups', { question, answer, titles }),
   kbaskCancel: (askId: number) => call<void>('kbask_cancel', { askId }),

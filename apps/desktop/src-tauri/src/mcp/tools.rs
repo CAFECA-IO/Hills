@@ -166,7 +166,7 @@ pub fn all() -> Vec<ToolDef> {
         ToolDef {
             name: "ask_knowledge",
             kind: Kind::Read,
-            description: "Ask the organization knowledge base a question in natural language. A local model on this computer understands the question, searches knowledge items and PDF passages, and answers only from what it found, marking sources as [n]. Returns `understood` (intent and rewritten queries), `answer` (Markdown), `citations` (n, kind item|pdf, key, title, heading, page), `uncited` (sentences without a source) and `notFound` (nothing relevant; `answer` is empty). `history` is up to 3 previous {question, answer} turns; `scope` limits the search to a category id or one knowledge key. Fails if Ask knowledge base is not turned on on this computer. Can take up to 2 minutes.",
+            description: "Ask the organization knowledge base a question in natural language. A local model on this computer understands the question, searches knowledge items and PDF passages, and answers only from what it found, marking sources as [n]. Returns `understood` (intent and rewritten queries), `answer` (Markdown), `citations` (n, kind item|pdf, key, title, heading, page), `uncited` (sentences without a source), `notFound` (nothing relevant; `answer` is empty), `unverified` (parts that failed the source check: quote, kind, note) and `clarify` ({question, options, focus?}: the question is too vague or the results span several topics, so nothing was answered — ask the user to pick an option, then ask again with the option appended to `question`, `clarified: true`, and that option's `focus` if given). `history` is up to 3 previous {question, answer} turns; `scope` limits the search to a category id or one knowledge key. Fails if Ask knowledge base is not turned on on this computer. Can take up to 3 minutes.",
             schema: obj(
                 json!({
                     "question": { "type": "string" },
@@ -182,7 +182,9 @@ pub fn all() -> Vec<ToolDef> {
                             "required": ["question", "answer"]
                         }
                     },
-                    "scope": { "type": "string" }
+                    "scope": { "type": "string" },
+                    "clarified": { "type": "boolean" },
+                    "focus": { "type": "array", "maxItems": 3, "items": { "type": "string" } }
                 }),
                 &["question"],
             ),

@@ -478,7 +478,18 @@ impl McpBackend for RealBackend {
                     .map_err(|x| format!("history: {x}"))?
                     .unwrap_or_default();
                 let scope = args.get("scope").and_then(Value::as_str).map(str::to_owned);
-                crate::kbask::ask_for_mcp(&self.app, question, history, scope).await
+                let clarified = args
+                    .get("clarified")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                let focus: Option<Vec<String>> = args
+                    .get("focus")
+                    .cloned()
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(|x| format!("focus: {x}"))?;
+                crate::kbask::ask_for_mcp(&self.app, question, history, scope, clarified, focus)
+                    .await
             }
             _ => Err("unknown tool".into()),
         }

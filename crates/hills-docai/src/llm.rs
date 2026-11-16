@@ -280,6 +280,8 @@ mod tests {
                 question: "relay 斷線的時候訊息會不見嗎？".into(),
                 history: Vec::new(),
                 queries: None,
+                clarified: false,
+                focus: None,
             },
             &cancel,
         )
@@ -348,6 +350,8 @@ mod tests {
                 question: "relay 斷線的時候訊息會不見嗎？".into(),
                 history: Vec::new(),
                 queries: None,
+                clarified: false,
+                focus: None,
             },
             crate::kbask::Hooks {
                 on_step: &mut |s| eprintln!("{:?} {s:?}", t.elapsed()),

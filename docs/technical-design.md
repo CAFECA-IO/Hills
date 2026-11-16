@@ -1433,7 +1433,7 @@ Block = Heading{level, text, page} | Para{text, page}
 3. `read_stripe` 讀出全檔（PDF 不讀內容，只算雜湊）；WebCrypto 計算 SHA-256。
 4. 比對：本人 `import` 來源中 `root` 與 `path` 相同者 → 雜湊相同「沒有變更」、不同「更新」；沒有 → 「新增」。v0.43：雜湊相同但標題或主題名稱不同也算「更新」。資料夾中已不存在的匯入知識只列在摘要。
 5. 分類（= `root`，匯入前不能改）、主題：依名稱找既有的（合併後的最終項目），沒有的以 `kb_create_category` / `kb_create_topic` 建立。主題 = 第一層子資料夾，根目錄的檔案 = 「一般」。
-   - v0.43：先沿用本人先前從同一 `root` 匯入的知識所在的分類（與同一第一層資料夾的主題）；沒有時才依整理後的名稱找或建立。整理 = 去掉開頭的排序編號 `^\d+[_\-.\s]+`（去掉後是空的就保留原名）。
+   - v0.43：先沿用本人先前從同一 `root` 匯入的知識所在的分類（與同一第一層資料夾的主題）；沒有時才依整理後的名稱找或建立。整理 = 去掉開頭的排序編號 `^\d+[_\-.\s]+`（去掉後是空的就保留原名）。沿用的分類或主題名稱仍是資料夾原名（沒有被改過）時，以 `kb_rename` 改為整理後的名稱。
 6. 轉換：
    - Markdown 原樣。
    - HTML 以 DOMParser 轉 Markdown：`h1`–`h6`、`p`、`ul` / `ol` / `li`、`table` → GFM 表格、`a`（只留 http / https）、`br`、`pre` / `code`、`strong` / `em`；略過 `script`、`style`、`nav`、`noscript`、`svg`、`canvas`。

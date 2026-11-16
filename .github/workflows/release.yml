@@ -1,0 +1,135 @@
+# Alpha 版發佈（feature-plan D75、technical-design §12.1、docs/release.md）
+# 推送 v* tag 或手動執行：macOS 以 Developer ID 簽章並公證（universal），Windows 暫不簽章；
+# 產出 GitHub draft pre-release。憑證只從 GitHub Secrets 讀取。
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '發佈的 tag（例如 v0.1.0-alpha.1；不存在時以目前 commit 建立）'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  HILLS_CHANNEL: alpha
+
+jobs:
+  macos:
+    name: macOS (universal, signed + notarized)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Apple secrets
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          missing=""
+          for n in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_P8 KEYCHAIN_PASSWORD; do
+            [ -n "${!n}" ] || missing="$missing $n"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::缺少 GitHub Secrets：$missing（見 docs/release.md）"
+            exit 1
+          fi
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Write App Store Connect API key
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/apple"
+          printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/apple/AuthKey.p8"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/apple/AuthKey.p8" >> "$GITHUB_ENV"
+      - uses: tauri-apps/tauri-action@v0
+        id: build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          tauriScript: pnpm tauri
+          args: --target universal-apple-darwin
+          tagName: ${{ env.TAG }}
+          releaseName: Hills ${{ env.TAG }}
+          releaseBody: |
+            Hills Alpha（${{ env.TAG }}）。macOS 版已簽章並經 Apple 公證（Apple Silicon 與 Intel，需 macOS 13.3 以上）；Windows 版尚未簽章，第一次執行時 SmartScreen 會提示，請按「其他資訊 → 仍要執行」。
+            安裝檔的 SHA-256 見 SHA256SUMS-*.txt。
+          releaseDraft: true
+          prerelease: true
+      - name: Verify signature and notarization
+        run: |
+          app=$(find target/universal-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' | head -1)
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl -a -vv -t exec "$app"
+          xcrun stapler validate "$app"
+      - name: Upload SHA-256 sums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PATHS: ${{ steps.build.outputs.artifactPaths }}
+        run: |
+          echo "$PATHS" | jq -r '.[]' | while read -r f; do [ -f "$f" ] && shasum -a 256 "$f" | sed "s#  .*/#  #"; done > SHA256SUMS-macos.txt
+          cat SHA256SUMS-macos.txt
+          gh release upload "$TAG" SHA256SUMS-macos.txt --clobber
+
+  windows:
+    name: Windows (unsigned)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: tauri-apps/tauri-action@v0
+        id: build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tauriScript: pnpm tauri
+          tagName: ${{ env.TAG }}
+          releaseName: Hills ${{ env.TAG }}
+          releaseDraft: true
+          prerelease: true
+      - name: Upload SHA-256 sums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PATHS: ${{ steps.build.outputs.artifactPaths }}
+        run: |
+          echo "$PATHS" | jq -r '.[]' | while read -r f; do [ -f "$f" ] && sha256sum "$f" | sed "s#  .*[/\\\\]#  #"; done > SHA256SUMS-windows.txt
+          cat SHA256SUMS-windows.txt
+          gh release upload "$TAG" SHA256SUMS-windows.txt --clobber

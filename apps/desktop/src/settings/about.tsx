@@ -16,7 +16,9 @@ export function AboutGroup() {
 function VersionCard() {
   const v = useLoad(api.appVersion, []);
   if (!v.data) return null;
-  const text = v.data.commit ? `${v.data.version} (${v.data.commit})` : v.data.version;
+  // D75：發佈通道（alpha）接在版本號後
+  const ver = v.data.channel ? `${v.data.version} ${v.data.channel}` : v.data.version;
+  const text = v.data.commit ? `${ver} (${v.data.commit})` : ver;
   return (
     <Card className="flex items-center justify-between gap-3">
       <span className="text-sm font-medium">{t('settings.version')}</span>

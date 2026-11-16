@@ -26,7 +26,9 @@
   },
   "bundle": {
     "macOS": {
-      "minimumSystemVersion": "13.3"
+      "minimumSystemVersion": "13.3",
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.plist"
     },
     "active": true,
     "targets": ["app", "dmg", "nsis", "msi"],

@@ -331,6 +331,7 @@ pub fn app_version() -> AppVersion {
     AppVersion {
         version: env!("CARGO_PKG_VERSION"),
         commit: env!("HILLS_GIT_SHA"),
+        channel: env!("HILLS_CHANNEL"),
     }
 }
 
@@ -339,6 +340,8 @@ pub fn app_version() -> AppVersion {
 pub struct AppVersion {
     version: &'static str,
     commit: &'static str,
+    /// 發佈通道（alpha；本機建置為空字串）
+    channel: &'static str,
 }
 
 #[derive(Serialize)]

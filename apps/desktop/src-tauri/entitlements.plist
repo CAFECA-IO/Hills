@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- hardened runtime 的例外（technical-design §12.1，D75） -->
+<plist version="1.0">
+  <dict>
+    <!-- 文件理解下載的 pdfium 動態函式庫（§16.20）不是同一個團隊簽章 -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!-- 會議的麥克風與相機 -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.device.camera</key>
+    <true/>
+  </dict>
+</plist>

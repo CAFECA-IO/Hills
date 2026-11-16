@@ -1442,7 +1442,7 @@ export const api = {
   saveUploadJobs: (jobs: { id: string; tokens: string[]; state: unknown }[]) =>
     call<void>('save_upload_jobs', { jobs }),
   uploadJobs: () => call<StoredUploadJob[]>('upload_jobs'),
-  appVersion: () => call<{ version: string; commit: string }>('app_version'),
+  appVersion: () => call<{ version: string; commit: string; channel?: string }>('app_version'),
   // 文件理解（technical-design §16.20，D68）
   docaiStatus: () => call<DocAiStatus>('docai_status'),
   docaiEnable: (model: DocAiModel) => call<void>('docai_enable', { model }),

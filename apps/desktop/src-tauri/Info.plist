@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 與 Tauri 產生的 Info.plist 合併（technical-design §12.1，D75） -->
+<plist version="1.0">
+  <dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Hills uses the microphone for meetings with your team.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Hills uses the camera for meetings with your team.</string>
+  </dict>
+</plist>

@@ -9,6 +9,10 @@ fn main() {
         .map(|s| s.trim().to_owned())
         .unwrap_or_default();
     println!("cargo:rustc-env=HILLS_GIT_SHA={sha}");
+    // 發佈通道（technical-design §12.1，D75）：CI 以 HILLS_CHANNEL=alpha 建置；本機建置留空
+    let channel = std::env::var("HILLS_CHANNEL").unwrap_or_default();
+    println!("cargo:rustc-env=HILLS_CHANNEL={channel}");
+    println!("cargo:rerun-if-env-changed=HILLS_CHANNEL");
     println!("cargo:rerun-if-changed=../../../.git/HEAD");
     println!("cargo:rerun-if-changed=../../../.git/refs/heads");
     tauri_build::build()

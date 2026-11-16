@@ -74,7 +74,7 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 const yieldToUi = () => new Promise<void>((r) => setTimeout(r, 0));
 
 /** 讀出整個檔案（`read_stripe` 每次 8 MB）。 */
-async function readAll(token: string, size: number): Promise<Uint8Array> {
+export async function readAll(token: string, size: number): Promise<Uint8Array> {
   const out = new Uint8Array(size);
   const step = 8 * 1024 * 1024;
   for (let o = 0; o < size; o += step) {

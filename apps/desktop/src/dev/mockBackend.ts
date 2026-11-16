@@ -2215,10 +2215,38 @@ function importFolder() {
   };
 }
 const writes = new Map<string, number>();
+const exported = new Map<string, Uint8Array>();
+function exportedFolder() {
+  const manifest = [...exported.keys()].find((p) => p.endsWith('/hills-kb.json'));
+  if (!manifest) return null;
+  const root = manifest.slice(0, -'/hills-kb.json'.length);
+  const entries = [...exported.entries()]
+    .filter(([p]) => p.startsWith(`${root}/`))
+    .map(([p, bytes]) => {
+      const token = `t${++fileSeq}`;
+      fakeTexts.set(token, bytes);
+      return {
+        kind: 'file' as const,
+        path: p.slice(root.length + 1),
+        token,
+        size: bytes.length,
+        mtime: null,
+      };
+    });
+  return {
+    root: root.split('/').pop()!,
+    entries,
+    skipped: [],
+    totalSize: entries.reduce((n, e) => n + e.size, 0),
+    fileCount: entries.length,
+  };
+}
 const fileHandlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   pick_files: () => [addFake('季度報告.pdf', 3 * MB + 12345), addFake('會議紀錄.md', 2048)],
   pick_folder: () => {
     if (new URLSearchParams(window.location.search).get('import') === '1') return importFolder();
+    const again = exportedFolder();
+    if (again) return again;
     const a = addFake('hero@2x.png', 2 * MB);
     const b = addFake('logo.svg', 40_000);
     const c = addFake('說明.txt', 1200);
@@ -2680,8 +2708,11 @@ export const mockBackend = {
         return r as T;
       }
       if (cmd === 'write_partial') {
-        const key = `${h['x-token']}/${decodeURIComponent(h['x-path'] ?? '')}`;
+        const path = decodeURIComponent(h['x-path'] ?? '');
+        const key = `${h['x-token']}/${path}`;
         writes.set(key, (writes.get(key) ?? 0) + args.length);
+        // 知識庫匯出（D74）：記下內容，?import=2 時「選擇資料夾」選回這份匯出
+        exported.set(path, args.slice());
       }
       return undefined as T;
     }

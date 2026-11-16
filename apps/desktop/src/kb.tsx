@@ -21,7 +21,9 @@ import {
   type DocFormat,
 } from './doc-spec';
 import { Moon } from './figures';
+import { KbExport } from './kb-export';
 import { KbImport } from './kb-import';
+import { KbRestore, isHillsExport } from './kb-restore';
 import { FILES_ROOT } from './kb-import-utils';
 import { navigate } from './nav';
 import { AskPanel } from './kb-ask';
@@ -120,6 +122,8 @@ export function Knowledge({ members, isAdmin, timezone, onOpenConv, openItem = n
   const [importPick, setImportPick] = useState<FolderPick | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
   const [importMenu, setImportMenu] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const info = useLoad(api.appInfo, ['org']);
   const importBtn = useRef<HTMLButtonElement>(null);
   const startImport = async (kind: 'files' | 'folder') => {
     setImportMenu(false);
@@ -230,11 +234,11 @@ export function Knowledge({ members, isAdmin, timezone, onOpenConv, openItem = n
                 aria-expanded={importMenu}
                 onClick={() => setImportMenu((o) => !o)}
               >
-                {t('kbImport.open')}
+                {t('kbImport.openBoth')}
               </Button>
               {importMenu && (
                 <Menu
-                  label={t('kbImport.open')}
+                  label={t('kbImport.openBoth')}
                   onClose={() => setImportMenu(false)}
                   anchorRef={importBtn}
                   className="absolute top-full right-0 z-20 mt-2"
@@ -244,6 +248,14 @@ export function Knowledge({ members, isAdmin, timezone, onOpenConv, openItem = n
                   </MenuItem>
                   <MenuItem onSelect={() => void startImport('folder')}>
                     {t('kbImport.pickFolder')}
+                  </MenuItem>
+                  <MenuItem
+                    onSelect={() => {
+                      setImportMenu(false);
+                      setExporting(true);
+                    }}
+                  >
+                    {t('kbExport.open')}
                   </MenuItem>
                 </Menu>
               )}
@@ -360,7 +372,24 @@ export function Knowledge({ members, isAdmin, timezone, onOpenConv, openItem = n
           </div>
         )}
       </div>
-      {importPick && (
+      {exporting && (
+        <KbExport
+          data={data}
+          org={info.data?.orgName ?? ''}
+          nameOf={nameOf}
+          onClose={() => setExporting(false)}
+        />
+      )}
+      {importPick && isHillsExport(importPick) && (
+        <KbRestore
+          pick={importPick}
+          data={data}
+          me={me}
+          onClose={() => setImportPick(null)}
+          onImported={() => kb.reload()}
+        />
+      )}
+      {importPick && !isHillsExport(importPick) && (
         <KbImport
           pick={importPick}
           data={data}

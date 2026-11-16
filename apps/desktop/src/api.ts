@@ -543,6 +543,9 @@ export interface AskCitation {
   page: number | null;
   /** 段落開頭約 80 字（v0.43） */
   excerpt: string;
+  /** 附件段落所屬的知識（v0.45） */
+  owner?: string;
+  ownerTitle?: string;
 }
 
 export interface AskAnswer {
@@ -557,6 +560,8 @@ export interface AskAnswer {
   clarify?: AskClarify | null;
   /** 修正後仍未通過檢驗的部分（v0.44） */
   unverified?: AskIssue[];
+  /** 最高語意相似度（v0.45） */
+  topCosine?: number;
 }
 
 export type AskStep =

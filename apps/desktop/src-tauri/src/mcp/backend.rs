@@ -491,6 +491,13 @@ impl McpBackend for RealBackend {
                 crate::kbask::ask_for_mcp(&self.app, question, history, scope, clarified, focus)
                     .await
             }
+            "get_ask_result" => {
+                let id = args
+                    .get("askId")
+                    .and_then(Value::as_u64)
+                    .ok_or("askId is required")?;
+                crate::kbask::mcp_result(&self.app, id).await
+            }
             _ => Err("unknown tool".into()),
         }
     }

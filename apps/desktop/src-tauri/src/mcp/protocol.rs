@@ -333,6 +333,7 @@ pub(crate) mod tests {
             "propose_kb_topic",
             "propose_kb_rename",
             "ask_knowledge",
+            "get_ask_result",
         ] {
             assert!(names.contains(&n), "missing {n}");
         }

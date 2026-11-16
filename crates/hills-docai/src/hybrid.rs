@@ -49,7 +49,7 @@ impl Default for Options {
             budget: 4000.0,
             rrf_k: 60.0,
             min_cosine: 0.80,
-            strong_cosine: 0.85,
+            strong_cosine: 0.82,
         }
     }
 }

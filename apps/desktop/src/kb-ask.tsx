@@ -53,16 +53,29 @@ function metaOf(c: AskCitation, data: KbSnapshot, nameOf: (id: string) => string
 export function groupCitations(cs: AskCitation[]): AskCitation[][] {
   const groups = new Map<string, AskCitation[]>();
   for (const c of cs) {
-    const k = `${c.kind}:${c.key}`;
+    // v0.55：附件併入所屬的知識
+    const k = c.owner ? `item:${c.owner}` : `${c.kind}:${c.key}`;
     groups.set(k, [...(groups.get(k) ?? []), c]);
   }
-  return [...groups.values()];
+  // 卡片以知識本身的段落為代表（沒有時用附件段落，標題用所屬知識）
+  return [...groups.values()].map((g) =>
+    [...g].sort((a, b) => Number(a.kind === 'pdf') - Number(b.kind === 'pdf') || a.n - b.n),
+  );
+}
+
+/** 參考卡的代表：知識 key 與標題（附件段落取所屬知識）。 */
+export function cardOf(c: AskCitation): AskCitation {
+  return c.owner ? { ...c, kind: 'item', key: c.owner, title: c.ownerTitle ?? c.title } : c;
 }
 
 /** 段落的小節路徑：去掉與標題重複的開頭（分類、主題、知識標題）。 */
-function sectionLabel(c: AskCitation): string {
-  if (c.kind === 'pdf')
-    return [t('ask.source.page', { page: c.page ?? 1 }), ...c.heading].join(' · ');
+export function sectionLabel(c: AskCitation): string {
+  if (c.kind === 'pdf') {
+    // HTML / Markdown 附件沒有頁碼
+    const page = /\.pdf$/i.test(c.title) ? [t('ask.source.page', { page: c.page ?? 1 })] : [];
+    const head = c.owner ? [t('ask.source.attachmentOf', { name: c.title })] : [];
+    return [...head, ...page, ...c.heading.slice(-1)].join(' · ');
+  }
   const i = c.heading.indexOf(c.title);
   return (i >= 0 ? c.heading.slice(i + 1) : c.heading.slice(-1)).join(' › ');
 }
@@ -539,7 +552,7 @@ function Exchange({
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-semibold text-muted">{t('ask.sources')}</span>
           {groups.map((g) => {
-            const c = g[0]!;
+            const c = cardOf(g[0]!);
             return (
               <SourceCard
                 key={`${c.kind}:${c.key}`}

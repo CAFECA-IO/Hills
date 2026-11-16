@@ -2,7 +2,7 @@
 //!
 //! 問題、片段與回答只在記憶體；結果以事件逐步送到前端，MCP `ask_knowledge` 走同一個流程。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -42,7 +42,20 @@ pub struct KbAsk {
     suggestions: Mutex<Suggestions>,
     /// 產生建議問題中：使用者提問時先停掉，讓模型處理問題
     suggesting: Mutex<Option<Arc<AtomicBool>>>,
+    /// MCP 的提問結果（v0.45）：askId → (登記時間, 結果；None = 進行中)
+    mcp_results: Mutex<HashMap<u64, McpSlot>>,
 }
+
+type McpSlot = (
+    std::time::Instant,
+    Option<Result<serde_json::Value, String>>,
+);
+
+/// MCP 結果保留時間與筆數（technical-design §18.3 v0.45）。
+const MCP_KEEP: std::time::Duration = std::time::Duration::from_secs(600);
+const MCP_MAX: usize = 10;
+/// MCP 一次最多等多久（Claude 端呼叫本機工具最多等 80 秒）。
+const MCP_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// 這台電腦的實體記憶體（位元組）；取不到時回傳 `None`。
 fn total_memory() -> Option<u64> {
@@ -277,11 +290,19 @@ fn ask_now(
     if !llm.is_loaded() {
         step(&Step::Loading);
     }
-    let visible: HashSet<String> = node
-        .list_files()
-        .map_err(e)?
-        .into_iter()
-        .map(|f| f.key)
+    let files = node.list_files().map_err(e)?;
+    let visible: HashSet<String> = files.iter().map(|f| f.key.clone()).collect();
+    // v0.45：附件所屬的知識（參考卡合併用）
+    let owners: HashMap<String, (String, String)> = files
+        .iter()
+        .filter_map(|f| {
+            f.sources.iter().find_map(|src| match src {
+                hills_node::files::FileSource::Kb { kb_key, title, .. } => {
+                    Some((f.key.clone(), (kb_key.clone(), title.clone())))
+                }
+                _ => None,
+            })
+        })
         .collect();
     let scope = scope_of(&snap, scope);
     let engine = ai.engine.clone();
@@ -333,7 +354,7 @@ fn ask_now(
         },
         cancel,
     );
-    let answer = match res {
+    let mut answer = match res {
         Ok(a) => a,
         Err(err) => {
             tracing::warn!(ms = started.elapsed().as_millis() as u64, error = %err, "問知識庫失敗");
@@ -344,10 +365,20 @@ fn ask_now(
             return Err(err.to_string());
         }
     };
+    for c in &mut answer.citations {
+        if c.kind == SourceKind::Pdf
+            && let Some((k, t)) = owners.get(&c.key)
+        {
+            c.owner = Some(k.clone());
+            c.owner_title = Some(t.clone());
+        }
+    }
     tracing::info!(
         ms = started.elapsed().as_millis() as u64,
         cited = answer.citations.len(),
         not_found = answer.not_found,
+        top_cosine = answer.top_cosine,
+        weak = answer.weak,
         "問知識庫完成"
     );
     Ok(answer)
@@ -618,7 +649,7 @@ fn check_focus(focus: Option<Vec<String>>) -> CmdResult<Option<Vec<String>>> {
     }
 }
 
-/// MCP `ask_knowledge`（technical-design §18.3 v0.41、§16.21 v0.44）：不串流，最多等 180 秒。
+/// MCP `ask_knowledge`（technical-design §18.3 v0.45）：不串流；最多等 60 秒，未完成回傳 `{pending, askId}`。
 pub async fn ask_for_mcp(
     app: &AppHandle,
     question: String,
@@ -636,10 +667,22 @@ pub async fn ask_for_mcp(
         let state = app.state::<AppState>();
         node_of(&state).await?
     };
-    let (id, cancel) = begin(&app.state::<KbAsk>());
+    let ask = app.state::<KbAsk>();
+    let (id, cancel) = begin(&ask);
+    {
+        let mut m = lock(&ask.mcp_results);
+        m.retain(|_, (at, _)| at.elapsed() < MCP_KEEP);
+        while m.len() >= MCP_MAX {
+            let Some(oldest) = m.iter().min_by_key(|(_, (at, _))| *at).map(|(k, _)| *k) else {
+                break;
+            };
+            m.remove(&oldest);
+        }
+        m.insert(id, (std::time::Instant::now(), None));
+    }
     let app2 = app.clone();
     let cancel2 = cancel.clone();
-    let job = tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || {
         let input = AskInput {
             question: q,
             history: history.into_iter().rev().take(3).rev().collect(),
@@ -657,18 +700,42 @@ pub async fn ask_for_mcp(
                 on_step: &mut |_| {},
                 on_token: &mut |_| {},
             },
-        );
-        finish(&app2.state::<KbAsk>(), id);
-        r
-    });
-    match tokio::time::timeout(std::time::Duration::from_secs(180), job).await {
-        Ok(Ok(Ok(a))) => serde_json::to_value(&a).map_err(|x| x.to_string()),
-        Ok(Ok(Err(m))) => Err(m),
-        Ok(Err(x)) => Err(x.to_string()),
-        Err(_) => {
-            cancel.store(true, Ordering::Relaxed);
-            Err("timed out after 180 seconds".into())
+        )
+        .and_then(|a| serde_json::to_value(&a).map_err(|x| x.to_string()));
+        let ask = app2.state::<KbAsk>();
+        finish(&ask, id);
+        if let Some(slot) = lock(&ask.mcp_results).get_mut(&id) {
+            slot.1 = Some(r);
         }
+    });
+    wait_mcp(app, id).await
+}
+
+/// MCP `get_ask_result`（v0.45）：再等最多 60 秒。
+pub async fn mcp_result(app: &AppHandle, ask_id: u64) -> Result<serde_json::Value, String> {
+    if !lock(&app.state::<KbAsk>().mcp_results).contains_key(&ask_id) {
+        return Err("unknown or expired askId".into());
+    }
+    wait_mcp(app, ask_id).await
+}
+
+async fn wait_mcp(app: &AppHandle, id: u64) -> Result<serde_json::Value, String> {
+    let deadline = std::time::Instant::now() + MCP_WAIT;
+    loop {
+        let done = lock(&app.state::<KbAsk>().mcp_results)
+            .get(&id)
+            .and_then(|(_, r)| r.clone());
+        if let Some(r) = done {
+            return r;
+        }
+        if std::time::Instant::now() >= deadline {
+            return Ok(serde_json::json!({
+                "pending": true,
+                "askId": id,
+                "hint": "Still working. Call get_ask_result with this askId to wait for the answer."
+            }));
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
 }
 

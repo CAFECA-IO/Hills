@@ -2111,6 +2111,7 @@ export const zhTW = {
   'ask.doubtful.hint': '這句未通過出處檢驗',
   'ask.understood': '理解為：找「{q}」',
   'ask.source.page': '第 {page} 頁',
+  'ask.source.attachmentOf': '附件 · {name}',
   'ask.source.attachment': '附件片段',
   'ask.understood.edited': '以修改的查詢找「{q}」',
   'ask.understood.edit': '修改',

@@ -2166,6 +2166,7 @@ export const en: Record<MessageKey, string> = {
   'ask.doubtful.hint': 'This sentence failed the source check',
   'ask.understood': 'Understood as: “{q}”',
   'ask.source.page': 'p. {page}',
+  'ask.source.attachmentOf': 'Attachment · {name}',
   'ask.source.attachment': 'Attachment excerpt',
   'ask.understood.edited': 'Searched with your edit: “{q}”',
   'ask.understood.edit': 'Edit',

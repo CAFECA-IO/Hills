@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.47 草案 · 2026-11-16 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.47a 草案 · 2026-11-16 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -1681,7 +1681,7 @@ kind = `recover`，流程與加入相同（產生**新的** IK / EK / DK、`Appl
 | `read_messages` | `conv`、`limit?`（≤ 50） | 最近的訊息 |
 | `search_knowledge` | `query`、`limit?` | 標題與內文包含關鍵字的知識；v0.37（D68）：開啟文件理解時另回 `contentHits`（PDF 內容命中：檔名、頁碼、標題路徑、片段、出處，§16.20） |
 | `ask_knowledge` | `question`、`history?`（最多 3 輪 `{question, answer}`）、`scope?`（分類 id 或知識 key） | v0.41（D70）：以本機語言模型根據知識庫回答（§16.21），回傳 `understood`（意圖與改寫的查詢）、`answer`（含 `[n]`）、`citations`（`n`、`kind`、`key`、`title`、`page?`、`heading`）、`notFound`。讀取類，不需確認。這台電腦未開啟問知識庫時回錯誤「問知識庫尚未在這台電腦開啟」；同一時間只處理一個問題，逾時 120 秒。v0.45：最多等 60 秒，未完成時回傳 `{ pending: true, askId }`，以 `get_ask_result` 取回 |
-| `get_ask_result` | `askId` | v0.45：取回 `ask_knowledge` 的結果；最多再等 60 秒，仍未完成時回傳 `{ pending: true, askId }`。結果保留 10 分鐘（最多 10 筆）；只有新的提問會中斷進行中的那一題。讀取類，不需確認 |
+| `get_ask_result` | `askId` | v0.45：取回 `ask_knowledge` 的結果；最多再等 60 秒，仍未完成時回傳 `{ pending: true, askId }`。結果保留 10 分鐘（最多 10 筆）；只有新的提問會中斷進行中的那一題。v0.47a：同一題（問題、前文、範圍、追問選擇都相同）在保留期間內再呼叫 `ask_knowledge`，會接上進行中或已完成的那一次，不重新開始（呼叫端看不到 `get_ask_result` 或逾時重試時也能取回）。讀取類，不需確認 |
 | `list_teams` | — | v0.28（D51）：小組（id、名稱、成員、負責人、封存時間、本人能否管理） |
 | `list_knowledge_tree` | — | v0.28（D51）：知識庫分類與主題（含 `resolved`：合併後的最終項目），不含內文 |
 

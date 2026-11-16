@@ -1,6 +1,6 @@
 # Hills 技術設計文件
 
-> 版本：v0.45 草案 · 2026-11-16 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
+> 版本：v0.46 草案 · 2026-11-16 · 對應功能規劃 [feature-plan.md](./feature-plan.md) v1.0；M2–M5 見 [technical-design-m2-m5.md](./technical-design-m2-m5.md)
 > 範圍：M0（基礎）與 M1（計劃、Scrum、假勤、對話、檔案分享）所需的協定、資料模型與金鑰流程。M1 對話見 §14，檔案分享（SwarmStorage 原理）見 §15，以 CAFECA 登入見 §17。
 
 ## 1. 元件總覽
@@ -1469,6 +1469,32 @@ Block = Heading{level, text, page} | Para{text, page}
 v0.42a：比對完成後只顯示摘要，使用者按「匯入」或「取消」，不逐檔選擇；「沒有變更」與「太大」的檔案一律略過。
 
 **索引**（§16.20）：知識的附件中，`.pdf` 走 pdfium；`.html` / `.htm` / `.md` 以 `kbtext` 轉文字後切片，同樣不落地、只存本機加密索引；「檔案」與問知識庫中稱為「附件片段」。
+
+### 16.23 知識庫匯出 / 匯入（v0.46，D74）
+
+**格式 `hills-kb/1`**：一個資料夾（不壓縮），前端以 `save_target_folder` + `write_partial` 寫入（§15 下載相同機制）：
+
+```
+<匯出名稱>/
+  hills-kb.json                         // manifest
+  <分類>/<主題>/<標題>.md               // 內文（YAML front matter + Markdown）
+  <分類>/<主題>/<標題>.files/<附件檔名>  // 原附件（解密後）
+```
+
+- `hills-kb.json`：`{ format: "hills-kb/1", exportedAt, org, categories: [{ id, name }], topics: [{ id, categoryId, name }], items: [{ key, path, title, topicId, tags, refs, author, authorName, createdAt, updatedAt, attachments: [{ name, path }] }] }`；`path` 為相對路徑（`/` 分隔）。
+- 路徑元件以 §15 的 `safe_component` 規則處理，同一資料夾重名時加「-2」「-3」。
+- front matter：`title`、`tags`、`author`（顯示名稱）、`created`、`updated`（ISO 8601）。HTML 格式的知識以 §16.22 的 HTML → Markdown 轉換後輸出。
+- 附件以 §15 的方式解密到記憶體後寫出；單一附件超過 §15 上限時略過並列在摘要。
+
+**匯出**：範圍為全部或一個分類（合併後的最終項目），可選擇是否包含附件；只有本機已同步的內容。匯出的是明文，介面提示妥善保管。
+
+**匯入**：`pick_folder` 選到含 `hills-kb.json` 的資料夾時改走完整匯入（沒有 manifest 時照舊 §16.22）：
+
+1. 解析 manifest（格式不符時拒絕）；比對同 §16.22 第 4 步：`root` = manifest 所在資料夾名稱，`path` = 該則的 `path`，雜湊為 `.md` 檔的 SHA-256。
+2. 分類、主題依 manifest 名稱找既有的（合併後的最終項目），沒有才建立；不套用 §16.22 的排序編號整理。
+3. 每則以 `kb_save` 存入：內文 = `.md` 去掉 front matter，最後加一行「> 原作者：{authorName}，原建立於 {created}」（作者是匯入者，簽章不能偽造）；`tags` 照搬；`source = import { root, path, sha256, attachment? }`；第一個附件作為來源附件，其餘附件放在內文最後的「附件」清單（以 §14.2 附件格式上傳）。
+4. 全部存完後，以舊 key → 新 key 對照重建 `refs`：有引用的知識再 `kb_save` 一次（只改 `refs`）。
+5. 摘要同 §16.22，另列「來自 Hills 匯出：{org}，{exportedAt}」。
 
 ### 16.9 部署（M0）
 

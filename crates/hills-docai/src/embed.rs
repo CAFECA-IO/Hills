@@ -3,7 +3,8 @@
 use std::path::Path;
 
 use fastembed::{
-    InitOptionsUserDefined, Pooling, TextEmbedding, TokenizerFiles, UserDefinedEmbeddingModel,
+    AutoDevicePolicy, InitOptionsUserDefined, Pooling, TextEmbedding, TokenizerFiles,
+    UserDefinedEmbeddingModel,
 };
 
 use crate::models::{ModelSpec, component_dir};
@@ -49,7 +50,11 @@ impl FastEmbedder {
                 Pooling::Cls
             },
         );
-        let opts = InitOptionsUserDefined::new().with_max_length(spec.max_tokens);
+        // 只用 CPU（technical-design §16.20 v0.42c）：ort 預設的自動選擇在 macOS 會啟用 CoreML，
+        // 每種輸入長度都重新編譯模型，記憶體會暴增到數十 GB
+        let opts = InitOptionsUserDefined::new()
+            .with_max_length(spec.max_tokens)
+            .with_auto_device(AutoDevicePolicy::PreferCPU);
         let model = TextEmbedding::try_new_from_user_defined(model, opts)
             .map_err(|e| DocAiError::Model(e.to_string()))?;
         Ok(Self { spec, model })
